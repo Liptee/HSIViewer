@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		044E5EC82ED7322E0093730A /* libtiff.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 044E5EC72ED7322E0093730A /* libtiff.6.dylib */; };
+		044E5ECA2ED768250093730A /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 044E5EC92ED768200093730A /* .gitignore */; };
+		049FB5EC2ED707540098C2F2 /* libmatio.13.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 049FB5EB2ED707540098C2F2 /* libmatio.13.dylib */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		049FB5BF2ED6FE780098C2F2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,25 +30,31 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		044E5EC72ED7322E0093730A /* libtiff.6.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libtiff.6.dylib; path = ../../../../opt/homebrew/Cellar/libtiff/4.7.0/lib/libtiff.6.dylib; sourceTree = "<group>"; };
+		044E5EC92ED768200093730A /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		049FB5AD2ED6FE760098C2F2 /* HSIView.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HSIView.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		049FB5BE2ED6FE780098C2F2 /* HSIViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HSIViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		049FB5C82ED6FE780098C2F2 /* HSIViewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HSIViewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		049FB5EB2ED707540098C2F2 /* libmatio.13.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libmatio.13.dylib; path = ../../../../opt/homebrew/Cellar/libmatio/1.5.29/lib/libmatio.13.dylib; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		049FB5F62ED70CA30098C2F2 /* Exceptions for "HSIView" folder in "HSIView" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 049FB5AC2ED6FE760098C2F2 /* HSIView */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		049FB5AF2ED6FE760098C2F2 /* HSIView */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				049FB5F62ED70CA30098C2F2 /* Exceptions for "HSIView" folder in "HSIView" target */,
+			);
 			path = HSIView;
-			sourceTree = "<group>";
-		};
-		049FB5C12ED6FE780098C2F2 /* HSIViewTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HSIViewTests;
-			sourceTree = "<group>";
-		};
-		049FB5CB2ED6FE780098C2F2 /* HSIViewUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = HSIViewUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +64,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				044E5EC82ED7322E0093730A /* libtiff.6.dylib in Frameworks */,
+				049FB5EC2ED707540098C2F2 /* libmatio.13.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,9 +89,9 @@
 		049FB5A42ED6FE760098C2F2 = {
 			isa = PBXGroup;
 			children = (
+				044E5EC92ED768200093730A /* .gitignore */,
 				049FB5AF2ED6FE760098C2F2 /* HSIView */,
-				049FB5C12ED6FE780098C2F2 /* HSIViewTests */,
-				049FB5CB2ED6FE780098C2F2 /* HSIViewUITests */,
+				049FB5EA2ED707540098C2F2 /* Frameworks */,
 				049FB5AE2ED6FE760098C2F2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +104,15 @@
 				049FB5C82ED6FE780098C2F2 /* HSIViewUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		049FB5EA2ED707540098C2F2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				044E5EC72ED7322E0093730A /* libtiff.6.dylib */,
+				049FB5EB2ED707540098C2F2 /* libmatio.13.dylib */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -130,9 +153,6 @@
 			dependencies = (
 				049FB5C02ED6FE780098C2F2 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				049FB5C12ED6FE780098C2F2 /* HSIViewTests */,
-			);
 			name = HSIViewTests;
 			packageProductDependencies = (
 			);
@@ -153,9 +173,6 @@
 			dependencies = (
 				049FB5CA2ED6FE780098C2F2 /* PBXTargetDependency */,
 			);
-			fileSystemSynchronizedGroups = (
-				049FB5CB2ED6FE780098C2F2 /* HSIViewUITests */,
-			);
 			name = HSIViewUITests;
 			packageProductDependencies = (
 			);
@@ -175,6 +192,7 @@
 				TargetAttributes = {
 					049FB5AC2ED6FE760098C2F2 = {
 						CreatedOnToolsVersion = 16.0;
+						LastSwiftMigration = 1600;
 					};
 					049FB5BD2ED6FE780098C2F2 = {
 						CreatedOnToolsVersion = 16.0;
@@ -212,6 +230,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				044E5ECA2ED768250093730A /* .gitignore in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -321,6 +340,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = /opt/homebrew/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = /opt/homebrew/include;
+				LIBRARY_SEARCH_PATHS = /opt/homebrew/lib;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -378,6 +400,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = /opt/homebrew/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = /opt/homebrew/include;
+				LIBRARY_SEARCH_PATHS = /opt/homebrew/lib;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -392,11 +417,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = HSIView/HSIView.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HSIView/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -404,10 +432,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
+					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "HSIView/ImageViewer-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -417,11 +452,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = HSIView/HSIView.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HSIView/Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -429,10 +467,16 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
+					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "HSIView/ImageViewer-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

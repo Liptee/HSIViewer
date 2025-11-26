@@ -7,6 +7,10 @@
 
 #ifndef Header_h
 #define Header_h
-
+#include <tiffio.h>
+#import "MatHelper.h"
+#import "TiffHelper.h"
+// ImageViewer-Bridging-Header.h
+#import "MatHelper.h"
 
 #endif /* Header_h */
