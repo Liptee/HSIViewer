@@ -60,6 +60,13 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
         return false;
     }
 
+    double *temp = (double *)malloc(planeSize * sizeof(double));
+    if (!temp) {
+        free(data);
+        TIFFClose(tif);
+        return false;
+    }
+
     for (uint16 s = 0; s < samplesPerPixel; ++s) {
         size_t base = (size_t)s * planeSize;
         size_t written = 0;
@@ -70,6 +77,7 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
             tsize_t bufSize = stripSize;
             uint8 *buf = (uint8 *)_TIFFmalloc(bufSize);
             if (!buf) {
+                free(temp);
                 free(data);
                 TIFFClose(tif);
                 return false;
@@ -78,6 +86,7 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
             tsize_t n = TIFFReadEncodedStrip(tif, stripIndex, buf, bufSize);
             if (n < 0) {
                 _TIFFfree(buf);
+                free(temp);
                 free(data);
                 TIFFClose(tif);
                 return false;
@@ -85,12 +94,22 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
 
             size_t bytes = (size_t)n;
             for (size_t i = 0; i < bytes && written < planeSize; ++i, ++written) {
-                data[base + written] = (double)buf[i] / 255.0;
+                temp[written] = (double)buf[i] / 255.0;
             }
 
             _TIFFfree(buf);
         }
+        
+        for (size_t row = 0; row < H; ++row) {
+            for (size_t col = 0; col < W; ++col) {
+                size_t srcIdx = row * W + col;
+                size_t dstIdx = col * H + row;
+                data[base + dstIdx] = temp[srcIdx];
+            }
+        }
     }
+    
+    free(temp);
 
     TIFFClose(tif);
 

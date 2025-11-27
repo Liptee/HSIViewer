@@ -1,5 +1,8 @@
 test_data
+test_npy_files
 mat_file_reader.py
+npy_file_reader.py
+debug_npy.py
 HSIView/Assets.xcassets/AppIcon.appiconset/HSIViewer.icns
 
 //

@@ -19,7 +19,7 @@ struct ContentView: View {
                             VStack(spacing: 8) {
                                 Text("Открой гиперспектральный куб")
                                     .font(.system(size: 14, weight: .medium))
-                                Text("Поддерживаются форматы: .mat, .tiff")
+                                Text("Поддерживаются форматы: .mat, .tiff, .npy")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
                                 Text("2D и 3D изображения")
@@ -267,7 +267,7 @@ struct ContentView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Открыть"
-        panel.allowedFileTypes = ["mat", "tif", "tiff"]
+        panel.allowedFileTypes = ["mat", "tif", "tiff", "npy"]
         
         let response = panel.runModal()
         guard response == .OK, let url = panel.url else { return }

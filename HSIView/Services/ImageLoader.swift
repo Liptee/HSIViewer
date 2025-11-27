@@ -8,7 +8,8 @@ protocol ImageLoader {
 class ImageLoaderFactory {
     private static let loaders: [ImageLoader.Type] = [
         MatImageLoader.self,
-        TiffImageLoader.self
+        TiffImageLoader.self,
+        NpyImageLoader.self
     ]
     
     static func loader(for url: URL) -> ImageLoader.Type? {
