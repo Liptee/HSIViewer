@@ -1,0 +1,77 @@
+import Foundation
+
+class NpyImageLoader: ImageLoader {
+    static let supportedExtensions = ["npy"]
+    
+    static func load(from url: URL) -> Result<HyperCube, ImageLoadError> {
+        guard let data = try? Data(contentsOf: url) else {
+            return .failure(.readError("Не удалось прочитать файл"))
+        }
+        
+        guard let header = parseNpyHeader(data: data) else {
+            return .failure(.corruptedData)
+        }
+        
+        guard header.shape.count == 3 else {
+            return .failure(.notA3DCube)
+        }
+        
+        guard let values = parseNpyData(data: data, header: header) else {
+            return .failure(.corruptedData)
+        }
+        
+        let d0 = header.shape[0]
+        let d1 = header.shape[1]
+        let d2 = header.shape[2]
+        
+        return .success(HyperCube(dims: (d0, d1, d2), data: values))
+    }
+    
+    private struct NpyHeader {
+        let dtype: String
+        let shape: [Int]
+        let fortranOrder: Bool
+        let headerLength: Int
+    }
+    
+    private static func parseNpyHeader(data: Data) -> NpyHeader? {
+        guard data.count >= 10 else { return nil }
+        
+        let magic = data[0..<6]
+        guard magic == Data([0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59]) else {
+            return nil
+        }
+        
+        let majorVersion = data[6]
+        let minorVersion = data[7]
+        
+        guard majorVersion == 1 || majorVersion == 2 else {
+            return nil
+        }
+        
+        var headerLen: Int
+        if majorVersion == 1 {
+            headerLen = Int(data[8]) | (Int(data[9]) << 8)
+        } else {
+            headerLen = Int(data[8]) | (Int(data[9]) << 8) |
+                       (Int(data[10]) << 16) | (Int(data[11]) << 24)
+        }
+        
+        let headerStart = majorVersion == 1 ? 10 : 12
+        let headerEnd = headerStart + headerLen
+        
+        guard data.count >= headerEnd else { return nil }
+        
+        let headerBytes = data[headerStart..<headerEnd]
+        guard let headerString = String(data: headerBytes, encoding: .utf8) else {
+            return nil
+        }
+        
+        return nil
+    }
+    
+    private static func parseNpyData(data: Data, header: NpyHeader) -> [Double]? {
+        return nil
+    }
+}
+
