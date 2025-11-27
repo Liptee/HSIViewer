@@ -29,10 +29,13 @@ final class AppState: ObservableObject {
         case .success(let hyperCube):
             cube = hyperCube
             
-            if url.pathExtension.lowercased() == "mat" {
+            let ext = url.pathExtension.lowercased()
+            if ext == "mat" {
                 layout = .auto
+            } else if ext == "tif" || ext == "tiff" {
+                layout = .hwc
             } else {
-                layout = .chw
+                layout = .auto
             }
             
             updateChannelCount()

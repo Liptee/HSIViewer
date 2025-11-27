@@ -40,29 +40,32 @@ if header.fortranOrder {
 
 ### 2. TIFF файлы
 
-**Проблема:**
-- TIFF хранит данные в **row-major** порядке (по строкам)
-- HyperCube ожидает **column-major** порядок (по столбцам)
-- Результат: изображение "повернуто" на 90° + неправильная ширина/высота
+**Проблема 1:** Неправильный порядок dims
+- Было: dims = (C, H, W) для CHW layout
+- TIFF это формат изображений → должен быть (H, W, C) для HWC layout
+
+**Проблема 2:** Неправильная индексация column-major
+- TIFF читает strips в row-major: pixel[h,w] для каждого канала
+- Нужно записать в column-major для MATLAB
 
 **Решение:**
-Добавлено транспонирование каждой плоскости после чтения:
+Изменен порядок dims и формула индексации:
 
 ```c
-// Для каждого канала:
+// Правильный порядок для TIFF (как изображение)
+outCube->dims[0] = H;  // 1526 (высота)
+outCube->dims[1] = W;  // 1536 (ширина)
+outCube->dims[2] = C;  // 160 (каналы)
 
-// 1. Читаем в temp (row-major из TIFF)
-temp[row * W + col] = pixel_value;
-
-// 2. Транспонируем в data (column-major для MATLAB)
-for (row = 0; row < H; row++) {
-    for (col = 0; col < W; col++) {
-        srcIdx = row * W + col;           // row-major
-        dstIdx = col * H + row;           // column-major
-        data[base + dstIdx] = temp[srcIdx];
-    }
-}
+// Прямая запись в column-major (H, W, C)
+// Для pixel[row, col, channel]:
+size_t row = written / W;
+size_t col = written % W;
+size_t colMajorIdx = row + H * (col + W * channel);
+data[colMajorIdx] = pixel_value;
 ```
+
+**Default layout:** CHW → **HWC** (правильно для изображений)
 
 **Визуально:**
 
