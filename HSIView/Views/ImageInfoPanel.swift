@@ -31,8 +31,16 @@ struct ImageInfoPanel: View {
                 VStack(alignment: .leading, spacing: 8) {
                     infoRow(title: "Формат", value: cube.sourceFormat)
                     infoRow(title: "Тип данных", value: cube.originalDataType.rawValue)
-                    infoRow(title: "Разрешение", value: cube.resolution)
-                    infoRow(title: "Каналы", value: "\(cube.channelCount(for: layout))")
+                    
+                    if cube.is2D {
+                        infoRow(title: "Тип", value: "2D изображение")
+                        if let dims2D = cube.dims2D {
+                            infoRow(title: "Размер", value: "\(dims2D.width) × \(dims2D.height)")
+                        }
+                    } else {
+                        infoRow(title: "Разрешение", value: cube.resolution)
+                        infoRow(title: "Каналы", value: "\(cube.channelCount(for: layout))")
+                    }
                     
                     Divider()
                         .padding(.vertical, 4)
@@ -75,4 +83,5 @@ struct ImageInfoPanel: View {
         }
     }
 }
+
 

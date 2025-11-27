@@ -7,6 +7,10 @@ class ImageRenderer {
         layout: CubeLayout,
         channelIndex: Int
     ) -> NSImage? {
+        if cube.is2D {
+            return render2DImage(cube: cube)
+        }
+        
         guard let axes = cube.axes(for: layout) else { return nil }
         
         let (d0, d1, d2) = cube.dims
@@ -43,6 +47,10 @@ class ImageRenderer {
         layout: CubeLayout,
         wavelengths: [Double]
     ) -> NSImage? {
+        if cube.is2D {
+            return render2DImage(cube: cube)
+        }
+        
         guard let axes = cube.axes(for: layout) else { return nil }
         
         let (d0, d1, d2) = cube.dims
@@ -192,5 +200,45 @@ class ImageRenderer {
         
         return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
     }
+    
+    private static func render2DImage(cube: HyperCube) -> NSImage? {
+        guard cube.is2D, let dims2D = cube.dims2D else { return nil }
+        
+        let width = dims2D.width
+        let height = dims2D.height
+        
+        var slice = [Double](repeating: 0.0, count: width * height)
+        
+        let (d0, d1, d2) = cube.dims
+        
+        if d0 == 1 {
+            for y in 0..<height {
+                for x in 0..<width {
+                    let lin = cube.linearIndex(i0: 0, i1: y, i2: x)
+                    slice[y * width + x] = cube.data[lin]
+                }
+            }
+        } else if d1 == 1 {
+            for y in 0..<height {
+                for x in 0..<width {
+                    let lin = cube.linearIndex(i0: y, i1: 0, i2: x)
+                    slice[y * width + x] = cube.data[lin]
+                }
+            }
+        } else {
+            for y in 0..<height {
+                for x in 0..<width {
+                    let lin = cube.linearIndex(i0: y, i1: x, i2: 0)
+                    slice[y * width + x] = cube.data[lin]
+                }
+            }
+        }
+        
+        let normalized = DataNormalizer.normalize(slice)
+        let pixels = DataNormalizer.toUInt8(normalized.normalized)
+        
+        return createGrayscaleImage(pixels: pixels, width: width, height: height)
+    }
 }
+
 

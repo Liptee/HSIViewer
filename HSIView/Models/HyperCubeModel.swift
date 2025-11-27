@@ -17,7 +17,24 @@ struct HyperCube {
     let originalDataType: DataType
     let sourceFormat: String
     
+    var is2D: Bool {
+        dims.0 == 1 || dims.1 == 1 || dims.2 == 1
+    }
+    
+    var dims2D: (width: Int, height: Int)? {
+        guard is2D else { return nil }
+        
+        if dims.0 == 1 {
+            return (dims.2, dims.1)
+        } else if dims.1 == 1 {
+            return (dims.2, dims.0)
+        } else {
+            return (dims.1, dims.0)
+        }
+    }
+    
     var totalChannelsAuto: Int {
+        if is2D { return 1 }
         let arr = [dims.0, dims.1, dims.2]
         return arr.min() ?? dims.0
     }
@@ -27,10 +44,15 @@ struct HyperCube {
     }
     
     var resolution: String {
-        "\(dims.0) × \(dims.1) × \(dims.2)"
+        if is2D, let dims2D = dims2D {
+            return "\(dims2D.width) × \(dims2D.height) (2D)"
+        }
+        return "\(dims.0) × \(dims.1) × \(dims.2)"
     }
     
     func channelCount(for layout: CubeLayout) -> Int {
+        if is2D { return 1 }
+        
         let (d0, d1, d2) = dims
         let dimsArr = [d0, d1, d2]
         

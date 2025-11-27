@@ -15,11 +15,18 @@ struct ContentView: View {
                         ZStack {
                             if let cube = state.cube {
                                 cubeView(cube: cube, geoSize: geo.size)
-                            } else {
-                                Text("Открой .mat или .tiff с гиперспектральным кубом")
-                                    .font(.system(size: 14))
+                        } else {
+                            VStack(spacing: 8) {
+                                Text("Открой гиперспектральный куб")
+                                    .font(.system(size: 14, weight: .medium))
+                                Text("Поддерживаются форматы: .mat, .tiff")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Text("2D и 3D изображения")
+                                    .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
+                        }
                         }
                         .frame(
                             width: geo.size.width,
@@ -144,38 +151,50 @@ struct ContentView: View {
     private func bottomControls(cube: HyperCube) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Layout:")
-                    .font(.system(size: 11))
-                Picker("", selection: $state.layout) {
-                    ForEach(CubeLayout.allCases) { layout in
-                        Text(layout.rawValue).tag(layout)
+                if cube.is2D {
+                    Text("Режим: 2D изображение")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Layout:")
+                        .font(.system(size: 11))
+                    Picker("", selection: $state.layout) {
+                        ForEach(CubeLayout.allCases) { layout in
+                            Text(layout.rawValue).tag(layout)
+                        }
                     }
-                }
-                .labelsHidden()
-                .frame(width: 200)
-                
-                Divider()
-                    .frame(height: 18)
-                
-                Text("Mode:")
-                    .font(.system(size: 11))
-                
-                Picker("", selection: $state.viewMode) {
-                    ForEach(ViewMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+                    .labelsHidden()
+                    .frame(width: 200)
+                    
+                    Divider()
+                        .frame(height: 18)
+                    
+                    Text("Mode:")
+                        .font(.system(size: 11))
+                    
+                    Picker("", selection: $state.viewMode) {
+                        ForEach(ViewMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
                     }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .frame(width: 160)
                 }
-                .pickerStyle(SegmentedPickerStyle())
-                .frame(width: 160)
                 
                 Spacer()
                 
-                Text("dims: \(cube.dims.0) × \(cube.dims.1) × \(cube.dims.2)")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                if cube.is2D, let dims2D = cube.dims2D {
+                    Text("размер: \(dims2D.width) × \(dims2D.height)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("dims: \(cube.dims.0) × \(cube.dims.1) × \(cube.dims.2)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
             }
             
-            if state.viewMode == .gray {
+            if !cube.is2D && state.viewMode == .gray {
                 HStack {
                     Text("Канал: \(Int(state.currentChannel)) / \(max(state.channelCount - 1, 0))")
                         .font(.system(size: 11))
@@ -186,46 +205,48 @@ struct ContentView: View {
                 }
             }
             
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Длины волн (нм):")
-                    .font(.system(size: 11))
-                
-                HStack(spacing: 8) {
-                    Button("Загрузить из txt…") {
-                        openWavelengthTXT()
-                    }
-                    
-                    Text("или диапазон:")
+            if !cube.is2D {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Длины волн (нм):")
                         .font(.system(size: 11))
                     
-                    HStack(spacing: 4) {
-                        Text("от")
+                    HStack(spacing: 8) {
+                        Button("Загрузить из txt…") {
+                            openWavelengthTXT()
+                        }
+                        
+                        Text("или диапазон:")
                             .font(.system(size: 11))
-                        TextField("start", text: $state.lambdaStart)
-                            .frame(width: 50)
-                        Text("до")
-                            .font(.system(size: 11))
-                        TextField("end", text: $state.lambdaEnd)
-                            .frame(width: 50)
-                        Text("шаг")
-                            .font(.system(size: 11))
-                        TextField("step", text: $state.lambdaStep)
-                            .frame(width: 50)
+                        
+                        HStack(spacing: 4) {
+                            Text("от")
+                                .font(.system(size: 11))
+                            TextField("start", text: $state.lambdaStart)
+                                .frame(width: 50)
+                            Text("до")
+                                .font(.system(size: 11))
+                            TextField("end", text: $state.lambdaEnd)
+                                .frame(width: 50)
+                            Text("шаг")
+                                .font(.system(size: 11))
+                            TextField("step", text: $state.lambdaStep)
+                                .frame(width: 50)
+                        }
+                        
+                        Button("Сгенерировать") {
+                            state.generateWavelengthsFromParams()
+                        }
                     }
                     
-                    Button("Сгенерировать") {
-                        state.generateWavelengthsFromParams()
+                    if let lambda = state.wavelengths {
+                        Text("λ count: \(lambda.count)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("λ пока не заданы")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
                     }
-                }
-                
-                if let lambda = state.wavelengths {
-                    Text("λ count: \(lambda.count)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("λ пока не заданы")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
                 }
             }
         }

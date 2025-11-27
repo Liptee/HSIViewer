@@ -195,3 +195,4 @@ static func renderFalseColor(...) -> NSImage? {
 
 См. ARCHITECTURE.md секцию "Planned Features"
 
+
