@@ -1,23 +1,18 @@
 import Foundation
-import AppKit
 
 class TiffExporter {
     static func export(cube: HyperCube, to url: URL, exportWavelengths: Bool) -> Result<Void, Error> {
+        if cube.originalDataType != .uint8 && cube.originalDataType != .uint16 {
+            return .failure(ExportError.unsupportedDataType)
+        }
+        
         do {
-            let dataType = cube.originalDataType
-            
-            if dataType != .uint8 && dataType != .uint16 {
-                return .failure(ExportError.unsupportedDataType)
-            }
-            
-            let result = exportTiffFile(cube: cube, url: url)
-            
-            if !result {
-                return .failure(ExportError.writeError("Не удалось записать TIFF файл"))
-            }
+            try exportAsPNG(cube: cube, to: url)
             
             if exportWavelengths, let wavelengths = cube.wavelengths, !wavelengths.isEmpty {
-                let wavelengthsURL = url.deletingPathExtension().appendingPathExtension("wavelengths.txt")
+                let baseName = url.deletingPathExtension().lastPathComponent
+                let directory = url.deletingLastPathComponent()
+                let wavelengthsURL = directory.appendingPathComponent("\(baseName)_wavelengths.txt")
                 let wavelengthsText = wavelengths.map { String($0) }.joined(separator: "\n")
                 try wavelengthsText.write(to: wavelengthsURL, atomically: true, encoding: .utf8)
             }
@@ -28,100 +23,95 @@ class TiffExporter {
         }
     }
     
-    private static func exportTiffFile(cube: HyperCube, url: URL) -> Bool {
-        let path = url.path
-        let cPath = (path as NSString).utf8String
-        
-        let tiff = TIFFOpen(cPath, "w")
-        guard let tiff = tiff else {
-            return false
-        }
-        defer { TIFFClose(tiff) }
-        
+    private static func exportAsPNG(cube: HyperCube, to url: URL) throws {
         let (height, width, channels) = cube.dims
         
+        var allImages: [Data] = []
+        
         for channel in 0..<channels {
-            TIFFSetField(tiff, UInt32(TIFFTAG_IMAGEWIDTH), UInt32(width))
-            TIFFSetField(tiff, UInt32(TIFFTAG_IMAGELENGTH), UInt32(height))
+            var channelData: [UInt8] = []
+            channelData.reserveCapacity(height * width)
             
-            switch cube.originalDataType {
-            case .uint8:
-                TIFFSetField(tiff, UInt32(TIFFTAG_BITSPERSAMPLE), UInt16(8))
-            case .uint16:
-                TIFFSetField(tiff, UInt32(TIFFTAG_BITSPERSAMPLE), UInt16(16))
-            default:
-                return false
+            for row in 0..<height {
+                for col in 0..<width {
+                    let idx: Int
+                    if cube.isFortranOrder {
+                        idx = row + height * (col + width * channel)
+                    } else {
+                        idx = channel + channels * (col + width * row)
+                    }
+                    
+                    let value: UInt8
+                    switch cube.storage {
+                    case .uint8(let arr):
+                        value = arr[idx]
+                    case .uint16(let arr):
+                        value = UInt8(clamping: arr[idx] / 256)
+                    default:
+                        value = 0
+                    }
+                    
+                    channelData.append(value)
+                }
             }
             
-            TIFFSetField(tiff, UInt32(TIFFTAG_SAMPLESPERPIXEL), UInt16(1))
-            TIFFSetField(tiff, UInt32(TIFFTAG_PLANARCONFIG), UInt16(PLANARCONFIG_SEPARATE))
-            TIFFSetField(tiff, UInt32(TIFFTAG_PHOTOMETRIC), UInt16(PHOTOMETRIC_MINISBLACK))
-            TIFFSetField(tiff, UInt32(TIFFTAG_COMPRESSION), UInt16(COMPRESSION_NONE))
-            TIFFSetField(tiff, UInt32(TIFFTAG_ORIENTATION), UInt16(ORIENTATION_TOPLEFT))
-            
-            let rowsPerStrip = height
-            TIFFSetField(tiff, UInt32(TIFFTAG_ROWSPERSTRIP), UInt32(rowsPerStrip))
-            
-            let success = writeChannel(tiff: tiff, cube: cube, channel: channel, height: height, width: width)
-            
-            if !success {
-                return false
+            guard let cgImage = createCGImage(data: channelData, width: width, height: height) else {
+                throw ExportError.invalidData
             }
             
-            if channel < channels - 1 {
-                TIFFWriteDirectory(tiff)
+            guard let pngData = cgImageToPNG(cgImage) else {
+                throw ExportError.writeError("Не удалось создать PNG")
             }
+            
+            allImages.append(pngData)
         }
         
-        return true
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let directory = url.deletingLastPathComponent()
+        
+        for (index, imageData) in allImages.enumerated() {
+            let channelName = String(format: "%@_channel_%03d.png", baseName, index)
+            let channelURL = directory.appendingPathComponent(channelName)
+            try imageData.write(to: channelURL)
+        }
     }
     
-    private static func writeChannel(tiff: OpaquePointer, cube: HyperCube, channel: Int, height: Int, width: Int) -> Bool {
-        let bytesPerPixel: Int
+    private static func createCGImage(data: [UInt8], width: Int, height: Int) -> CGImage? {
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
         
-        switch cube.originalDataType {
-        case .uint8:
-            bytesPerPixel = 1
-        case .uint16:
-            bytesPerPixel = 2
-        default:
-            return false
-        }
-        
-        let scanlineSize = width * bytesPerPixel
-        
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: scanlineSize)
-        defer { buffer.deallocate() }
-        
-        for row in 0..<height {
-            for col in 0..<width {
-                let idx: Int
-                if cube.isFortranOrder {
-                    idx = row + height * (col + width * channel)
-                } else {
-                    idx = channel + cube.dims.2 * (col + width * row)
-                }
-                
-                switch cube.storage {
-                case .uint8(let arr):
-                    buffer[col] = arr[idx]
-                    
-                case .uint16(let arr):
-                    let value = arr[idx]
-                    let ptr = buffer.advanced(by: col * 2).withMemoryRebound(to: UInt16.self, capacity: 1) { $0 }
-                    ptr.pointee = value
-                    
-                default:
-                    return false
-                }
-            }
+        return data.withUnsafeBytes { ptr in
+            guard let baseAddress = ptr.baseAddress else { return nil }
             
-            if TIFFWriteScanline(tiff, buffer, UInt32(row), 0) < 0 {
-                return false
-            }
+            guard let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo.rawValue
+            ) else { return nil }
+            
+            context.data?.copyMemory(from: baseAddress, byteCount: data.count)
+            
+            return context.makeImage()
+        }
+    }
+    
+    private static func cgImageToPNG(_ cgImage: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else {
+            return nil
         }
         
-        return true
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        
+        return data as Data
     }
 }
 

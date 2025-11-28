@@ -4,7 +4,7 @@ import AppKit
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
     case mat = "MATLAB (.mat)"
-    case tiff = "TIFF (.tiff)"
+    case tiff = "PNG Channels"
     
     var id: String { rawValue }
     
@@ -12,7 +12,7 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         switch self {
         case .npy: return "npy"
         case .mat: return "mat"
-        case .tiff: return "tiff"
+        case .tiff: return "png"
         }
     }
 }
@@ -92,7 +92,7 @@ struct ExportView: View {
         case .tiff:
             infoBox(
                 icon: "photo.stack",
-                text: "TIFF формат. Многостраничный файл (каналы как страницы). Поддержка только UInt8/UInt16."
+                text: "Экспорт каналов как отдельные PNG изображения. Поддержка только UInt8/UInt16."
             )
         }
     }
@@ -131,7 +131,7 @@ struct ExportView: View {
             case .tiff:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан дополнительный файл '_wavelengths.txt' с длинами волн."
+                    text: "Будет создан файл 'hypercube_wavelengths.txt' с длинами волн."
                 )
             }
         } else {
@@ -237,10 +237,18 @@ struct ExportView: View {
         guard let cube = state.cube else { return }
         
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "hypercube.\(selectedFormat.fileExtension)"
-        panel.allowedFileTypes = [selectedFormat.fileExtension]
+        
+        if selectedFormat == .tiff {
+            panel.nameFieldStringValue = "hypercube"
+            panel.allowedFileTypes = nil
+            panel.message = "Выберите базовое имя файла (будет создано много PNG)"
+        } else {
+            panel.nameFieldStringValue = "hypercube.\(selectedFormat.fileExtension)"
+            panel.allowedFileTypes = [selectedFormat.fileExtension]
+            panel.message = "Выберите путь для сохранения"
+        }
+        
         panel.canCreateDirectories = true
-        panel.message = "Выберите путь для сохранения"
         
         guard panel.runModal() == .OK, let saveURL = panel.url else {
             return
