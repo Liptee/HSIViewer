@@ -75,6 +75,11 @@
 
 ### Исправлено
 
+- **Экспорт NPY: исправлен крэш при записи magic bytes**
+  - Проблема: nil unwrapping на строке 59 при magicString.data(using: .ascii)!
+  - Причина: Unicode символ \\u{93} не является валидным ASCII
+  - Решение: прямая запись байтов (data.append(0x93) + \"NUMPY\".utf8)
+  - Теперь NPY файлы экспортируются корректно
 - **Экспорт: добавлено разрешение read-write для сохранения файлов**
   - Проблема: крэш \"Unable to display save panel: missing User Selected File Read/Write entitlement\"
   - Причина: в entitlements было только read-only разрешение
