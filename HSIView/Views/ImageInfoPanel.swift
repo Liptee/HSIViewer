@@ -54,9 +54,19 @@ struct ImageInfoPanel: View {
                     Divider()
                         .padding(.vertical, 4)
                     
-                    let sizeInBytes = cube.totalElements * MemoryLayout<Double>.size
+                    // Реальный размер в памяти с учетом типа данных
+                    let sizeInBytes = cube.storage.sizeInBytes
                     let sizeInMB = Double(sizeInBytes) / (1024 * 1024)
-                    infoRow(title: "Размер в памяти", value: String(format: "%.1f МБ", sizeInMB))
+                    let sizeInGB = Double(sizeInBytes) / (1024 * 1024 * 1024)
+                    
+                    let sizeStr: String
+                    if sizeInGB >= 1.0 {
+                        sizeStr = String(format: "%.2f ГБ", sizeInGB)
+                    } else {
+                        sizeStr = String(format: "%.1f МБ", sizeInMB)
+                    }
+                    
+                    infoRow(title: "Размер в памяти", value: sizeStr)
                 }
                 .padding(8)
                 .transition(.opacity.combined(with: .move(edge: .top)))

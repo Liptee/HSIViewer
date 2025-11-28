@@ -45,6 +45,24 @@ enum DataStorage {
         }
     }
     
+    /// Размер одного элемента в байтах
+    var bytesPerElement: Int {
+        switch self {
+        case .float64: return 8
+        case .float32: return 4
+        case .int8: return 1
+        case .int16: return 2
+        case .int32: return 4
+        case .uint8: return 1
+        case .uint16: return 2
+        }
+    }
+    
+    /// Общий размер в памяти (в байтах)
+    var sizeInBytes: Int {
+        return count * bytesPerElement
+    }
+    
     /// Получить значение как Double (для совместимости)
     func getValue(at index: Int) -> Double {
         switch self {
