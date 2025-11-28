@@ -4,6 +4,7 @@ struct ImageInfoPanel: View {
     let cube: HyperCube
     let layout: CubeLayout
     @State private var isExpanded: Bool = true
+    @State private var cachedStats: HyperCube.Statistics?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -45,16 +46,16 @@ struct ImageInfoPanel: View {
                     Divider()
                         .padding(.vertical, 4)
                     
-                    let stats = cube.statistics()
-                    infoRow(title: "Мин. значение", value: String(format: "%.4g", stats.min))
-                    infoRow(title: "Макс. значение", value: String(format: "%.4g", stats.max))
-                    infoRow(title: "Среднее", value: String(format: "%.4g", stats.mean))
-                    infoRow(title: "Станд. откл.", value: String(format: "%.4g", stats.stdDev))
+                    if let stats = cachedStats {
+                        infoRow(title: "Мин. значение", value: String(format: "%.4g", stats.min))
+                        infoRow(title: "Макс. значение", value: String(format: "%.4g", stats.max))
+                        infoRow(title: "Среднее", value: String(format: "%.4g", stats.mean))
+                        infoRow(title: "Станд. откл.", value: String(format: "%.4g", stats.stdDev))
+                    }
                     
                     Divider()
                         .padding(.vertical, 4)
                     
-                    // Реальный размер в памяти с учетом типа данных
                     infoRow(title: "Размер в памяти", value: formatMemorySize(bytes: cube.storage.sizeInBytes))
                 }
                 .padding(8)
@@ -67,6 +68,11 @@ struct ImageInfoPanel: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
+        .onAppear {
+            if cachedStats == nil {
+                cachedStats = cube.statistics()
+            }
+        }
     }
     
     private func infoRow(title: String, value: String) -> some View {

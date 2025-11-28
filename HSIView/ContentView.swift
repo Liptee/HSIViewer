@@ -61,13 +61,6 @@ struct ContentView: View {
     
     private var topBar: some View {
         HStack {
-            Button("Открыть файл…") {
-                openFile()
-            }
-            
-            Divider()
-                .frame(height: 20)
-            
             if let url = state.cubeURL {
                 Text(url.lastPathComponent)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -259,20 +252,6 @@ struct ContentView: View {
         .onChange(of: state.cube?.dims.0) { _ in
             state.updateChannelCount()
         }
-    }
-    
-    private func openFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Открыть"
-        panel.allowedFileTypes = ["mat", "tif", "tiff", "npy"]
-        
-        let response = panel.runModal()
-        guard response == .OK, let url = panel.url else { return }
-        
-        state.open(url: url)
     }
     
     private func openWavelengthTXT() {

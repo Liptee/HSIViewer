@@ -35,5 +35,27 @@ struct HSIViewApp: App {
                     appState.open(url: url)
                 }
         }
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Открыть...") {
+                    openFile()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+        }
+    }
+    
+    private func openFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Открыть"
+        panel.allowedFileTypes = ["mat", "tif", "tiff", "npy"]
+        
+        let response = panel.runModal()
+        guard response == .OK, let url = panel.url else { return }
+        
+        appState.open(url: url)
     }
 }
