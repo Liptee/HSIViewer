@@ -3,7 +3,6 @@ import AppKit
 
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
-    case mat = "MATLAB (.mat)"
     case tiff = "PNG Channels"
     
     var id: String { rawValue }
@@ -11,7 +10,6 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     var fileExtension: String {
         switch self {
         case .npy: return "npy"
-        case .mat: return "mat"
         case .tiff: return "png"
         }
     }
@@ -84,11 +82,6 @@ struct ExportView: View {
                 icon: "doc.badge.gearshape",
                 text: "NumPy формат. Сохраняет тип данных и порядок (C/Fortran). Совместим с Python/NumPy."
             )
-        case .mat:
-            infoBox(
-                icon: "function",
-                text: "MATLAB формат. Переменная 'cube' (HxWxC). Совместим с MATLAB R2006b+."
-            )
         case .tiff:
             infoBox(
                 icon: "photo.stack",
@@ -122,11 +115,6 @@ struct ExportView: View {
                 infoBox(
                     icon: "doc.text",
                     text: "Будет создан дополнительный файл '_wavelengths.txt' с длинами волн (по одному значению на строку)."
-                )
-            case .mat:
-                infoBox(
-                    icon: "function",
-                    text: "Длины волн будут сохранены в переменную 'wavelengths' внутри MAT файла."
                 )
             case .tiff:
                 infoBox(
@@ -263,8 +251,6 @@ struct ExportView: View {
             switch selectedFormat {
             case .npy:
                 result = NpyExporter.export(cube: cube, to: saveURL, exportWavelengths: exportWavelengths)
-            case .mat:
-                result = MatExporter.export(cube: cube, to: saveURL, exportWavelengths: exportWavelengths)
             case .tiff:
                 result = TiffExporter.export(cube: cube, to: saveURL, exportWavelengths: exportWavelengths)
             }

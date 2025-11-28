@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 
 class TiffExporter {
     static func export(cube: HyperCube, to url: URL, exportWavelengths: Bool) -> Result<Void, Error> {
