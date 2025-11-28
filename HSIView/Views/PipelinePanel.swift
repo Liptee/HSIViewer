@@ -5,6 +5,7 @@ struct PipelinePanel: View {
     @State private var selectedOperation: UUID?
     @State private var showingAddMenu: Bool = false
     @State private var editingOperation: PipelineOperation?
+    @State private var draggingItem: PipelineOperation?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,6 +30,9 @@ struct PipelinePanel: View {
         .sheet(item: $editingOperation) { operation in
             OperationEditorView(operation: $editingOperation)
                 .environmentObject(state)
+        }
+        .onChange(of: state.pipelineOperations.map { $0.id }) { _ in
+            state.applyPipeline()
         }
     }
     
@@ -67,16 +71,28 @@ struct PipelinePanel: View {
     private var operationsList: some View {
         ScrollView {
             VStack(spacing: 8) {
-                ForEach(Array(state.pipelineOperations.enumerated()), id: \.element.id) { index, operation in
+                ForEach(state.pipelineOperations) { operation in
                     OperationRow(
                         operation: operation,
-                        index: index,
                         isSelected: selectedOperation == operation.id,
+                        isDragging: draggingItem?.id == operation.id,
                         onSelect: { selectedOperation = operation.id },
                         onEdit: { editingOperation = operation },
-                        onDelete: { state.removeOperation(at: index) },
-                        onMove: { from, to in state.moveOperation(from: from, to: to) }
+                        onDelete: {
+                            if let index = state.pipelineOperations.firstIndex(where: { $0.id == operation.id }) {
+                                state.removeOperation(at: index)
+                            }
+                        }
                     )
+                    .onDrag {
+                        draggingItem = operation
+                        return NSItemProvider(object: operation.id.uuidString as NSString)
+                    }
+                    .onDrop(of: [.text], delegate: OperationDropDelegate(
+                        item: operation,
+                        operations: $state.pipelineOperations,
+                        draggingItem: $draggingItem
+                    ))
                 }
             }
             .padding(8)
@@ -166,14 +182,12 @@ struct PipelinePanel: View {
 
 struct OperationRow: View {
     let operation: PipelineOperation
-    let index: Int
     let isSelected: Bool
+    let isDragging: Bool
     let onSelect: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
-    let onMove: (Int, Int) -> Void
     
-    @State private var isDragging: Bool = false
     @State private var isHovered: Bool = false
     
     var body: some View {
@@ -242,31 +256,33 @@ struct OperationRow: View {
             isHovered = hovering
         }
         .opacity(isDragging ? 0.5 : 1.0)
-        .onDrag {
-            isDragging = true
-            return NSItemProvider(object: operation.id.uuidString as NSString)
-        }
-        .onDrop(of: [.text], delegate: DropDelegate(
-            operation: operation,
-            index: index,
-            isDragging: $isDragging,
-            onMove: onMove
-        ))
     }
 }
 
-struct DropDelegate: SwiftUI.DropDelegate {
-    let operation: PipelineOperation
-    let index: Int
-    @Binding var isDragging: Bool
-    let onMove: (Int, Int) -> Void
+struct OperationDropDelegate: SwiftUI.DropDelegate {
+    let item: PipelineOperation
+    @Binding var operations: [PipelineOperation]
+    @Binding var draggingItem: PipelineOperation?
     
     func performDrop(info: DropInfo) -> Bool {
-        isDragging = false
+        draggingItem = nil
         return true
     }
     
     func dropEntered(info: DropInfo) {
+        guard let draggingItem = draggingItem else { return }
+        guard draggingItem.id != item.id else { return }
+        
+        guard let fromIndex = operations.firstIndex(where: { $0.id == draggingItem.id }),
+              let toIndex = operations.firstIndex(where: { $0.id == item.id }) else {
+            return
+        }
+        
+        withAnimation(.default) {
+            let fromItem = operations[fromIndex]
+            operations.remove(at: fromIndex)
+            operations.insert(fromItem, at: toIndex)
+        }
     }
     
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -274,7 +290,10 @@ struct DropDelegate: SwiftUI.DropDelegate {
     }
     
     func validateDrop(info: DropInfo) -> Bool {
-        return info.hasItemsConforming(to: [.text])
+        return draggingItem != nil
+    }
+    
+    func dropExited(info: DropInfo) {
     }
 }
 

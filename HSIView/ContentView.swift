@@ -89,12 +89,6 @@ struct ContentView: View {
                             VStack(spacing: 12) {
                                 ImageInfoPanel(cube: cube, layout: state.layout)
                                     .id(cube.id)
-                                
-                                NormalizationPanel()
-                                    .environmentObject(state)
-                                
-                                DataTypePanel()
-                                    .environmentObject(state)
                             }
                             .padding(12)
                         }
