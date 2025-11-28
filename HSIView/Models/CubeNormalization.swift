@@ -119,8 +119,10 @@ class CubeNormalizer {
         
         allValues.sort()
         
-        let lowerIdx = Int(Double(allValues.count) * lower / 100.0)
-        let upperIdx = Int(Double(allValues.count) * upper / 100.0)
+        guard allValues.count > 0 else { return cube }
+        
+        let lowerIdx = max(0, min(allValues.count - 1, Int(Double(allValues.count - 1) * lower / 100.0)))
+        let upperIdx = max(0, min(allValues.count - 1, Int(Double(allValues.count - 1) * upper / 100.0)))
         
         let lowerValue = allValues[lowerIdx]
         let upperValue = allValues[upperIdx]
