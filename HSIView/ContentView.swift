@@ -12,6 +12,14 @@ struct ContentView: View {
             topBar
             
             HStack(spacing: 0) {
+                if state.cube != nil {
+                    PipelinePanel()
+                        .environmentObject(state)
+                        .padding(12)
+                    
+                    Divider()
+                }
+                
                 GeometryReader { geo in
                     ScrollView([.horizontal, .vertical]) {
                         ZStack {

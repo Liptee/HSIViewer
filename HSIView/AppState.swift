@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     
     @Published var autoScaleOnTypeConversion: Bool = true
     
+    @Published var pipelineOperations: [PipelineOperation] = []
+    
     private var originalCube: HyperCube?
     
     var displayCube: HyperCube? {
@@ -38,6 +40,7 @@ final class AppState: ObservableObject {
         currentChannel = 0
         channelCount = 0
         resetZoom()
+        pipelineOperations.removeAll()
         
         let result = ImageLoaderFactory.load(from: url)
         
@@ -172,5 +175,51 @@ final class AppState: ObservableObject {
                 originalCube = converted
             }
         }
+    }
+    
+    func addOperation(type: PipelineOperationType) {
+        let operation = PipelineOperation(type: type)
+        pipelineOperations.append(operation)
+        applyPipeline()
+    }
+    
+    func removeOperation(at index: Int) {
+        guard index >= 0 && index < pipelineOperations.count else { return }
+        pipelineOperations.remove(at: index)
+        applyPipeline()
+    }
+    
+    func moveOperation(from source: Int, to destination: Int) {
+        guard source >= 0 && source < pipelineOperations.count else { return }
+        guard destination >= 0 && destination < pipelineOperations.count else { return }
+        guard source != destination else { return }
+        
+        let operation = pipelineOperations[source]
+        pipelineOperations.remove(at: source)
+        pipelineOperations.insert(operation, at: destination)
+        applyPipeline()
+    }
+    
+    func clearPipeline() {
+        pipelineOperations.removeAll()
+        applyPipeline()
+    }
+    
+    func applyPipeline() {
+        guard let original = originalCube else { return }
+        
+        if pipelineOperations.isEmpty {
+            cube = original
+            return
+        }
+        
+        var result: HyperCube? = original
+        
+        for operation in pipelineOperations {
+            guard let current = result else { break }
+            result = operation.apply(to: current)
+        }
+        
+        cube = result ?? original
     }
 }
