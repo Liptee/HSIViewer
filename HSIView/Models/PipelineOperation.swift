@@ -30,6 +30,7 @@ struct PipelineOperation: Identifiable, Equatable {
     let type: PipelineOperationType
     var normalizationType: CubeNormalizationType?
     var normalizationParams: CubeNormalizationParameters?
+    var preserveDataType: Bool?
     var targetDataType: DataType?
     var autoScale: Bool?
     
@@ -41,6 +42,7 @@ struct PipelineOperation: Identifiable, Equatable {
         case .normalization:
             self.normalizationType = .none
             self.normalizationParams = .default
+            self.preserveDataType = true
         case .dataTypeConversion:
             self.targetDataType = .float64
             self.autoScale = true
@@ -102,7 +104,8 @@ struct PipelineOperation: Identifiable, Equatable {
         case .normalization:
             guard let normType = normalizationType,
                   let params = normalizationParams else { return cube }
-            return CubeNormalizer.apply(normType, to: cube, parameters: params)
+            let preserve = preserveDataType ?? true
+            return CubeNormalizer.apply(normType, to: cube, parameters: params, preserveDataType: preserve)
             
         case .dataTypeConversion:
             guard let targetType = targetDataType,

@@ -53,7 +53,8 @@ class CubeNormalizer {
     static func apply(
         _ type: CubeNormalizationType,
         to cube: HyperCube,
-        parameters: CubeNormalizationParameters
+        parameters: CubeNormalizationParameters,
+        preserveDataType: Bool = false
     ) -> HyperCube? {
         let totalElements = cube.totalElements
         guard totalElements > 0 else { return nil }
@@ -63,10 +64,10 @@ class CubeNormalizer {
             return cube
             
         case .minMax:
-            return applyMinMax(cube, targetMin: 0.0, targetMax: 1.0)
+            return applyMinMax(cube, targetMin: 0.0, targetMax: 1.0, preserveDataType: preserveDataType)
             
         case .minMaxCustom:
-            return applyMinMax(cube, targetMin: parameters.minValue, targetMax: parameters.maxValue)
+            return applyMinMax(cube, targetMin: parameters.minValue, targetMax: parameters.maxValue, preserveDataType: preserveDataType)
             
         case .percentile:
             return applyPercentile(cube, lower: parameters.lowerPercentile, upper: parameters.upperPercentile)
@@ -82,7 +83,7 @@ class CubeNormalizer {
         }
     }
     
-    private static func applyMinMax(_ cube: HyperCube, targetMin: Double, targetMax: Double) -> HyperCube? {
+    private static func applyMinMax(_ cube: HyperCube, targetMin: Double, targetMax: Double, preserveDataType: Bool = false) -> HyperCube? {
         let stats = cube.statistics()
         let dataMin = stats.min
         let dataMax = stats.max
@@ -98,7 +99,8 @@ class CubeNormalizer {
             return targetMin + normalized * targetRange
         }
         
-        guard let storage = wrapInStorage(normalizedData) else { return nil }
+        let preserveType = preserveDataType ? shouldPreserveType(cube: cube, normalizedData: normalizedData, targetMin: targetMin, targetMax: targetMax) : nil
+        guard let storage = wrapInStorage(normalizedData, preserveType: preserveType) else { return nil }
         
         return HyperCube(
             dims: cube.dims,
@@ -205,8 +207,71 @@ class CubeNormalizer {
         )
     }
     
-    private static func wrapInStorage(_ data: [Double]) -> DataStorage? {
-        return .float64(data)
+    private static func shouldPreserveType(cube: HyperCube, normalizedData: [Double], targetMin: Double, targetMax: Double) -> DataType? {
+        let originalType = cube.originalDataType
+        
+        switch originalType {
+        case .uint8:
+            if targetMin >= 0 && targetMax <= 255 {
+                return .uint8
+            }
+        case .uint16:
+            if targetMin >= 0 && targetMax <= 65535 {
+                return .uint16
+            }
+        case .int8:
+            if targetMin >= -128 && targetMax <= 127 {
+                return .int8
+            }
+        case .int16:
+            if targetMin >= -32768 && targetMax <= 32767 {
+                return .int16
+            }
+        case .int32:
+            if targetMin >= Double(Int32.min) && targetMax <= Double(Int32.max) {
+                return .int32
+            }
+        case .float32:
+            return .float32
+        case .float64:
+            return .float64
+        case .unknown:
+            return nil
+        }
+        
+        return nil
+    }
+    
+    private static func wrapInStorage(_ data: [Double], preserveType: DataType? = nil) -> DataStorage? {
+        guard let targetType = preserveType else {
+            return .float64(data)
+        }
+        
+        switch targetType {
+        case .float64:
+            return .float64(data)
+            
+        case .float32:
+            return .float32(data.map { Float($0) })
+            
+        case .int8:
+            return .int8(data.map { Int8(clamping: Int($0.rounded())) })
+            
+        case .int16:
+            return .int16(data.map { Int16(clamping: Int($0.rounded())) })
+            
+        case .int32:
+            return .int32(data.map { Int32(clamping: Int($0.rounded())) })
+            
+        case .uint8:
+            return .uint8(data.map { UInt8(clamping: Int($0.rounded())) })
+            
+        case .uint16:
+            return .uint16(data.map { UInt16(clamping: Int($0.rounded())) })
+            
+        case .unknown:
+            return .float64(data)
+        }
     }
 }
 

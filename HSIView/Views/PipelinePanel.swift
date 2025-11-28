@@ -339,6 +339,7 @@ struct OperationEditorView: View {
     
     @State private var localNormalizationType: CubeNormalizationType = .none
     @State private var localNormalizationParams: CubeNormalizationParameters = .default
+    @State private var localPreserveDataType: Bool = true
     @State private var localTargetDataType: DataType = .float64
     @State private var localAutoScale: Bool = true
     
@@ -374,6 +375,7 @@ struct OperationEditorView: View {
         case .normalization:
             localNormalizationType = op.normalizationType ?? .none
             localNormalizationParams = op.normalizationParams ?? .default
+            localPreserveDataType = op.preserveDataType ?? true
         case .dataTypeConversion:
             localTargetDataType = op.targetDataType ?? .float64
             localAutoScale = op.autoScale ?? true
@@ -390,6 +392,7 @@ struct OperationEditorView: View {
         case .normalization:
             state.pipelineOperations[index].normalizationType = localNormalizationType
             state.pipelineOperations[index].normalizationParams = localNormalizationParams
+            state.pipelineOperations[index].preserveDataType = localPreserveDataType
         case .dataTypeConversion:
             state.pipelineOperations[index].targetDataType = localTargetDataType
             state.pipelineOperations[index].autoScale = localAutoScale
@@ -468,6 +471,20 @@ struct OperationEditorView: View {
                     }
                 }
             }
+            
+            Divider()
+            
+            Toggle("Сохранить тип данных", isOn: $localPreserveDataType)
+                .font(.system(size: 11))
+            
+            Text(localPreserveDataType 
+                 ? "При нормализации тип данных будет сохранён, если диапазон позволяет (например, UInt8 для [0, 255])"
+                 : "Результат нормализации всегда будет Float64")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            Divider()
             
             Text(localNormalizationType.description)
                 .font(.system(size: 10))
