@@ -17,24 +17,23 @@ class EnviImageLoader: ImageLoader {
         return nil
     }
     
-    private static func requestAccessToFile(_ fileURL: URL, description: String) -> URL? {
-        guard !FileManager.default.isReadableFile(atPath: fileURL.path) else {
-            return fileURL
-        }
+    private static func requestAccessToDirectory(for fileURL: URL) -> Bool {
+        let directory = fileURL.deletingLastPathComponent()
         
-        var result: URL? = nil
+        var isGranted = false
         
         let showPanel = {
             let panel = NSOpenPanel()
-            panel.message = "ENVI формат требует доступ к парному файлу"
+            panel.message = "ENVI формат требует доступ к директории с парными файлами"
             panel.prompt = "Разрешить доступ"
             panel.allowsMultipleSelection = false
-            panel.canChooseDirectories = false
-            panel.directoryURL = fileURL.deletingLastPathComponent()
-            panel.nameFieldStringValue = fileURL.lastPathComponent
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.directoryURL = directory
             
             if panel.runModal() == .OK, let selectedURL = panel.url {
-                result = selectedURL
+                _ = selectedURL.startAccessingSecurityScopedResource()
+                isGranted = true
             }
         }
         
@@ -44,39 +43,27 @@ class EnviImageLoader: ImageLoader {
             DispatchQueue.main.sync(execute: showPanel)
         }
         
-        return result
+        return isGranted
     }
     
     static func load(from url: URL) -> Result<HyperCube, ImageLoadError> {
         let fileExt = url.pathExtension.lowercased()
         let basePath = url.deletingPathExtension()
         
-        var hdrURL: URL
-        var datURL: URL
+        let hdrURL: URL
+        let datURL: URL
         
         if fileExt == "hdr" {
             hdrURL = url
-            let possibleDataURL = findDataFile(basePath: basePath) ?? basePath.appendingPathExtension("dat")
-            
-            if !FileManager.default.isReadableFile(atPath: possibleDataURL.path) {
-                guard let accessibleURL = requestAccessToFile(possibleDataURL, description: "бинарный файл данных") else {
-                    return .failure(.readError("Нет доступа к бинарному файлу: \(possibleDataURL.lastPathComponent)"))
-                }
-                datURL = accessibleURL
-            } else {
-                datURL = possibleDataURL
-            }
+            datURL = findDataFile(basePath: basePath) ?? basePath.appendingPathExtension("dat")
         } else {
             datURL = url
-            let possibleHdrURL = basePath.appendingPathExtension("hdr")
-            
-            if !FileManager.default.isReadableFile(atPath: possibleHdrURL.path) {
-                guard let accessibleURL = requestAccessToFile(possibleHdrURL, description: "заголовочный файл") else {
-                    return .failure(.readError("Нет доступа к .hdr файлу: \(possibleHdrURL.lastPathComponent)"))
-                }
-                hdrURL = accessibleURL
-            } else {
-                hdrURL = possibleHdrURL
+            hdrURL = basePath.appendingPathExtension("hdr")
+        }
+        
+        if !FileManager.default.isReadableFile(atPath: hdrURL.path) || !FileManager.default.isReadableFile(atPath: datURL.path) {
+            guard requestAccessToDirectory(for: url) else {
+                return .failure(.readError("Нет доступа к директории с ENVI файлами"))
             }
         }
         
