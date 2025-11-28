@@ -16,12 +16,16 @@ final class AppState: ObservableObject {
     @Published var lambdaEnd: String = ""
     @Published var lambdaStep: String = "1"
     
+    @Published var zoomScale: CGFloat = 1.0
+    @Published var imageOffset: CGSize = .zero
+    
     func open(url: URL) {
         cubeURL = url
         loadError = nil
         cube = nil
         currentChannel = 0
         channelCount = 0
+        resetZoom()
         
         let result = ImageLoaderFactory.load(from: url)
         
@@ -109,5 +113,15 @@ final class AppState: ObservableObject {
         
         wavelengths = WavelengthManager.generate(start: start, channels: channels, step: step)
         loadError = nil
+    }
+    
+    func resetZoom() {
+        zoomScale = 1.0
+        imageOffset = .zero
+    }
+    
+    func moveImage(by delta: CGSize) {
+        imageOffset.width += delta.width
+        imageOffset.height += delta.height
     }
 }

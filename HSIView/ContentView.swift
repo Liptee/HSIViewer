@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var state: AppState
+    @State private var tempZoomScale: CGFloat = 1.0
+    @FocusState private var isImageFocused: Bool
     
     var body: some View {
         VStack(spacing: 0) {
@@ -15,6 +17,25 @@ struct ContentView: View {
                         ZStack {
                             if let cube = state.cube {
                                 cubeView(cube: cube, geoSize: geo.size)
+                                    .scaleEffect(state.zoomScale)
+                                    .offset(state.imageOffset)
+                                    .gesture(
+                                        MagnificationGesture()
+                                            .onChanged { value in
+                                                tempZoomScale = value
+                                            }
+                                            .onEnded { value in
+                                                state.zoomScale *= value
+                                                state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
+                                                tempZoomScale = 1.0
+                                            }
+                                    )
+                                    .scaleEffect(tempZoomScale)
+                                    .focusable()
+                                    .focused($isImageFocused)
+                                    .onAppear {
+                                        isImageFocused = true
+                                    }
                         } else {
                             VStack(spacing: 8) {
                                 Text("Открой гиперспектральный куб")
@@ -33,6 +54,22 @@ struct ContentView: View {
                             height: geo.size.height,
                             alignment: .center
                         )
+                    }
+                    .onKeyPress(.leftArrow) {
+                        state.moveImage(by: CGSize(width: 20, height: 0))
+                        return .handled
+                    }
+                    .onKeyPress(.rightArrow) {
+                        state.moveImage(by: CGSize(width: -20, height: 0))
+                        return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        state.moveImage(by: CGSize(width: 0, height: 20))
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        state.moveImage(by: CGSize(width: 0, height: -20))
+                        return .handled
                     }
                 }
                 
@@ -176,14 +213,36 @@ struct ContentView: View {
                 
                 Spacer()
                 
-                if cube.is2D, let dims2D = cube.dims2D {
-                    Text("размер: \(dims2D.width) × \(dims2D.height)")
-                        .font(.system(size: 11))
+                HStack(spacing: 12) {
+                    Button(action: {
+                        state.resetZoom()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 10))
+                            Text("Центрировать")
+                                .font(.system(size: 11))
+                        }
+                    }
+                    .disabled(state.zoomScale == 1.0 && state.imageOffset == .zero)
+                    
+                    Text("Zoom: \(String(format: "%.1f", state.zoomScale))x")
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
-                } else {
-                    Text("dims: \(cube.dims.0) × \(cube.dims.1) × \(cube.dims.2)")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                    
+                    if cube.is2D, let dims2D = cube.dims2D {
+                        Divider()
+                            .frame(height: 18)
+                        Text("размер: \(dims2D.width) × \(dims2D.height)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Divider()
+                            .frame(height: 18)
+                        Text("dims: \(cube.dims.0) × \(cube.dims.1) × \(cube.dims.2)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
             
