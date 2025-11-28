@@ -22,6 +22,8 @@ class EnviImageLoader: ImageLoader {
             return fileURL
         }
         
+        var result: URL? = nil
+        
         DispatchQueue.main.sync {
             let panel = NSOpenPanel()
             panel.message = "ENVI формат требует доступ к парному файлу"
@@ -32,10 +34,11 @@ class EnviImageLoader: ImageLoader {
             panel.nameFieldStringValue = fileURL.lastPathComponent
             
             if panel.runModal() == .OK, let selectedURL = panel.url {
-                return selectedURL
+                result = selectedURL
             }
-            return nil
         }
+        
+        return result
     }
     
     static func load(from url: URL) -> Result<HyperCube, ImageLoadError> {
