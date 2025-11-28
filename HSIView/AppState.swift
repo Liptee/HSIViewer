@@ -209,9 +209,7 @@ final class AppState: ObservableObject {
     
     func clearPipeline() {
         pipelineOperations.removeAll()
-        if pipelineAutoApply {
-            applyPipeline()
-        }
+        applyPipeline()
     }
     
     func applyPipeline() {
