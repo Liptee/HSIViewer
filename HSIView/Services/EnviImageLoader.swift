@@ -24,7 +24,7 @@ class EnviImageLoader: ImageLoader {
         
         var result: URL? = nil
         
-        DispatchQueue.main.sync {
+        let showPanel = {
             let panel = NSOpenPanel()
             panel.message = "ENVI формат требует доступ к парному файлу"
             panel.prompt = "Разрешить доступ"
@@ -36,6 +36,12 @@ class EnviImageLoader: ImageLoader {
             if panel.runModal() == .OK, let selectedURL = panel.url {
                 result = selectedURL
             }
+        }
+        
+        if Thread.isMainThread {
+            showPanel()
+        } else {
+            DispatchQueue.main.sync(execute: showPanel)
         }
         
         return result
