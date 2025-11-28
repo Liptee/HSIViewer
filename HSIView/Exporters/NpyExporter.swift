@@ -40,7 +40,6 @@ class NpyExporter {
         
         var header = "{'descr': '\(npyDescriptor(for: cube))', 'fortran_order': \(cube.isFortranOrder ? "True" : "False"), 'shape': (\(d0), \(d1), \(d2)), }"
         
-        let magicString = "\u{93}NUMPY"
         let majorVersion: UInt8 = 1
         let minorVersion: UInt8 = 0
         
@@ -56,14 +55,16 @@ class NpyExporter {
         let headerLength = UInt16(header.utf8.count)
         
         var data = Data()
-        data.append(magicString.data(using: .ascii)!)
+        
+        data.append(0x93)
+        data.append(contentsOf: "NUMPY".utf8)
         data.append(majorVersion)
         data.append(minorVersion)
         
         var headerLenLE = headerLength.littleEndian
         data.append(Data(bytes: &headerLenLE, count: 2))
         
-        data.append(header.data(using: .ascii)!)
+        data.append(contentsOf: header.utf8)
         
         let arrayData = try createArrayData(from: cube)
         data.append(arrayData)
