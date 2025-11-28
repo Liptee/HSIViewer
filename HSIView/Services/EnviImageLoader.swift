@@ -1,24 +1,34 @@
 import Foundation
 
 class EnviImageLoader: ImageLoader {
-    static let supportedExtensions = ["dat", "hdr"]
+    static let supportedExtensions = ["dat", "hdr", "img", "bsq", "bil", "bip", "raw"]
+    
+    private static func findDataFile(basePath: URL) -> URL? {
+        let possibleExtensions = ["dat", "img", "bsq", "bil", "bip", "raw"]
+        
+        for ext in possibleExtensions {
+            let url = basePath.appendingPathExtension(ext)
+            if FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+        
+        return nil
+    }
     
     static func load(from url: URL) -> Result<HyperCube, ImageLoadError> {
         let fileExt = url.pathExtension.lowercased()
+        let basePath = url.deletingPathExtension()
         
-        let datURL: URL
         let hdrURL: URL
+        let datURL: URL
         
         if fileExt == "hdr" {
             hdrURL = url
-            datURL = url.deletingPathExtension()
-        } else if fileExt == "dat" {
-            datURL = url
-            hdrURL = url.deletingPathExtension().appendingPathExtension("hdr")
+            datURL = findDataFile(basePath: basePath) ?? basePath.appendingPathExtension("dat")
         } else {
-            let base = url.deletingPathExtension()
-            datURL = base.appendingPathExtension("dat")
-            hdrURL = base.appendingPathExtension("hdr")
+            datURL = url
+            hdrURL = basePath.appendingPathExtension("hdr")
         }
         
         guard FileManager.default.fileExists(atPath: hdrURL.path) else {
@@ -26,7 +36,7 @@ class EnviImageLoader: ImageLoader {
         }
         
         guard FileManager.default.fileExists(atPath: datURL.path) else {
-            return .failure(.readError("Не найден .dat файл: \(datURL.lastPathComponent)"))
+            return .failure(.readError("Не найден бинарный файл. Ожидается: \(datURL.lastPathComponent)"))
         }
         
         let header: EnviHeader

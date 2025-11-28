@@ -51,7 +51,7 @@ struct HSIViewApp: App {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Открыть"
-        panel.allowedFileTypes = ["mat", "tif", "tiff", "npy", "dat", "hdr"]
+        panel.allowedFileTypes = ["mat", "tif", "tiff", "npy", "dat", "hdr", "img", "bsq", "bil", "bip", "raw"]
         
         let response = panel.runModal()
         guard response == .OK, let url = panel.url else { return }
