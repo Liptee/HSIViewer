@@ -68,7 +68,7 @@ class EnviImageLoader: ImageLoader {
             dims: (header.height, header.width, header.channels),
             storage: storage,
             sourceFormat: "ENVI (\(header.interleave.uppercased()))",
-            isFortranOrder: true,
+            isFortranOrder: false,
             wavelengths: header.wavelength
         )
         
@@ -193,26 +193,26 @@ class EnviImageLoader: ImageLoader {
         
         switch header.interleave.lowercased() {
         case "bsq":
-            return wrapInStorage(arr)
+            let reordered = reorderBSQToHWC(arr, H: H, W: W, C: C)
+            return wrapInStorage(reordered)
         case "bil":
-            let reordered = reorderBILToColumnMajor(arr, H: H, W: W, C: C)
+            let reordered = reorderBILToHWC(arr, H: H, W: W, C: C)
             return wrapInStorage(reordered)
         case "bip":
-            let reordered = reorderBIPToColumnMajor(arr, H: H, W: W, C: C)
-            return wrapInStorage(reordered)
+            return wrapInStorage(arr)
         default:
             return wrapInStorage(arr)
         }
     }
     
-    private static func reorderBILToColumnMajor<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
+    private static func reorderBSQToHWC<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
         var result = [T]()
         result.reserveCapacity(H * W * C)
         
-        for c in 0..<C {
-            for h in 0..<H {
-                for w in 0..<W {
-                    let srcIdx = h * C * W + c * W + w
+        for h in 0..<H {
+            for w in 0..<W {
+                for c in 0..<C {
+                    let srcIdx = c * H * W + h * W + w
                     result.append(arr[srcIdx])
                 }
             }
@@ -221,14 +221,14 @@ class EnviImageLoader: ImageLoader {
         return result
     }
     
-    private static func reorderBIPToColumnMajor<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
+    private static func reorderBILToHWC<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
         var result = [T]()
         result.reserveCapacity(H * W * C)
         
-        for c in 0..<C {
-            for h in 0..<H {
-                for w in 0..<W {
-                    let srcIdx = h * W * C + w * C + c
+        for h in 0..<H {
+            for w in 0..<W {
+                for c in 0..<C {
+                    let srcIdx = h * C * W + c * W + w
                     result.append(arr[srcIdx])
                 }
             }
