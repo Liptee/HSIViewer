@@ -78,11 +78,12 @@
 - **Экспорт: исправлен крэш при открытии SavePanel**
   - Проблема 1: EXC_BREAKPOINT при использовании deprecated allowedFileTypes
     - Решение: заменено на allowedContentTypes (UTType) для macOS 12.0+
-  - Проблема 2: EXC_BREAKPOINT на строке 229 при создании NSSavePanel
-    - Причина: runModal() блокирует поток и конфликтует с SwiftUI sheet
-    - Решение: заменено на асинхронный panel.begin(completionHandler:)
-  - Исправлено во всех местах: ExportView, ImageViewerApp, ContentView
-  - Теперь экспорт работает стабильно без крэшей и deadlock'ов
+  - Проблема 2: EXC_BREAKPOINT на строке 228-229 при создании NSSavePanel внутри sheet
+    - Причина: AppKit не позволяет modal SavePanel поверх modal Sheet
+    - Решение: показываем SavePanel ПОСЛЕ закрытия sheet через state.pendingExport
+  - Архитектура: ExportView собирает параметры → dismiss() → ContentView показывает SavePanel
+  - Исправлено во всех местах: ExportView, ImageViewerApp, ContentView, AppState
+  - Теперь экспорт работает стабильно без крэшей и конфликтов модальных окон
 - **Экспорт: упрощена архитектура экспортёров**
   - Проблема: ошибки компиляции из-за сложных C вызовов
   - TIFF экспорт заменён на PNG Channels (каждый канал = отдельный PNG)
