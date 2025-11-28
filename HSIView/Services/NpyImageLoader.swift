@@ -157,7 +157,7 @@ class NpyImageLoader: ImageLoader {
         guard data.count > dataStart else { return nil }
         
         let totalElements = header.shape.reduce(1, *)
-        let dataBytes = data[dataStart...]
+        let dataBytes = Data(data[dataStart...])
         
         let dtype = header.dtype.trimmingCharacters(in: .whitespaces)
         
@@ -167,79 +167,83 @@ class NpyImageLoader: ImageLoader {
         if dtype.hasSuffix("f8") || dtype.hasSuffix("f64") {
             guard dataBytes.count >= totalElements * 8 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 8
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: Double.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: Double.self)
+                for i in 0..<totalElements {
+                    values.append(buffer[i])
                 }
-                values.append(value)
             }
         } else if dtype.hasSuffix("f4") || dtype.hasSuffix("f32") {
             guard dataBytes.count >= totalElements * 4 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 4
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: Float.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: Float.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
                 }
-                values.append(Double(value))
             }
         } else if dtype.hasSuffix("i8") {
             guard dataBytes.count >= totalElements * 8 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 8
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: Int64.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: Int64.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
                 }
-                values.append(Double(value))
             }
         } else if dtype.hasSuffix("i4") {
             guard dataBytes.count >= totalElements * 4 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 4
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: Int32.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: Int32.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
                 }
-                values.append(Double(value))
             }
         } else if dtype.hasSuffix("i2") {
             guard dataBytes.count >= totalElements * 2 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 2
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: Int16.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: Int16.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
                 }
-                values.append(Double(value))
             }
         } else if dtype.hasSuffix("i1") || dtype.hasSuffix("u1") {
             guard dataBytes.count >= totalElements else { return nil }
             
-            for i in 0..<totalElements {
-                let value = dataBytes[i]
-                values.append(Double(value))
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: UInt8.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
+                }
             }
         } else if dtype.hasSuffix("u2") {
             guard dataBytes.count >= totalElements * 2 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 2
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: UInt16.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: UInt16.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
                 }
-                values.append(Double(value))
             }
         } else if dtype.hasSuffix("u4") {
             guard dataBytes.count >= totalElements * 4 else { return nil }
             
-            for i in 0..<totalElements {
-                let offset = i * 4
-                let value = dataBytes.withUnsafeBytes { bytes in
-                    bytes.load(fromByteOffset: offset, as: UInt32.self)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: UInt32.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
                 }
-                values.append(Double(value))
+            }
+        } else if dtype.hasSuffix("u8") {
+            guard dataBytes.count >= totalElements * 8 else { return nil }
+            
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: UInt64.self)
+                for i in 0..<totalElements {
+                    values.append(Double(buffer[i]))
+                }
             }
         } else {
             return nil
