@@ -76,10 +76,12 @@
 ### Исправлено
 
 - **Экспорт: исправлен крэш при открытии SavePanel**
-  - Проблема: EXC_BREAKPOINT при использовании deprecated allowedFileTypes
-  - Заменено на allowedContentTypes (UTType) для macOS 12.0+
+  - Проблема 1: EXC_BREAKPOINT при использовании deprecated allowedFileTypes
+    - Решение: заменено на allowedContentTypes (UTType) для macOS 12.0+
+  - Проблема 2: EXC_BREAKPOINT на строке 228 при создании NSSavePanel
+    - Решение: обёрнут вызов в DispatchQueue.main.async для гарантии главного потока
   - Исправлено во всех местах: ExportView, ImageViewerApp, ContentView
-  - Теперь экспорт работает без крэшей
+  - Теперь экспорт работает стабильно без крэшей
 - **Экспорт: упрощена архитектура экспортёров**
   - Проблема: ошибки компиляции из-за сложных C вызовов
   - TIFF экспорт заменён на PNG Channels (каждый канал = отдельный PNG)
