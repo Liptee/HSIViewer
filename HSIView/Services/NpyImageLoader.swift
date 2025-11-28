@@ -16,7 +16,7 @@ class NpyImageLoader: ImageLoader {
             return .failure(.notA3DCube)
         }
         
-        guard var values = parseNpyData(data: data, header: header) else {
+        guard let values = parseNpyData(data: data, header: header) else {
             return .failure(.corruptedData)
         }
         
@@ -27,18 +27,15 @@ class NpyImageLoader: ImageLoader {
             dims = (header.shape[0], header.shape[1], header.shape[2])
         }
         
-        // Для Fortran-order нужно переупорядочить данные в C-order
-        if header.fortranOrder && header.shape.count == 3 {
-            values = reorderFromFortranToC(values: values, dims: dims)
-        }
-        
         let dataType = npyDtypeToDataType(header.dtype)
         
+        // Передаем флаг Fortran-order для правильной индексации
         return .success(HyperCube(
             dims: dims,
             data: values,
             originalDataType: dataType,
-            sourceFormat: "NumPy (.npy)"
+            sourceFormat: "NumPy (.npy)",
+            isFortranOrder: header.fortranOrder
         ))
     }
     
@@ -255,27 +252,6 @@ class NpyImageLoader: ImageLoader {
         }
         
         return values
-    }
-    
-    /// Переупорядочивает данные из Fortran-order (column-major) в C-order (row-major)
-    /// Для shape (H, W, C):
-    /// - Fortran: индекс = h + H*(w + W*c), где h меняется быстрее всего
-    /// - C-order: индекс = c + C*(w + W*h), где c меняется быстрее всего
-    private static func reorderFromFortranToC(values: [Double], dims: (Int, Int, Int)) -> [Double] {
-        let (H, W, C) = dims
-        var reordered = [Double](repeating: 0.0, count: values.count)
-        
-        for h in 0..<H {
-            for w in 0..<W {
-                for c in 0..<C {
-                    let fortranIndex = h + H * (w + W * c)
-                    let cIndex = c + C * (w + W * h)
-                    reordered[cIndex] = values[fortranIndex]
-                }
-            }
-        }
-        
-        return reordered
     }
     
     private static func npyDtypeToDataType(_ dtype: String) -> DataType {

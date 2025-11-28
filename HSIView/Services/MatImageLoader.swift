@@ -55,7 +55,8 @@ class MatImageLoader: ImageLoader {
             dims: (d0, d1, d2),
             data: arr,
             originalDataType: dataType,
-            sourceFormat: "MATLAB (.mat)"
+            sourceFormat: "MATLAB (.mat)",
+            isFortranOrder: true  // MATLAB всегда column-major
         ))
     }
 }

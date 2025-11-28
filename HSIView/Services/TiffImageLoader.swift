@@ -46,7 +46,8 @@ class TiffImageLoader: ImageLoader {
             dims: (d0, d1, d2),
             data: arr,
             originalDataType: .uint8,
-            sourceFormat: "TIFF (.tiff)"
+            sourceFormat: "TIFF (.tiff)",
+            isFortranOrder: true  // TiffHelper.c транспонирует в column-major
         ))
     }
 }

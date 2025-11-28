@@ -16,6 +16,7 @@ struct HyperCube {
     let data: [Double]
     let originalDataType: DataType
     let sourceFormat: String
+    let isFortranOrder: Bool  // Для правильной индексации
     
     var is2D: Bool {
         dims.0 == 1 || dims.1 == 1 || dims.2 == 1
@@ -87,8 +88,17 @@ struct HyperCube {
     }
     
     func linearIndex(i0: Int, i1: Int, i2: Int) -> Int {
-        let (d0, d1, _) = dims
-        return i0 + d0 * (i1 + d1 * i2)
+        let (d0, d1, d2) = dims
+        
+        if isFortranOrder {
+            // Fortran-order (column-major): первый индекс меняется быстрее
+            // Элемент [i0, i1, i2] находится на позиции: i0 + d0*(i1 + d1*i2)
+            return i0 + d0 * (i1 + d1 * i2)
+        } else {
+            // C-order (row-major): последний индекс меняется быстрее
+            // Элемент [i0, i1, i2] находится на позиции: i2 + d2*(i1 + d1*i0)
+            return i2 + d2 * (i1 + d1 * i0)
+        }
     }
 }
 
