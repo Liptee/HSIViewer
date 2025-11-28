@@ -25,6 +25,7 @@ final class AppState: ObservableObject {
     @Published var autoScaleOnTypeConversion: Bool = true
     
     @Published var pipelineOperations: [PipelineOperation] = []
+    @Published var pipelineAutoApply: Bool = true
     
     private var originalCube: HyperCube?
     
@@ -180,13 +181,17 @@ final class AppState: ObservableObject {
     func addOperation(type: PipelineOperationType) {
         let operation = PipelineOperation(type: type)
         pipelineOperations.append(operation)
-        applyPipeline()
+        if pipelineAutoApply {
+            applyPipeline()
+        }
     }
     
     func removeOperation(at index: Int) {
         guard index >= 0 && index < pipelineOperations.count else { return }
         pipelineOperations.remove(at: index)
-        applyPipeline()
+        if pipelineAutoApply {
+            applyPipeline()
+        }
     }
     
     func moveOperation(from source: Int, to destination: Int) {
@@ -197,12 +202,16 @@ final class AppState: ObservableObject {
         let operation = pipelineOperations[source]
         pipelineOperations.remove(at: source)
         pipelineOperations.insert(operation, at: destination)
-        applyPipeline()
+        if pipelineAutoApply {
+            applyPipeline()
+        }
     }
     
     func clearPipeline() {
         pipelineOperations.removeAll()
-        applyPipeline()
+        if pipelineAutoApply {
+            applyPipeline()
+        }
     }
     
     func applyPipeline() {

@@ -31,9 +31,6 @@ struct PipelinePanel: View {
             OperationEditorView(operation: $editingOperation)
                 .environmentObject(state)
         }
-        .onChange(of: state.pipelineOperations.map { $0.id }) { _ in
-            state.applyPipeline()
-        }
     }
     
     private var header: some View {
@@ -91,7 +88,9 @@ struct PipelinePanel: View {
                     .onDrop(of: [.text], delegate: OperationDropDelegate(
                         item: operation,
                         operations: $state.pipelineOperations,
-                        draggingItem: $draggingItem
+                        draggingItem: $draggingItem,
+                        autoApply: state.pipelineAutoApply,
+                        onApply: { state.applyPipeline() }
                     ))
                 }
             }
@@ -107,32 +106,61 @@ struct PipelinePanel: View {
     }
     
     private var footer: some View {
-        HStack(spacing: 8) {
-            Button(action: { showingAddMenu.toggle() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Добавить")
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Toggle(isOn: $state.pipelineAutoApply) {
+                    HStack(spacing: 4) {
+                        Image(systemName: state.pipelineAutoApply ? "bolt.fill" : "hand.raised.fill")
+                            .font(.system(size: 10))
+                        Text(state.pipelineAutoApply ? "Авто" : "Ручной")
+                            .font(.system(size: 10, weight: .medium))
+                    }
                 }
-                .font(.system(size: 11, weight: .medium))
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .popover(isPresented: $showingAddMenu, arrowEdge: .bottom) {
-                addOperationMenu
+                .toggleStyle(.button)
+                .controlSize(.small)
+                
+                if !state.pipelineAutoApply {
+                    Button(action: { state.applyPipeline() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill")
+                            Text("Применить")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(state.pipelineOperations.isEmpty)
+                }
             }
             
-            Button(action: { state.clearPipeline() }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "trash")
-                    Text("Очистить")
+            HStack(spacing: 8) {
+                Button(action: { showingAddMenu.toggle() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Добавить")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity)
                 }
-                .font(.system(size: 11, weight: .medium))
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .popover(isPresented: $showingAddMenu, arrowEdge: .bottom) {
+                    addOperationMenu
+                }
+                
+                Button(action: { state.clearPipeline() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                        Text("Очистить")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(state.pipelineOperations.isEmpty)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(state.pipelineOperations.isEmpty)
         }
         .padding(8)
     }
@@ -263,9 +291,16 @@ struct OperationDropDelegate: SwiftUI.DropDelegate {
     let item: PipelineOperation
     @Binding var operations: [PipelineOperation]
     @Binding var draggingItem: PipelineOperation?
+    let autoApply: Bool
+    let onApply: () -> Void
     
     func performDrop(info: DropInfo) -> Bool {
         draggingItem = nil
+        if autoApply {
+            DispatchQueue.main.async {
+                onApply()
+            }
+        }
         return true
     }
     
@@ -487,9 +522,25 @@ struct OperationEditorView: View {
     
     private var footerView: some View {
         HStack {
+            if !state.pipelineAutoApply {
+                Button(action: {
+                    state.applyPipeline()
+                }) {
+                    HStack {
+                        Image(systemName: "play.fill")
+                        Text("Применить изменения")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+            
             Spacer()
             
             Button("Готово") {
+                if state.pipelineAutoApply {
+                    state.applyPipeline()
+                }
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
