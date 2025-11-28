@@ -78,8 +78,13 @@ struct ContentView: View {
                         Divider()
                         
                         ScrollView {
-                            ImageInfoPanel(cube: cube, layout: state.layout)
-                                .padding(12)
+                            VStack(spacing: 12) {
+                                ImageInfoPanel(cube: cube, layout: state.layout)
+                                
+                                NormalizationPanel()
+                                    .environmentObject(state)
+                            }
+                            .padding(12)
                         }
                         .frame(width: 260)
                         .background(Color(NSColor.windowBackgroundColor).opacity(0.5))

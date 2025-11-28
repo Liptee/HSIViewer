@@ -19,6 +19,16 @@ final class AppState: ObservableObject {
     @Published var zoomScale: CGFloat = 1.0
     @Published var imageOffset: CGSize = .zero
     
+    @Published var normalizationType: CubeNormalizationType = .none
+    @Published var normalizationParams: CubeNormalizationParameters = .default
+    
+    private var originalCube: HyperCube?
+    
+    var displayCube: HyperCube? {
+        guard let original = originalCube else { return cube }
+        return cube
+    }
+    
     func open(url: URL) {
         cubeURL = url
         loadError = nil
@@ -31,7 +41,10 @@ final class AppState: ObservableObject {
         
         switch result {
         case .success(let hyperCube):
+            originalCube = hyperCube
             cube = hyperCube
+            normalizationType = .none
+            normalizationParams = .default
             
             let ext = url.pathExtension.lowercased()
             if ext == "mat" {
@@ -135,5 +148,15 @@ final class AppState: ObservableObject {
     func moveImage(by delta: CGSize) {
         imageOffset.width += delta.width
         imageOffset.height += delta.height
+    }
+    
+    func applyNormalization() {
+        guard let original = originalCube else { return }
+        
+        if normalizationType == .none {
+            cube = original
+        } else {
+            cube = CubeNormalizer.apply(normalizationType, to: original, parameters: normalizationParams)
+        }
     }
 }
