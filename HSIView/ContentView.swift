@@ -84,6 +84,9 @@ struct ContentView: View {
                                 
                                 NormalizationPanel()
                                     .environmentObject(state)
+                                
+                                DataTypePanel()
+                                    .environmentObject(state)
                             }
                             .padding(12)
                         }

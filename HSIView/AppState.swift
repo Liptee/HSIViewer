@@ -22,6 +22,8 @@ final class AppState: ObservableObject {
     @Published var normalizationType: CubeNormalizationType = .none
     @Published var normalizationParams: CubeNormalizationParameters = .default
     
+    @Published var autoScaleOnTypeConversion: Bool = true
+    
     private var originalCube: HyperCube?
     
     var displayCube: HyperCube? {
@@ -157,6 +159,18 @@ final class AppState: ObservableObject {
             cube = original
         } else {
             cube = CubeNormalizer.apply(normalizationType, to: original, parameters: normalizationParams)
+        }
+    }
+    
+    func convertDataType(to targetType: DataType) {
+        guard let current = cube else { return }
+        guard current.originalDataType != targetType else { return }
+        
+        if let converted = DataTypeConverter.convert(current, to: targetType, autoScale: autoScaleOnTypeConversion) {
+            cube = converted
+            if originalCube?.originalDataType == current.originalDataType {
+                originalCube = converted
+            }
         }
     }
 }
