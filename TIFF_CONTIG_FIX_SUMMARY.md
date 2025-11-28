@@ -105,3 +105,4 @@ if (planarConfig == PLANARCONFIG_CONTIG) {
 
 **ГОТОВО! Файл Tablet.tiff должен открываться!** 🎉
 
+

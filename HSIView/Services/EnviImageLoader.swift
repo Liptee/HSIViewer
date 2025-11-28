@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 class EnviImageLoader: ImageLoader {
     static let supportedExtensions = ["dat", "hdr", "img", "bsq", "bil", "bip", "raw"]
@@ -16,19 +17,58 @@ class EnviImageLoader: ImageLoader {
         return nil
     }
     
+    private static func requestAccessToFile(_ fileURL: URL, description: String) -> URL? {
+        guard !FileManager.default.isReadableFile(atPath: fileURL.path) else {
+            return fileURL
+        }
+        
+        DispatchQueue.main.sync {
+            let panel = NSOpenPanel()
+            panel.message = "ENVI формат требует доступ к парному файлу"
+            panel.prompt = "Разрешить доступ"
+            panel.allowsMultipleSelection = false
+            panel.canChooseDirectories = false
+            panel.directoryURL = fileURL.deletingLastPathComponent()
+            panel.nameFieldStringValue = fileURL.lastPathComponent
+            
+            if panel.runModal() == .OK, let selectedURL = panel.url {
+                return selectedURL
+            }
+            return nil
+        }
+    }
+    
     static func load(from url: URL) -> Result<HyperCube, ImageLoadError> {
         let fileExt = url.pathExtension.lowercased()
         let basePath = url.deletingPathExtension()
         
-        let hdrURL: URL
-        let datURL: URL
+        var hdrURL: URL
+        var datURL: URL
         
         if fileExt == "hdr" {
             hdrURL = url
-            datURL = findDataFile(basePath: basePath) ?? basePath.appendingPathExtension("dat")
+            let possibleDataURL = findDataFile(basePath: basePath) ?? basePath.appendingPathExtension("dat")
+            
+            if !FileManager.default.isReadableFile(atPath: possibleDataURL.path) {
+                guard let accessibleURL = requestAccessToFile(possibleDataURL, description: "бинарный файл данных") else {
+                    return .failure(.readError("Нет доступа к бинарному файлу: \(possibleDataURL.lastPathComponent)"))
+                }
+                datURL = accessibleURL
+            } else {
+                datURL = possibleDataURL
+            }
         } else {
             datURL = url
-            hdrURL = basePath.appendingPathExtension("hdr")
+            let possibleHdrURL = basePath.appendingPathExtension("hdr")
+            
+            if !FileManager.default.isReadableFile(atPath: possibleHdrURL.path) {
+                guard let accessibleURL = requestAccessToFile(possibleHdrURL, description: "заголовочный файл") else {
+                    return .failure(.readError("Нет доступа к .hdr файлу: \(possibleHdrURL.lastPathComponent)"))
+                }
+                hdrURL = accessibleURL
+            } else {
+                hdrURL = possibleHdrURL
+            }
         }
         
         guard FileManager.default.fileExists(atPath: hdrURL.path) else {

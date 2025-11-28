@@ -2,11 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIconFile</key>
-	<string>appIcon</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>appIcon</string>
 			<key>CFBundleTypeIconSystemGenerated</key>
 			<integer>1</integer>
 			<key>CFBundleTypeName</key>
@@ -23,6 +23,8 @@
 			<string></string>
 		</dict>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>appIcon</string>
 			<key>CFBundleTypeName</key>
 			<string>TIFF</string>
 			<key>CFBundleTypeRole</key>
@@ -35,6 +37,8 @@
 			</array>
 		</dict>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>appIcon</string>
 			<key>CFBundleTypeName</key>
 			<string>NumPy Array</string>
 			<key>CFBundleTypeRole</key>
@@ -47,35 +51,36 @@
 			</array>
 		</dict>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>appIcon</string>
 			<key>CFBundleTypeName</key>
-			<string>ENVI Data</string>
+			<string>HDR File</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.hsiview.envi-dat</string>
-				<string>com.hsiview.envi-img</string>
-				<string>com.hsiview.envi-bsq</string>
-				<string>com.hsiview.envi-bil</string>
-				<string>com.hsiview.envi-bip</string>
-				<string>com.hsiview.envi-raw</string>
+				<string>con.hsiview.hdr</string>
 			</array>
 		</dict>
 		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>appIcon</string>
 			<key>CFBundleTypeName</key>
-			<string>ENVI Header</string>
+			<string>DAT File</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.hsiview.envi-hdr</string>
+				<string>com.hsiview.dat</string>
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleIconFile</key>
+	<string>appIcon</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -86,7 +91,10 @@
 			<key>UTTypeDescription</key>
 			<string>MAT File</string>
 			<key>UTTypeIcons</key>
-			<dict/>
+			<dict>
+				<key>UTTypeIconBadgeName</key>
+				<string>appIcon</string>
+			</dict>
 			<key>UTTypeIdentifier</key>
 			<string>com.hsiview.mat</string>
 			<key>UTTypeTagSpecification</key>
@@ -105,7 +113,10 @@
 			<key>UTTypeDescription</key>
 			<string>NumPy Array File</string>
 			<key>UTTypeIcons</key>
-			<dict/>
+			<dict>
+				<key>UTTypeIconBadgeName</key>
+				<string>appIcon</string>
+			</dict>
 			<key>UTTypeIdentifier</key>
 			<string>com.hsiview.npy</string>
 			<key>UTTypeTagSpecification</key>
@@ -122,130 +133,41 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>ENVI Data File</string>
+			<string>HDR File</string>
 			<key>UTTypeIcons</key>
-			<dict/>
-			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-dat</string>
-			<key>UTTypeTagSpecification</key>
 			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>dat</string>
-				</array>
+				<key>UTTypeIconBadgeName</key>
+				<string>appIcon</string>
 			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>ENVI Image File</string>
-			<key>UTTypeIcons</key>
-			<dict/>
 			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-img</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>img</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>ENVI BSQ File</string>
-			<key>UTTypeIcons</key>
-			<dict/>
-			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-bsq</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>bsq</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>ENVI BIL File</string>
-			<key>UTTypeIcons</key>
-			<dict/>
-			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-bil</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>bil</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>ENVI BIP File</string>
-			<key>UTTypeIcons</key>
-			<dict/>
-			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-bip</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>bip</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>ENVI RAW File</string>
-			<key>UTTypeIcons</key>
-			<dict/>
-			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-raw</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>raw</string>
-				</array>
-			</dict>
-		</dict>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.text</string>
-			</array>
-			<key>UTTypeDescription</key>
-			<string>ENVI Header File</string>
-			<key>UTTypeIcons</key>
-			<dict/>
-			<key>UTTypeIdentifier</key>
-			<string>com.hsiview.envi-hdr</string>
+			<string>com.hsiview.hdr</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
 					<string>hdr</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>DAT File</string>
+			<key>UTTypeIcons</key>
+			<dict>
+				<key>UTTypeIconBadgeName</key>
+				<string>appIcon</string>
+			</dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.hsiview.dat</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>dat</string>
 				</array>
 			</dict>
 		</dict>
