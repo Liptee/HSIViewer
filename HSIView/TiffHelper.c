@@ -32,21 +32,17 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
         return false;
     }
 
-    // Поддерживаем только 8 бит, planar separate (как твой файл)
-    if (bitsPerSample != 8 || planarConfig != PLANARCONFIG_SEPARATE) {
+    // Поддерживаем только 8 бит, оба типа planar config
+    if (bitsPerSample != 8) {
         TIFFClose(tif);
         return false;
     }
-
-    tsize_t stripSize = TIFFStripSize(tif);
-    tstrip_t totalStrips = TIFFNumberOfStrips(tif);
-
-    if (samplesPerPixel == 0 || totalStrips == 0) {
+    
+    // Поддерживаем CONTIG (interleaved) и SEPARATE (planar)
+    if (planarConfig != PLANARCONFIG_CONTIG && planarConfig != PLANARCONFIG_SEPARATE) {
         TIFFClose(tif);
         return false;
     }
-
-    tstrip_t stripsPerPlane = totalStrips / samplesPerPixel;
 
     size_t W = (size_t)width;
     size_t H = (size_t)height;
@@ -60,21 +56,21 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
         return false;
     }
 
-    for (uint16 s = 0; s < samplesPerPixel; ++s) {
-        size_t written = 0;
-
-        for (tstrip_t j = 0; j < stripsPerPlane; ++j) {
-            tstrip_t stripIndex = s * stripsPerPlane + j;
-
-            tsize_t bufSize = stripSize;
-            uint8 *buf = (uint8 *)_TIFFmalloc(bufSize);
+    if (planarConfig == PLANARCONFIG_CONTIG) {
+        // CONTIG: каналы чередуются (R0,G0,B0,R1,G1,B1,...)
+        tstrip_t totalStrips = TIFFNumberOfStrips(tif);
+        tsize_t stripSize = TIFFStripSize(tif);
+        
+        size_t pixelIndex = 0;
+        for (tstrip_t strip = 0; strip < totalStrips; ++strip) {
+            uint8 *buf = (uint8 *)_TIFFmalloc(stripSize);
             if (!buf) {
                 free(data);
                 TIFFClose(tif);
                 return false;
             }
 
-            tsize_t n = TIFFReadEncodedStrip(tif, stripIndex, buf, bufSize);
+            tsize_t n = TIFFReadEncodedStrip(tif, strip, buf, stripSize);
             if (n < 0) {
                 _TIFFfree(buf);
                 free(data);
@@ -82,16 +78,67 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
                 return false;
             }
 
-            size_t bytes = (size_t)n;
-            for (size_t i = 0; i < bytes && written < planeSize; ++i, ++written) {
-                size_t row = written / W;
-                size_t col = written % W;
-                size_t colMajorIdx = row + H * (col + W * (size_t)s);
-                // Сохраняем как есть (0-255), без нормализации
-                data[colMajorIdx] = (double)buf[i];
+            // Читаем interleaved данные: R0 G0 B0 R1 G1 B1 ...
+            size_t numPixels = (size_t)n / C;
+            for (size_t p = 0; p < numPixels && pixelIndex < planeSize; ++p, ++pixelIndex) {
+                size_t row = pixelIndex / W;
+                size_t col = pixelIndex % W;
+                
+                for (size_t c = 0; c < C; ++c) {
+                    uint8 value = buf[p * C + c];
+                    size_t colMajorIdx = row + H * (col + W * c);
+                    data[colMajorIdx] = (double)value;
+                }
             }
 
             _TIFFfree(buf);
+        }
+    } else {
+        // SEPARATE: каналы идут отдельными плоскостями
+        tsize_t stripSize = TIFFStripSize(tif);
+        tstrip_t totalStrips = TIFFNumberOfStrips(tif);
+
+        if (samplesPerPixel == 0 || totalStrips == 0) {
+            free(data);
+            TIFFClose(tif);
+            return false;
+        }
+
+        tstrip_t stripsPerPlane = totalStrips / samplesPerPixel;
+
+        for (uint16 s = 0; s < samplesPerPixel; ++s) {
+            size_t written = 0;
+
+            for (tstrip_t j = 0; j < stripsPerPlane; ++j) {
+                tstrip_t stripIndex = s * stripsPerPlane + j;
+
+                tsize_t bufSize = stripSize;
+                uint8 *buf = (uint8 *)_TIFFmalloc(bufSize);
+                if (!buf) {
+                    free(data);
+                    TIFFClose(tif);
+                    return false;
+                }
+
+                tsize_t n = TIFFReadEncodedStrip(tif, stripIndex, buf, bufSize);
+                if (n < 0) {
+                    _TIFFfree(buf);
+                    free(data);
+                    TIFFClose(tif);
+                    return false;
+                }
+
+                size_t bytes = (size_t)n;
+                for (size_t i = 0; i < bytes && written < planeSize; ++i, ++written) {
+                    size_t row = written / W;
+                    size_t col = written % W;
+                    size_t colMajorIdx = row + H * (col + W * (size_t)s);
+                    // Сохраняем как есть (0-255), без нормализации
+                    data[colMajorIdx] = (double)buf[i];
+                }
+
+                _TIFFfree(buf);
+            }
         }
     }
 
