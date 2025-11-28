@@ -18,7 +18,7 @@ class EnviImageLoader: ImageLoader {
     }
     
     private static func requestAccessToDirectory(for fileURL: URL) -> Bool {
-        let directory = fileURL.deletingLastPathComponent()
+        let directory = fileURL .deletingLastPathComponent()
         
         var isGranted = false
         

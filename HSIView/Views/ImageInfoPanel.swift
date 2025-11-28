@@ -73,6 +73,9 @@ struct ImageInfoPanel: View {
                 cachedStats = cube.statistics()
             }
         }
+        .onChange(of: cube.id) { _ in
+            cachedStats = cube.statistics()
+        }
     }
     
     private func infoRow(title: String, value: String) -> some View {

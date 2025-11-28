@@ -83,6 +83,7 @@ enum DataStorage {
 }
 
 struct HyperCube {
+    let id: UUID
     let dims: (Int, Int, Int)
     let storage: DataStorage  // Изменено: хранение в оригинальном типе
     let sourceFormat: String
@@ -90,6 +91,7 @@ struct HyperCube {
     let wavelengths: [Double]?  // Для ENVI и других форматов с длинами волн
     
     init(dims: (Int, Int, Int), storage: DataStorage, sourceFormat: String, isFortranOrder: Bool, wavelengths: [Double]? = nil) {
+        self.id = UUID()
         self.dims = dims
         self.storage = storage
         self.sourceFormat = sourceFormat

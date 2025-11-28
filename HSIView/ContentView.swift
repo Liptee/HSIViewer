@@ -80,6 +80,7 @@ struct ContentView: View {
                         ScrollView {
                             VStack(spacing: 12) {
                                 ImageInfoPanel(cube: cube, layout: state.layout)
+                                    .id(cube.id)
                                 
                                 NormalizationPanel()
                                     .environmentObject(state)
