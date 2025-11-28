@@ -337,6 +337,11 @@ struct OperationEditorView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) var dismiss
     
+    @State private var localNormalizationType: CubeNormalizationType = .none
+    @State private var localNormalizationParams: CubeNormalizationParameters = .default
+    @State private var localTargetDataType: DataType = .float64
+    @State private var localAutoScale: Bool = true
+    
     var body: some View {
         VStack(spacing: 0) {
             if let op = operation {
@@ -357,6 +362,38 @@ struct OperationEditorView: View {
             }
         }
         .frame(width: 400, height: 500)
+        .onAppear {
+            loadLocalState()
+        }
+    }
+    
+    private func loadLocalState() {
+        guard let op = operation else { return }
+        
+        switch op.type {
+        case .normalization:
+            localNormalizationType = op.normalizationType ?? .none
+            localNormalizationParams = op.normalizationParams ?? .default
+        case .dataTypeConversion:
+            localTargetDataType = op.targetDataType ?? .float64
+            localAutoScale = op.autoScale ?? true
+        }
+    }
+    
+    private func saveLocalState() {
+        guard let op = operation,
+              let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) else {
+            return
+        }
+        
+        switch op.type {
+        case .normalization:
+            state.pipelineOperations[index].normalizationType = localNormalizationType
+            state.pipelineOperations[index].normalizationParams = localNormalizationParams
+        case .dataTypeConversion:
+            state.pipelineOperations[index].targetDataType = localTargetDataType
+            state.pipelineOperations[index].autoScale = localAutoScale
+        }
     }
     
     private func headerView(for op: PipelineOperation) -> some View {
@@ -386,80 +423,45 @@ struct OperationEditorView: View {
             Text("Тип нормализации:")
                 .font(.system(size: 11, weight: .medium))
             
-            Picker("", selection: Binding(
-                get: { op.normalizationType ?? .none },
-                set: { newValue in
-                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                        state.pipelineOperations[index].normalizationType = newValue
-                    }
-                }
-            )) {
+            Picker("", selection: $localNormalizationType) {
                 ForEach(CubeNormalizationType.allCases) { type in
                     Text(type.rawValue).tag(type)
                 }
             }
             .pickerStyle(.menu)
             
-            if op.normalizationType?.hasParameters == true {
+            if localNormalizationType.hasParameters {
                 Divider()
                 
-                if op.normalizationType == .minMaxCustom {
+                if localNormalizationType == .minMaxCustom {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Диапазон:")
                             .font(.system(size: 11, weight: .medium))
                         
                         HStack {
-                            TextField("Min", value: Binding(
-                                get: { op.normalizationParams?.minValue ?? 0.0 },
-                                set: { newValue in
-                                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                                        state.pipelineOperations[index].normalizationParams?.minValue = newValue
-                                    }
-                                }
-                            ), format: .number)
-                            .textFieldStyle(.roundedBorder)
+                            TextField("Min", value: $localNormalizationParams.minValue, format: .number)
+                                .textFieldStyle(.roundedBorder)
                             
                             Text("→")
                             
-                            TextField("Max", value: Binding(
-                                get: { op.normalizationParams?.maxValue ?? 1.0 },
-                                set: { newValue in
-                                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                                        state.pipelineOperations[index].normalizationParams?.maxValue = newValue
-                                    }
-                                }
-                            ), format: .number)
-                            .textFieldStyle(.roundedBorder)
+                            TextField("Max", value: $localNormalizationParams.maxValue, format: .number)
+                                .textFieldStyle(.roundedBorder)
                         }
                     }
-                } else if op.normalizationType == .percentile {
+                } else if localNormalizationType == .percentile {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Процентили:")
                             .font(.system(size: 11, weight: .medium))
                         
                         HStack {
-                            TextField("Lower", value: Binding(
-                                get: { op.normalizationParams?.lowerPercentile ?? 2.0 },
-                                set: { newValue in
-                                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                                        state.pipelineOperations[index].normalizationParams?.lowerPercentile = newValue
-                                    }
-                                }
-                            ), format: .number)
-                            .textFieldStyle(.roundedBorder)
+                            TextField("Lower", value: $localNormalizationParams.lowerPercentile, format: .number)
+                                .textFieldStyle(.roundedBorder)
                             
                             Text("%")
                             Text("→")
                             
-                            TextField("Upper", value: Binding(
-                                get: { op.normalizationParams?.upperPercentile ?? 98.0 },
-                                set: { newValue in
-                                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                                        state.pipelineOperations[index].normalizationParams?.upperPercentile = newValue
-                                    }
-                                }
-                            ), format: .number)
-                            .textFieldStyle(.roundedBorder)
+                            TextField("Upper", value: $localNormalizationParams.upperPercentile, format: .number)
+                                .textFieldStyle(.roundedBorder)
                             
                             Text("%")
                         }
@@ -467,7 +469,7 @@ struct OperationEditorView: View {
                 }
             }
             
-            Text(op.normalizationType?.description ?? "")
+            Text(localNormalizationType.description)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -479,14 +481,7 @@ struct OperationEditorView: View {
             Text("Целевой тип данных:")
                 .font(.system(size: 11, weight: .medium))
             
-            Picker("", selection: Binding(
-                get: { op.targetDataType ?? .float64 },
-                set: { newValue in
-                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                        state.pipelineOperations[index].targetDataType = newValue
-                    }
-                }
-            )) {
+            Picker("", selection: $localTargetDataType) {
                 Text("Float64 (Double)").tag(DataType.float64)
                 Text("Float32").tag(DataType.float32)
                 Divider()
@@ -501,17 +496,10 @@ struct OperationEditorView: View {
             
             Divider()
             
-            Toggle("Автоматическое масштабирование", isOn: Binding(
-                get: { op.autoScale ?? true },
-                set: { newValue in
-                    if let index = state.pipelineOperations.firstIndex(where: { $0.id == op.id }) {
-                        state.pipelineOperations[index].autoScale = newValue
-                    }
-                }
-            ))
-            .font(.system(size: 11))
+            Toggle("Автоматическое масштабирование", isOn: $localAutoScale)
+                .font(.system(size: 11))
             
-            Text(op.autoScale == true 
+            Text(localAutoScale 
                  ? "Данные будут масштабированы в диапазон целевого типа"
                  : "Значения будут обрезаны (clamped)")
                 .font(.system(size: 10))
@@ -524,6 +512,7 @@ struct OperationEditorView: View {
         HStack {
             if !state.pipelineAutoApply {
                 Button(action: {
+                    saveLocalState()
                     state.applyPipeline()
                 }) {
                     HStack {
@@ -538,6 +527,7 @@ struct OperationEditorView: View {
             Spacer()
             
             Button("Готово") {
+                saveLocalState()
                 if state.pipelineAutoApply {
                     state.applyPipeline()
                 }
