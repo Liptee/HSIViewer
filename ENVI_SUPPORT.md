@@ -216,7 +216,49 @@ with open('test.hdr', 'w') as f:
 ✅ Spectral Python  
 ✅ QGIS (с плагином)
 
+## Важные исправления (v2)
+
+### Проблемы в первой версии:
+1. ❌ Неправильное переупорядочивание BIL/BIP
+2. ❌ Использование `Array(repeating:)` с потенциальными проблемами
+3. ❌ data type 1 читался как `Int8` вместо `UInt8`
+4. ❌ Wavelengths не загружались автоматически
+
+### Исправления:
+1. ✅ Переписаны `reorderBILToColumnMajor` и `reorderBIPToColumnMajor`
+   - Используют `append` вместо индексации
+   - Правильно конвертируют в column-major формат
+2. ✅ data type 1 теперь `UInt8`
+3. ✅ Автоматическая загрузка wavelengths из .hdr в AppState
+4. ✅ HyperCube теперь хранит wavelengths
+5. ✅ Поддержка .dat и .hdr из Finder
+
+### Алгоритм переупорядочивания:
+
+**BSQ (Band Sequential):**
+```
+Файл: (C, H, W) порядок
+Наш формат: column-major (C, H, W)
+→ Копируем как есть
+```
+
+**BIL (Band Interleaved by Line):**
+```
+Файл: line 0 [C каналов], line 1 [C каналов]...
+  → srcIdx = h * C * W + c * W + w
+Наш формат: channel 0 [H×W], channel 1 [H×W]...
+  → итерация: for c, for h, for w
+```
+
+**BIP (Band Interleaved by Pixel):**
+```
+Файл: pixel(0,0)[C каналов], pixel(0,1)[C каналов]...
+  → srcIdx = h * W * C + w * C + c
+Наш формат: channel 0 [H×W], channel 1 [H×W]...
+  → итерация: for c, for h, for w
+```
+
 ## Дата
 
-2025-11-28
+2025-11-28 (v2 - исправлена)
 

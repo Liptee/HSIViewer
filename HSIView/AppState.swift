@@ -38,13 +38,25 @@ final class AppState: ObservableObject {
                 layout = .auto
             } else if ext == "tif" || ext == "tiff" {
                 layout = .hwc
+            } else if ext == "dat" || ext == "hdr" {
+                layout = .hwc
             } else {
                 layout = .auto
             }
             
             updateChannelCount()
             
-            if wavelengths == nil {
+            if let enviWavelengths = hyperCube.wavelengths, !enviWavelengths.isEmpty {
+                wavelengths = enviWavelengths
+                if let first = enviWavelengths.first, let last = enviWavelengths.last {
+                    lambdaStart = String(format: "%.1f", first)
+                    lambdaEnd = String(format: "%.1f", last)
+                    if enviWavelengths.count > 1 {
+                        let step = (last - first) / Double(enviWavelengths.count - 1)
+                        lambdaStep = String(format: "%.2f", step)
+                    }
+                }
+            } else if wavelengths == nil {
                 generateWavelengthsFromParams()
             }
             

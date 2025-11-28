@@ -87,6 +87,15 @@ struct HyperCube {
     let storage: DataStorage  // Изменено: хранение в оригинальном типе
     let sourceFormat: String
     let isFortranOrder: Bool  // Для правильной индексации
+    let wavelengths: [Double]?  // Для ENVI и других форматов с длинами волн
+    
+    init(dims: (Int, Int, Int), storage: DataStorage, sourceFormat: String, isFortranOrder: Bool, wavelengths: [Double]? = nil) {
+        self.dims = dims
+        self.storage = storage
+        self.sourceFormat = sourceFormat
+        self.isFortranOrder = isFortranOrder
+        self.wavelengths = wavelengths
+    }
     
     var originalDataType: DataType {
         storage.dataType

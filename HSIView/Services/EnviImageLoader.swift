@@ -54,24 +54,15 @@ class EnviImageLoader: ImageLoader {
             return .failure(.corruptedData)
         }
         
-        let isFortranOrder: Bool
-        switch header.interleave {
-        case "bsq":
-            isFortranOrder = true
-        case "bil":
-            isFortranOrder = true
-        case "bip":
-            isFortranOrder = false
-        default:
-            isFortranOrder = false
-        }
-        
-        return .success(HyperCube(
+        let cube = HyperCube(
             dims: (header.height, header.width, header.channels),
             storage: storage,
             sourceFormat: "ENVI (\(header.interleave.uppercased()))",
-            isFortranOrder: isFortranOrder
-        ))
+            isFortranOrder: true,
+            wavelengths: header.wavelength
+        )
+        
+        return .success(cube)
     }
     
     private static func parseEnviData(data: Data, header: EnviHeader) -> DataStorage? {
@@ -106,7 +97,7 @@ class EnviImageLoader: ImageLoader {
         guard data.count >= totalElements else { return nil }
         
         return data.withUnsafeBytes { bytes in
-            let arr = Array(bytes.bindMemory(to: Int8.self))
+            let arr = Array(bytes.bindMemory(to: UInt8.self))
             return reorderENVI(arr, header: header)
         }
     }
@@ -179,38 +170,40 @@ class EnviImageLoader: ImageLoader {
             if isLittleEndian != (CFByteOrderGetCurrent() == CFByteOrder(CFByteOrderLittleEndian.rawValue)) {
                 arr = arr.map { UInt32(bigEndian: $0) }
             }
-            return nil
+            return reorderENVI(arr, header: header)
         }
     }
     
     private static func reorderENVI<T>(_ arr: [T], header: EnviHeader) -> DataStorage? {
+        guard !arr.isEmpty else { return nil }
+        
         let H = header.height
         let W = header.width
         let C = header.channels
         
-        switch header.interleave {
+        switch header.interleave.lowercased() {
         case "bsq":
             return wrapInStorage(arr)
         case "bil":
-            let reordered = reorderBIL(arr, H: H, W: W, C: C)
+            let reordered = reorderBILToColumnMajor(arr, H: H, W: W, C: C)
             return wrapInStorage(reordered)
         case "bip":
-            let reordered = reorderBIP(arr, H: H, W: W, C: C)
+            let reordered = reorderBIPToColumnMajor(arr, H: H, W: W, C: C)
             return wrapInStorage(reordered)
         default:
             return wrapInStorage(arr)
         }
     }
     
-    private static func reorderBIL<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
-        var result = Array(repeating: arr[0], count: H * W * C)
+    private static func reorderBILToColumnMajor<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
+        var result = [T]()
+        result.reserveCapacity(H * W * C)
         
-        for h in 0..<H {
-            for c in 0..<C {
+        for c in 0..<C {
+            for h in 0..<H {
                 for w in 0..<W {
                     let srcIdx = h * C * W + c * W + w
-                    let dstIdx = c * H * W + h * W + w
-                    result[dstIdx] = arr[srcIdx]
+                    result.append(arr[srcIdx])
                 }
             }
         }
@@ -218,15 +211,15 @@ class EnviImageLoader: ImageLoader {
         return result
     }
     
-    private static func reorderBIP<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
-        var result = Array(repeating: arr[0], count: H * W * C)
+    private static func reorderBIPToColumnMajor<T>(_ arr: [T], H: Int, W: Int, C: Int) -> [T] {
+        var result = [T]()
+        result.reserveCapacity(H * W * C)
         
-        for h in 0..<H {
-            for w in 0..<W {
-                for c in 0..<C {
+        for c in 0..<C {
+            for h in 0..<H {
+                for w in 0..<W {
                     let srcIdx = h * W * C + w * C + c
-                    let dstIdx = h + H * (w + W * c)
-                    result[dstIdx] = arr[srcIdx]
+                    result.append(arr[srcIdx])
                 }
             }
         }
@@ -239,6 +232,8 @@ class EnviImageLoader: ImageLoader {
             return .float64(arr)
         } else if let arr = arr as? [Float] {
             return .float32(arr)
+        } else if let arr = arr as? [UInt8] {
+            return .uint8(arr)
         } else if let arr = arr as? [Int8] {
             return .int8(arr)
         } else if let arr = arr as? [Int16] {
