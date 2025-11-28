@@ -1,5 +1,8 @@
 test_data
 test_npy_files
+test_*.npy
+test_*.mat
+test_*.tiff
 mat_file_reader.py
 npy_file_reader.py
 tiff_file_reader.py
