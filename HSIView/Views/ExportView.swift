@@ -2,6 +2,11 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+struct PendingExportInfo: Equatable {
+    let format: ExportFormat
+    let wavelengths: Bool
+}
+
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
     case tiff = "PNG Channels"
@@ -223,7 +228,7 @@ struct ExportView: View {
     }
     
     private func performExport() {
-        state.pendingExport = (format: selectedFormat, wavelengths: exportWavelengths)
+        state.pendingExport = PendingExportInfo(format: selectedFormat, wavelengths: exportWavelengths)
         dismiss()
     }
     
