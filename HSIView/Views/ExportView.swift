@@ -225,23 +225,23 @@ struct ExportView: View {
     private func performExport() {
         guard let cube = state.cube else { return }
         
-        DispatchQueue.main.async {
-            let panel = NSSavePanel()
-            panel.canCreateDirectories = true
-            
-            if self.selectedFormat == .tiff {
-                panel.nameFieldStringValue = "hypercube"
-                panel.allowedContentTypes = []
-                panel.message = "Выберите базовое имя файла (будет создано много PNG)"
-            } else {
-                panel.nameFieldStringValue = "hypercube.\(self.selectedFormat.fileExtension)"
-                if self.selectedFormat == .npy {
-                    panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
-                }
-                panel.message = "Выберите путь для сохранения"
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        
+        if selectedFormat == .tiff {
+            panel.nameFieldStringValue = "hypercube"
+            panel.allowedContentTypes = []
+            panel.message = "Выберите базовое имя файла (будет создано много PNG)"
+        } else {
+            panel.nameFieldStringValue = "hypercube.\(selectedFormat.fileExtension)"
+            if selectedFormat == .npy {
+                panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
             }
-            
-            guard panel.runModal() == .OK, let saveURL = panel.url else {
+            panel.message = "Выберите путь для сохранения"
+        }
+        
+        panel.begin { response in
+            guard response == .OK, let saveURL = panel.url else {
                 return
             }
             
