@@ -75,6 +75,10 @@
 
 ### Исправлено
 
+- **Экспорт: исправлена ошибка компиляции Equatable**
+  - Проблема: Type '(format: ExportFormat, wavelengths: Bool)' cannot conform to 'Equatable'
+  - Решение: создан struct PendingExportInfo: Equatable вместо кортежа
+  - .onChange() теперь работает корректно со структурой
 - **Экспорт: исправлен крэш при открытии SavePanel**
   - Проблема 1: EXC_BREAKPOINT при использовании deprecated allowedFileTypes
     - Решение: заменено на allowedContentTypes (UTType) для macOS 12.0+
