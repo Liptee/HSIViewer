@@ -225,46 +225,48 @@ struct ExportView: View {
     private func performExport() {
         guard let cube = state.cube else { return }
         
-        let panel = NSSavePanel()
-        panel.canCreateDirectories = true
-        
-        if selectedFormat == .tiff {
-            panel.nameFieldStringValue = "hypercube"
-            panel.allowedContentTypes = []
-            panel.message = "Выберите базовое имя файла (будет создано много PNG)"
-        } else {
-            panel.nameFieldStringValue = "hypercube.\(selectedFormat.fileExtension)"
-            if selectedFormat == .npy {
-                panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
-            }
-            panel.message = "Выберите путь для сохранения"
-        }
-        
-        guard panel.runModal() == .OK, let saveURL = panel.url else {
-            return
-        }
-        
-        isExporting = true
-        exportError = nil
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<Void, Error>
+        DispatchQueue.main.async {
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
             
-            switch selectedFormat {
-            case .npy:
-                result = NpyExporter.export(cube: cube, to: saveURL, exportWavelengths: exportWavelengths)
-            case .tiff:
-                result = TiffExporter.export(cube: cube, to: saveURL, exportWavelengths: exportWavelengths)
+            if self.selectedFormat == .tiff {
+                panel.nameFieldStringValue = "hypercube"
+                panel.allowedContentTypes = []
+                panel.message = "Выберите базовое имя файла (будет создано много PNG)"
+            } else {
+                panel.nameFieldStringValue = "hypercube.\(self.selectedFormat.fileExtension)"
+                if self.selectedFormat == .npy {
+                    panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
+                }
+                panel.message = "Выберите путь для сохранения"
             }
             
-            DispatchQueue.main.async {
-                isExporting = false
+            guard panel.runModal() == .OK, let saveURL = panel.url else {
+                return
+            }
+            
+            self.isExporting = true
+            self.exportError = nil
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result: Result<Void, Error>
                 
-                switch result {
-                case .success:
-                    dismiss()
-                case .failure(let error):
-                    exportError = error.localizedDescription
+                switch self.selectedFormat {
+                case .npy:
+                    result = NpyExporter.export(cube: cube, to: saveURL, exportWavelengths: self.exportWavelengths)
+                case .tiff:
+                    result = TiffExporter.export(cube: cube, to: saveURL, exportWavelengths: self.exportWavelengths)
+                }
+                
+                DispatchQueue.main.async {
+                    self.isExporting = false
+                    
+                    switch result {
+                    case .success:
+                        self.dismiss()
+                    case .failure(let error):
+                        self.exportError = error.localizedDescription
+                    }
                 }
             }
         }
