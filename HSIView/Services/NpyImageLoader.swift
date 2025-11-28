@@ -16,7 +16,7 @@ class NpyImageLoader: ImageLoader {
             return .failure(.notA3DCube)
         }
         
-        guard let values = parseNpyData(data: data, header: header) else {
+        guard let storage = parseNpyData(data: data, header: header) else {
             return .failure(.corruptedData)
         }
         
@@ -27,13 +27,10 @@ class NpyImageLoader: ImageLoader {
             dims = (header.shape[0], header.shape[1], header.shape[2])
         }
         
-        let dataType = npyDtypeToDataType(header.dtype)
-        
         // Передаем флаг Fortran-order для правильной индексации
         return .success(HyperCube(
             dims: dims,
-            data: values,
-            originalDataType: dataType,
+            storage: storage,
             sourceFormat: "NumPy (.npy)",
             isFortranOrder: header.fortranOrder
         ))
@@ -154,7 +151,7 @@ class NpyImageLoader: ImageLoader {
         return header.contains("'fortran_order': True")
     }
     
-    private static func parseNpyData(data: Data, header: NpyHeader) -> [Double]? {
+    private static func parseNpyData(data: Data, header: NpyHeader) -> DataStorage? {
         let dataStart = header.dataOffset
         guard data.count > dataStart else { return nil }
         
@@ -163,97 +160,138 @@ class NpyImageLoader: ImageLoader {
         
         let dtype = header.dtype.trimmingCharacters(in: .whitespaces)
         
-        var values: [Double] = []
-        values.reserveCapacity(totalElements)
-        
+        // Возвращаем DataStorage в оригинальном типе (экономия памяти!)
         if dtype.hasSuffix("f8") || dtype.hasSuffix("f64") {
             guard dataBytes.count >= totalElements * 8 else { return nil }
             
+            var values = [Double]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: Double.self)
                 for i in 0..<totalElements {
                     values.append(buffer[i])
                 }
             }
+            return .float64(values)
+            
         } else if dtype.hasSuffix("f4") || dtype.hasSuffix("f32") {
             guard dataBytes.count >= totalElements * 4 else { return nil }
             
+            var values = [Float]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: Float.self)
                 for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                    values.append(buffer[i])
                 }
             }
+            return .float32(values)
         } else if dtype.hasSuffix("i8") {
             guard dataBytes.count >= totalElements * 8 else { return nil }
             
+            var values = [Int32]()  // Используем Int32 вместо Int64 для экономии
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: Int64.self)
                 for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                    values.append(Int32(clamping: buffer[i]))
                 }
             }
+            return .int32(values)
+            
         } else if dtype.hasSuffix("i4") {
             guard dataBytes.count >= totalElements * 4 else { return nil }
             
+            var values = [Int32]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: Int32.self)
                 for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                    values.append(buffer[i])
                 }
             }
+            return .int32(values)
+            
         } else if dtype.hasSuffix("i2") {
             guard dataBytes.count >= totalElements * 2 else { return nil }
             
+            var values = [Int16]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: Int16.self)
                 for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                    values.append(buffer[i])
                 }
             }
-        } else if dtype.hasSuffix("i1") || dtype.hasSuffix("u1") {
+            return .int16(values)
+            
+        } else if dtype.hasSuffix("i1") {
             guard dataBytes.count >= totalElements else { return nil }
             
+            var values = [Int8]()
+            values.reserveCapacity(totalElements)
+            dataBytes.withUnsafeBytes { bytes in
+                let buffer = bytes.bindMemory(to: Int8.self)
+                for i in 0..<totalElements {
+                    values.append(buffer[i])
+                }
+            }
+            return .int8(values)
+            
+        } else if dtype.hasSuffix("u1") {
+            guard dataBytes.count >= totalElements else { return nil }
+            
+            var values = [UInt8]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: UInt8.self)
                 for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                    values.append(buffer[i])
                 }
             }
+            return .uint8(values)
+            
         } else if dtype.hasSuffix("u2") {
             guard dataBytes.count >= totalElements * 2 else { return nil }
             
+            var values = [UInt16]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
                 let buffer = bytes.bindMemory(to: UInt16.self)
                 for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                    values.append(buffer[i])
                 }
             }
-        } else if dtype.hasSuffix("u4") {
-            guard dataBytes.count >= totalElements * 4 else { return nil }
+            return .uint16(values)
             
-            dataBytes.withUnsafeBytes { bytes in
-                let buffer = bytes.bindMemory(to: UInt32.self)
-                for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
-                }
-            }
-        } else if dtype.hasSuffix("u8") {
-            guard dataBytes.count >= totalElements * 8 else { return nil }
+        } else if dtype.hasSuffix("u4") || dtype.hasSuffix("u8") {
+            // uint32 и uint64 конвертируем в uint16 для экономии памяти
+            let bytesPerElement = dtype.hasSuffix("u4") ? 4 : 8
+            guard dataBytes.count >= totalElements * bytesPerElement else { return nil }
             
+            var values = [UInt16]()
+            values.reserveCapacity(totalElements)
             dataBytes.withUnsafeBytes { bytes in
-                let buffer = bytes.bindMemory(to: UInt64.self)
-                for i in 0..<totalElements {
-                    values.append(Double(buffer[i]))
+                if dtype.hasSuffix("u4") {
+                    let buffer = bytes.bindMemory(to: UInt32.self)
+                    for i in 0..<totalElements {
+                        values.append(UInt16(clamping: buffer[i]))
+                    }
+                } else {
+                    let buffer = bytes.bindMemory(to: UInt64.self)
+                    for i in 0..<totalElements {
+                        values.append(UInt16(clamping: buffer[i]))
+                    }
                 }
             }
+            return .uint16(values)
+            
         } else {
             return nil
         }
-        
-        return values
     }
     
+    // Больше не используется - DataStorage хранит originalDataType
     private static func npyDtypeToDataType(_ dtype: String) -> DataType {
         let dt = dtype.trimmingCharacters(in: .whitespaces)
         

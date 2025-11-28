@@ -11,12 +11,68 @@ enum DataType: String {
     case unknown = "Unknown"
 }
 
+/// Хранилище данных в оригинальном типе для экономии памяти
+enum DataStorage {
+    case float64([Double])
+    case float32([Float])
+    case int8([Int8])
+    case int16([Int16])
+    case int32([Int32])
+    case uint8([UInt8])
+    case uint16([UInt16])
+    
+    var dataType: DataType {
+        switch self {
+        case .float64: return .float64
+        case .float32: return .float32
+        case .int8: return .int8
+        case .int16: return .int16
+        case .int32: return .int32
+        case .uint8: return .uint8
+        case .uint16: return .uint16
+        }
+    }
+    
+    var count: Int {
+        switch self {
+        case .float64(let arr): return arr.count
+        case .float32(let arr): return arr.count
+        case .int8(let arr): return arr.count
+        case .int16(let arr): return arr.count
+        case .int32(let arr): return arr.count
+        case .uint8(let arr): return arr.count
+        case .uint16(let arr): return arr.count
+        }
+    }
+    
+    /// Получить значение как Double (для совместимости)
+    func getValue(at index: Int) -> Double {
+        switch self {
+        case .float64(let arr): return arr[index]
+        case .float32(let arr): return Double(arr[index])
+        case .int8(let arr): return Double(arr[index])
+        case .int16(let arr): return Double(arr[index])
+        case .int32(let arr): return Double(arr[index])
+        case .uint8(let arr): return Double(arr[index])
+        case .uint16(let arr): return Double(arr[index])
+        }
+    }
+    
+    /// Получить срез данных как Double массив
+    func getSlice(indices: [Int]) -> [Double] {
+        return indices.map { getValue(at: $0) }
+    }
+}
+
 struct HyperCube {
     let dims: (Int, Int, Int)
-    let data: [Double]
-    let originalDataType: DataType
+    let storage: DataStorage  // Изменено: хранение в оригинальном типе
     let sourceFormat: String
     let isFortranOrder: Bool  // Для правильной индексации
+    
+    var originalDataType: DataType {
+        storage.dataType
+    }
     
     var is2D: Bool {
         dims.0 == 1 || dims.1 == 1 || dims.2 == 1
@@ -99,6 +155,17 @@ struct HyperCube {
             // Элемент [i0, i1, i2] находится на позиции: i2 + d2*(i1 + d1*i0)
             return i2 + d2 * (i1 + d1 * i0)
         }
+    }
+    
+    /// Получить значение по линейному индексу
+    func getValue(at linearIndex: Int) -> Double {
+        return storage.getValue(at: linearIndex)
+    }
+    
+    /// Получить значение по 3D координатам
+    func getValue(i0: Int, i1: Int, i2: Int) -> Double {
+        let index = linearIndex(i0: i0, i1: i1, i2: i2)
+        return getValue(at: index)
     }
 }
 

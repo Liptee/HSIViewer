@@ -51,10 +51,12 @@ class MatImageLoader: ImageLoader {
             dataType = .float32
         }
         
+        // MATLAB обычно float64, оборачиваем в DataStorage
+        let storage: DataStorage = .float64(arr)
+        
         return .success(HyperCube(
             dims: (d0, d1, d2),
-            data: arr,
-            originalDataType: dataType,
+            storage: storage,
             sourceFormat: "MATLAB (.mat)",
             isFortranOrder: true  // MATLAB всегда column-major
         ))

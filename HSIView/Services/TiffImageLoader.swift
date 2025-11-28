@@ -42,10 +42,13 @@ class TiffImageLoader: ImageLoader {
         let buffer = UnsafeBufferPointer(start: ptr, count: count)
         let arr = Array(buffer)
         
+        // TIFF всегда uint8, конвертируем в правильный storage
+        let uint8Arr = arr.map { UInt8(clamping: Int($0)) }
+        let storage: DataStorage = .uint8(uint8Arr)
+        
         return .success(HyperCube(
             dims: (d0, d1, d2),
-            data: arr,
-            originalDataType: .uint8,
+            storage: storage,
             sourceFormat: "TIFF (.tiff)",
             isFortranOrder: true  // TiffHelper.c транспонирует в column-major
         ))

@@ -32,7 +32,7 @@ class ImageRenderer {
                 idx3[axes.width] = x
                 
                 let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
-                slice[y * w + x] = cube.data[lin]
+                slice[y * w + x] = cube.getValue(at: lin)
             }
         }
         
@@ -102,7 +102,7 @@ class ImageRenderer {
                 idx3[axes.width] = x
                 
                 let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
-                slice[y * w + x] = cube.data[lin]
+                slice[y * w + x] = cube.getValue(at: lin)
             }
         }
         
@@ -215,21 +215,21 @@ class ImageRenderer {
             for y in 0..<height {
                 for x in 0..<width {
                     let lin = cube.linearIndex(i0: 0, i1: y, i2: x)
-                    slice[y * width + x] = cube.data[lin]
+                    slice[y * width + x] = cube.getValue(at: lin)
                 }
             }
         } else if d1 == 1 {
             for y in 0..<height {
                 for x in 0..<width {
                     let lin = cube.linearIndex(i0: y, i1: 0, i2: x)
-                    slice[y * width + x] = cube.data[lin]
+                    slice[y * width + x] = cube.getValue(at: lin)
                 }
             }
         } else {
             for y in 0..<height {
                 for x in 0..<width {
                     let lin = cube.linearIndex(i0: y, i1: x, i2: 0)
-                    slice[y * width + x] = cube.data[lin]
+                    slice[y * width + x] = cube.getValue(at: lin)
                 }
             }
         }

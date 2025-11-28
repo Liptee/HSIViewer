@@ -9,7 +9,8 @@ extension HyperCube {
     }
     
     func statistics() -> Statistics {
-        guard !data.isEmpty else {
+        let count = storage.count
+        guard count > 0 else {
             return Statistics(min: 0, max: 0, mean: 0, stdDev: 0)
         }
         
@@ -17,21 +18,23 @@ extension HyperCube {
         var maxVal = -Double.greatestFiniteMagnitude
         var sum = 0.0
         
-        for val in data {
+        for i in 0..<count {
+            let val = storage.getValue(at: i)
             if val < minVal { minVal = val }
             if val > maxVal { maxVal = val }
             sum += val
         }
         
-        let mean = sum / Double(data.count)
+        let mean = sum / Double(count)
         
         var sumSquaredDiff = 0.0
-        for val in data {
+        for i in 0..<count {
+            let val = storage.getValue(at: i)
             let diff = val - mean
             sumSquaredDiff += diff * diff
         }
         
-        let variance = sumSquaredDiff / Double(data.count)
+        let variance = sumSquaredDiff / Double(count)
         let stdDev = sqrt(variance)
         
         return Statistics(min: minVal, max: maxVal, mean: mean, stdDev: stdDev)
@@ -60,7 +63,7 @@ extension HyperCube {
                 idx3[axes.width] = x
                 
                 let lin = linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
-                values.append(data[lin])
+                values.append(getValue(at: lin))
             }
         }
         
@@ -110,7 +113,7 @@ extension HyperCube {
             idx3[axes.width] = x
             
             let lin = linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
-            spectrum.append(data[lin])
+            spectrum.append(getValue(at: lin))
         }
         
         return spectrum
