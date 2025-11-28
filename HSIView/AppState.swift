@@ -28,6 +28,7 @@ final class AppState: ObservableObject {
     @Published var pipelineAutoApply: Bool = true
     
     @Published var showExportView: Bool = false
+    @Published var pendingExport: (format: ExportFormat, wavelengths: Bool)? = nil
     
     private var originalCube: HyperCube?
     

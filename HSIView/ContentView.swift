@@ -109,6 +109,57 @@ struct ContentView: View {
             ExportView()
                 .environmentObject(state)
         }
+        .onChange(of: state.pendingExport) { newValue in
+            if let exportInfo = newValue {
+                performActualExport(format: exportInfo.format, wavelengths: exportInfo.wavelengths)
+                state.pendingExport = nil
+            }
+        }
+    }
+    
+    private func performActualExport(format: ExportFormat, wavelengths: Bool) {
+        guard let cube = state.cube else { return }
+        
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        
+        if format == .tiff {
+            panel.nameFieldStringValue = "hypercube"
+            panel.allowedContentTypes = []
+            panel.message = "Выберите базовое имя файла (будет создано много PNG)"
+        } else {
+            panel.nameFieldStringValue = "hypercube.\(format.fileExtension)"
+            if format == .npy {
+                panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
+            }
+            panel.message = "Выберите путь для сохранения"
+        }
+        
+        panel.begin { response in
+            guard response == .OK, let saveURL = panel.url else {
+                return
+            }
+            
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result: Result<Void, Error>
+                
+                switch format {
+                case .npy:
+                    result = NpyExporter.export(cube: cube, to: saveURL, exportWavelengths: wavelengths)
+                case .tiff:
+                    result = TiffExporter.export(cube: cube, to: saveURL, exportWavelengths: wavelengths)
+                }
+                
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success:
+                        print("Export successful")
+                    case .failure(let error):
+                        print("Export error: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
     }
     
     private var topBar: some View {
