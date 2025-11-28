@@ -7,7 +7,8 @@ class MatImageLoader: ImageLoader {
         var cCube = MatCube3D(
             data: nil,
             dims: (0, 0, 0),
-            rank: 0
+            rank: 0,
+            data_type: MAT_DATA_FLOAT64
         )
         
         var nameBuf = [CChar](repeating: 0, count: 256)
@@ -41,18 +42,44 @@ class MatImageLoader: ImageLoader {
         }
         
         let count = d0 * d1 * d2
-        let buffer = UnsafeBufferPointer(start: ptr, count: count)
-        let arr = Array(buffer)
         
-        let dataType: DataType
-        if cCube.dims.0 == d0 {
-            dataType = .float64
-        } else {
-            dataType = .float32
+        // Создаем DataStorage в зависимости от типа данных
+        let storage: DataStorage
+        
+        switch cCube.data_type {
+        case MAT_DATA_FLOAT64:
+            let typedPtr = ptr.bindMemory(to: Double.self, capacity: count)
+            let buffer = UnsafeBufferPointer(start: typedPtr, count: count)
+            storage = .float64(Array(buffer))
+            
+        case MAT_DATA_FLOAT32:
+            let typedPtr = ptr.bindMemory(to: Float.self, capacity: count)
+            let buffer = UnsafeBufferPointer(start: typedPtr, count: count)
+            storage = .float32(Array(buffer))
+            
+        case MAT_DATA_UINT8:
+            let typedPtr = ptr.bindMemory(to: UInt8.self, capacity: count)
+            let buffer = UnsafeBufferPointer(start: typedPtr, count: count)
+            storage = .uint8(Array(buffer))
+            
+        case MAT_DATA_UINT16:
+            let typedPtr = ptr.bindMemory(to: UInt16.self, capacity: count)
+            let buffer = UnsafeBufferPointer(start: typedPtr, count: count)
+            storage = .uint16(Array(buffer))
+            
+        case MAT_DATA_INT8:
+            let typedPtr = ptr.bindMemory(to: Int8.self, capacity: count)
+            let buffer = UnsafeBufferPointer(start: typedPtr, count: count)
+            storage = .int8(Array(buffer))
+            
+        case MAT_DATA_INT16:
+            let typedPtr = ptr.bindMemory(to: Int16.self, capacity: count)
+            let buffer = UnsafeBufferPointer(start: typedPtr, count: count)
+            storage = .int16(Array(buffer))
+            
+        default:
+            return .failure(.corruptedData)
         }
-        
-        // MATLAB обычно float64, оборачиваем в DataStorage
-        let storage: DataStorage = .float64(arr)
         
         return .success(HyperCube(
             dims: (d0, d1, d2),

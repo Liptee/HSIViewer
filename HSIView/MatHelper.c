@@ -56,43 +56,71 @@ bool load_first_3d_double_cube(const char *path,
             size_t d2 = full->dims[2];
             size_t total = d0 * d1 * d2;
 
-            double *buf = (double *)malloc(total * sizeof(double));
-            if (!buf) {
-                Mat_VarFree(full);
-                Mat_VarFree(info);
-                break;
-            }
+            void *buf = NULL;
+            MatDataType dataType;
 
-            // Конвертируем различные типы в double для единообразия
+            // Копируем данные в оригинальном типе (без конвертации)
             if (full->class_type == MAT_C_DOUBLE && full->data_type == MAT_T_DOUBLE) {
+                buf = malloc(total * sizeof(double));
+                if (!buf) {
+                    Mat_VarFree(full);
+                    Mat_VarFree(info);
+                    break;
+                }
                 memcpy(buf, full->data, total * sizeof(double));
+                dataType = MAT_DATA_FLOAT64;
+                
             } else if (full->class_type == MAT_C_SINGLE && full->data_type == MAT_T_SINGLE) {
-                float *src = (float *)full->data;
-                for (size_t i = 0; i < total; ++i) {
-                    buf[i] = (double)src[i];
+                buf = malloc(total * sizeof(float));
+                if (!buf) {
+                    Mat_VarFree(full);
+                    Mat_VarFree(info);
+                    break;
                 }
+                memcpy(buf, full->data, total * sizeof(float));
+                dataType = MAT_DATA_FLOAT32;
+                
             } else if (full->class_type == MAT_C_UINT8 && full->data_type == MAT_T_UINT8) {
-                uint8_t *src = (uint8_t *)full->data;
-                for (size_t i = 0; i < total; ++i) {
-                    buf[i] = (double)src[i];
+                buf = malloc(total * sizeof(uint8_t));
+                if (!buf) {
+                    Mat_VarFree(full);
+                    Mat_VarFree(info);
+                    break;
                 }
+                memcpy(buf, full->data, total * sizeof(uint8_t));
+                dataType = MAT_DATA_UINT8;
+                
             } else if (full->class_type == MAT_C_UINT16 && full->data_type == MAT_T_UINT16) {
-                uint16_t *src = (uint16_t *)full->data;
-                for (size_t i = 0; i < total; ++i) {
-                    buf[i] = (double)src[i];
+                buf = malloc(total * sizeof(uint16_t));
+                if (!buf) {
+                    Mat_VarFree(full);
+                    Mat_VarFree(info);
+                    break;
                 }
+                memcpy(buf, full->data, total * sizeof(uint16_t));
+                dataType = MAT_DATA_UINT16;
+                
             } else if (full->class_type == MAT_C_INT8 && full->data_type == MAT_T_INT8) {
-                int8_t *src = (int8_t *)full->data;
-                for (size_t i = 0; i < total; ++i) {
-                    buf[i] = (double)src[i];
+                buf = malloc(total * sizeof(int8_t));
+                if (!buf) {
+                    Mat_VarFree(full);
+                    Mat_VarFree(info);
+                    break;
                 }
+                memcpy(buf, full->data, total * sizeof(int8_t));
+                dataType = MAT_DATA_INT8;
+                
             } else if (full->class_type == MAT_C_INT16 && full->data_type == MAT_T_INT16) {
-                int16_t *src = (int16_t *)full->data;
-                for (size_t i = 0; i < total; ++i) {
-                    buf[i] = (double)src[i];
+                buf = malloc(total * sizeof(int16_t));
+                if (!buf) {
+                    Mat_VarFree(full);
+                    Mat_VarFree(info);
+                    break;
                 }
+                memcpy(buf, full->data, total * sizeof(int16_t));
+                dataType = MAT_DATA_INT16;
+                
             } else {
-                free(buf);
                 Mat_VarFree(full);
                 Mat_VarFree(info);
                 continue;
@@ -103,6 +131,7 @@ bool load_first_3d_double_cube(const char *path,
             outCube->dims[1] = d1;
             outCube->dims[2] = d2;
             outCube->rank = 3;
+            outCube->data_type = dataType;
 
             if (outName && outNameLen > 0) {
                 strncpy(outName, full->name, outNameLen - 1);

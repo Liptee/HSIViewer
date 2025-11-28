@@ -9,10 +9,20 @@
 extern "C" {
 #endif
 
+typedef enum {
+    MAT_DATA_FLOAT64 = 0,
+    MAT_DATA_FLOAT32 = 1,
+    MAT_DATA_UINT8 = 2,
+    MAT_DATA_UINT16 = 3,
+    MAT_DATA_INT8 = 4,
+    MAT_DATA_INT16 = 5
+} MatDataType;
+
 typedef struct {
-    double *data;    // length = dims[0] * dims[1] * dims[2]
+    void *data;      // Указатель на данные (может быть double*, float*, uint8_t*, и т.д.)
     size_t dims[3];  // dims[0], dims[1], dims[2]
     int rank;        // должно быть 3
+    MatDataType data_type;  // Тип данных
 } MatCube3D;
 
 bool load_first_3d_double_cube(const char *path,
