@@ -9,7 +9,8 @@ class ImageLoaderFactory {
     private static let loaders: [ImageLoader.Type] = [
         MatImageLoader.self,
         TiffImageLoader.self,
-        NpyImageLoader.self
+        NpyImageLoader.self,
+        EnviImageLoader.self
     ]
     
     static func loader(for url: URL) -> ImageLoader.Type? {
