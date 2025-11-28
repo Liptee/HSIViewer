@@ -27,6 +27,8 @@ final class AppState: ObservableObject {
     @Published var pipelineOperations: [PipelineOperation] = []
     @Published var pipelineAutoApply: Bool = true
     
+    @Published var showExportView: Bool = false
+    
     private var originalCube: HyperCube?
     
     var displayCube: HyperCube? {

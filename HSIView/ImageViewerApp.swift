@@ -41,6 +41,14 @@ struct HSIViewApp: App {
                     openFile()
                 }
                 .keyboardShortcut("o", modifiers: .command)
+                
+                Divider()
+                
+                Button("Экспорт...") {
+                    appState.showExportView = true
+                }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(appState.cube == nil)
             }
         }
     }

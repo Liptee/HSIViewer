@@ -105,6 +105,10 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 960, minHeight: 500)
+        .sheet(isPresented: $state.showExportView) {
+            ExportView()
+                .environmentObject(state)
+        }
     }
     
     private var topBar: some View {
