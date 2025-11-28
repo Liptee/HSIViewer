@@ -75,6 +75,11 @@
 
 ### Исправлено
 
+- **Экспорт: добавлено разрешение read-write для сохранения файлов**
+  - Проблема: крэш \"Unable to display save panel: missing User Selected File Read/Write entitlement\"
+  - Причина: в entitlements было только read-only разрешение
+  - Решение: изменено на com.apple.security.files.user-selected.read-write
+  - Теперь NSSavePanel работает без крэшей
 - **Экспорт: исправлена ошибка компиляции Equatable**
   - Проблема: Type '(format: ExportFormat, wavelengths: Bool)' cannot conform to 'Equatable'
   - Решение: создан struct PendingExportInfo: Equatable вместо кортежа
