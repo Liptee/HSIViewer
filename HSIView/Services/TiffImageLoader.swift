@@ -42,8 +42,9 @@ class TiffImageLoader: ImageLoader {
         let buffer = UnsafeBufferPointer(start: ptr, count: count)
         let arr = Array(buffer)
         
-        // TIFF всегда uint8, конвертируем в правильный storage
-        let uint8Arr = arr.map { UInt8(clamping: Int($0)) }
+        // TIFF данные теперь приходят как 0-255 (не нормализованные)
+        // Конвертируем Double в UInt8 напрямую
+        let uint8Arr = arr.map { UInt8(clamping: Int($0.rounded())) }
         let storage: DataStorage = .uint8(uint8Arr)
         
         return .success(HyperCube(

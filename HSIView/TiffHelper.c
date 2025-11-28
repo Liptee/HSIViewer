@@ -87,7 +87,8 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
                 size_t row = written / W;
                 size_t col = written % W;
                 size_t colMajorIdx = row + H * (col + W * (size_t)s);
-                data[colMajorIdx] = (double)buf[i] / 255.0;
+                // Сохраняем как есть (0-255), без нормализации
+                data[colMajorIdx] = (double)buf[i];
             }
 
             _TIFFfree(buf);
