@@ -55,18 +55,7 @@ struct ImageInfoPanel: View {
                         .padding(.vertical, 4)
                     
                     // Реальный размер в памяти с учетом типа данных
-                    let sizeInBytes = cube.storage.sizeInBytes
-                    let sizeInMB = Double(sizeInBytes) / (1024 * 1024)
-                    let sizeInGB = Double(sizeInBytes) / (1024 * 1024 * 1024)
-                    
-                    let sizeStr: String
-                    if sizeInGB >= 1.0 {
-                        sizeStr = String(format: "%.2f ГБ", sizeInGB)
-                    } else {
-                        sizeStr = String(format: "%.1f МБ", sizeInMB)
-                    }
-                    
-                    infoRow(title: "Размер в памяти", value: sizeStr)
+                    infoRow(title: "Размер в памяти", value: formatMemorySize(bytes: cube.storage.sizeInBytes))
                 }
                 .padding(8)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -90,6 +79,17 @@ struct ImageInfoPanel: View {
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(.primary)
                 .textSelection(.enabled)
+        }
+    }
+    
+    private func formatMemorySize(bytes: Int) -> String {
+        let sizeInMB = Double(bytes) / (1024 * 1024)
+        let sizeInGB = Double(bytes) / (1024 * 1024 * 1024)
+        
+        if sizeInGB >= 1.0 {
+            return String(format: "%.2f ГБ", sizeInGB)
+        } else {
+            return String(format: "%.1f МБ", sizeInMB)
         }
     }
 }
