@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
@@ -225,18 +226,19 @@ struct ExportView: View {
         guard let cube = state.cube else { return }
         
         let panel = NSSavePanel()
+        panel.canCreateDirectories = true
         
         if selectedFormat == .tiff {
             panel.nameFieldStringValue = "hypercube"
-            panel.allowedFileTypes = nil
+            panel.allowedContentTypes = []
             panel.message = "Выберите базовое имя файла (будет создано много PNG)"
         } else {
             panel.nameFieldStringValue = "hypercube.\(selectedFormat.fileExtension)"
-            panel.allowedFileTypes = [selectedFormat.fileExtension]
+            if selectedFormat == .npy {
+                panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
+            }
             panel.message = "Выберите путь для сохранения"
         }
-        
-        panel.canCreateDirectories = true
         
         guard panel.runModal() == .OK, let saveURL = panel.url else {
             return

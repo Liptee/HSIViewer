@@ -334,7 +334,7 @@ struct ContentView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Выбрать txt"
-        panel.allowedFileTypes = ["txt"]
+        panel.allowedContentTypes = [.plainText]
         
         let response = panel.runModal()
         guard response == .OK, let url = panel.url else { return }

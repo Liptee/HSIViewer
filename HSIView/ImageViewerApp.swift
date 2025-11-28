@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var sharedState: AppState?
@@ -59,7 +60,19 @@ struct HSIViewApp: App {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Открыть"
-        panel.allowedFileTypes = ["mat", "tif", "tiff", "npy", "dat", "hdr", "img", "bsq", "bil", "bip", "raw"]
+        
+        let matType = UTType(filenameExtension: "mat") ?? .data
+        let tiffType = UTType.tiff
+        let npyType = UTType(filenameExtension: "npy") ?? .data
+        let datType = UTType(filenameExtension: "dat") ?? .data
+        let hdrType = UTType(filenameExtension: "hdr") ?? .data
+        let imgType = UTType(filenameExtension: "img") ?? .data
+        let bsqType = UTType(filenameExtension: "bsq") ?? .data
+        let bilType = UTType(filenameExtension: "bil") ?? .data
+        let bipType = UTType(filenameExtension: "bip") ?? .data
+        let rawType = UTType(filenameExtension: "raw") ?? .data
+        
+        panel.allowedContentTypes = [matType, tiffType, npyType, datType, hdrType, imgType, bsqType, bilType, bipType, rawType]
         
         let response = panel.runModal()
         guard response == .OK, let url = panel.url else { return }
