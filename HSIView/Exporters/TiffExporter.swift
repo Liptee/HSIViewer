@@ -3,7 +3,7 @@ import CoreGraphics
 import ImageIO
 
 class TiffExporter {
-    static func export(cube: HyperCube, to url: URL, exportWavelengths: Bool) -> Result<Void, Error> {
+    static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?) -> Result<Void, Error> {
         if cube.originalDataType != .uint8 && cube.originalDataType != .uint16 {
             return .failure(ExportError.unsupportedDataType)
         }
@@ -11,7 +11,7 @@ class TiffExporter {
         do {
             try exportAsPNG(cube: cube, to: url)
             
-            if exportWavelengths, let wavelengths = cube.wavelengths, !wavelengths.isEmpty {
+            if let wavelengths = wavelengths, !wavelengths.isEmpty {
                 let baseName = url.deletingPathExtension().lastPathComponent
                 let directory = url.deletingLastPathComponent()
                 let wavelengthsURL = directory.appendingPathComponent("\(baseName)_wavelengths.txt")

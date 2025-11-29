@@ -18,12 +18,12 @@ enum ExportError: Error, LocalizedError {
 }
 
 class NpyExporter {
-    static func export(cube: HyperCube, to url: URL, exportWavelengths: Bool) -> Result<Void, Error> {
+    static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?) -> Result<Void, Error> {
         do {
             let npyData = try createNpyData(from: cube)
             try npyData.write(to: url, options: .atomic)
             
-            if exportWavelengths, let wavelengths = cube.wavelengths, !wavelengths.isEmpty {
+            if let wavelengths = wavelengths, !wavelengths.isEmpty {
                 let wavelengthsURL = url.deletingPathExtension().appendingPathExtension("wavelengths.txt")
                 let wavelengthsText = wavelengths.map { String($0) }.joined(separator: "\n")
                 try wavelengthsText.write(to: wavelengthsURL, atomically: true, encoding: .utf8)

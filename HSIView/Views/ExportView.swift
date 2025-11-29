@@ -180,28 +180,28 @@ struct ExportView: View {
     
     @ViewBuilder
     private var wavelengthsDescription: some View {
-        if let wavelengths = state.cube?.wavelengths, !wavelengths.isEmpty {
+        if let wavelengths = state.wavelengths, !wavelengths.isEmpty {
             switch selectedFormat {
             case .npy:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан дополнительный файл '_wavelengths.txt' с длинами волн (по одному значению на строку)."
+                    text: "Будет создан дополнительный файл '_wavelengths.txt' с \(wavelengths.count) длинами волн (по одному значению на строку)."
                 )
             case .mat:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан дополнительный файл '_wavelengths.txt' с длинами волн."
+                    text: "Будет создан дополнительный файл '_wavelengths.txt' с \(wavelengths.count) длинами волн."
                 )
             case .tiff:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан файл 'hypercube_wavelengths.txt' с длинами волн."
+                    text: "Будет создан файл 'hypercube_wavelengths.txt' с \(wavelengths.count) длинами волн."
                 )
             }
         } else {
             infoBox(
                 icon: "exclamationmark.triangle",
-                text: "Длины волн отсутствуют в текущем кубе.",
+                text: "Длины волн отсутствуют. Сгенерируйте их в панели управления (Start/Step) перед экспортом.",
                 color: .orange
             )
         }

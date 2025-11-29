@@ -18,7 +18,7 @@ class MatExporter {
         }
     }
     
-    static func export(cube: HyperCube, to url: URL, variableName: String, exportWavelengths: Bool, wavelengthsAsVariable: Bool) -> Result<Void, Error> {
+    static func export(cube: HyperCube, to url: URL, variableName: String, wavelengths: [Double]?, wavelengthsAsVariable: Bool) -> Result<Void, Error> {
         let (d0, d1, d2) = cube.dims
         let count = d0 * d1 * d2
         
@@ -88,7 +88,7 @@ class MatExporter {
             return .failure(ExportError.exportFailed("Не удалось записать MAT файл"))
         }
         
-        if exportWavelengths, let wavelengths = cube.wavelengths {
+        if let wavelengths = wavelengths, !wavelengths.isEmpty {
             if wavelengthsAsVariable {
                 let wavelengthsVarName = "\(variableName)_wavelengths"
                 let waveSuccess = url.path.withCString { cPath in

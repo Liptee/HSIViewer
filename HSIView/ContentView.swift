@@ -150,22 +150,24 @@ struct ContentView: View {
                 return
             }
             
+            let wavelengthsToExport = wavelengths ? self.state.wavelengths : nil
+            
             DispatchQueue.global(qos: .userInitiated).async {
                 let result: Result<Void, Error>
                 
                 switch format {
                 case .npy:
-                    result = NpyExporter.export(cube: cube, to: saveURL, exportWavelengths: wavelengths)
+                    result = NpyExporter.export(cube: cube, to: saveURL, wavelengths: wavelengthsToExport)
                 case .mat:
                     result = MatExporter.export(
                         cube: cube,
                         to: saveURL,
                         variableName: matVariableName ?? "hypercube",
-                        exportWavelengths: wavelengths,
+                        wavelengths: wavelengthsToExport,
                         wavelengthsAsVariable: matWavelengthsAsVariable
                     )
                 case .tiff:
-                    result = TiffExporter.export(cube: cube, to: saveURL, exportWavelengths: wavelengths)
+                    result = TiffExporter.export(cube: cube, to: saveURL, wavelengths: wavelengthsToExport)
                 }
                 
                 DispatchQueue.main.async {
@@ -332,8 +334,18 @@ struct ContentView: View {
             
             if !cube.is2D && state.viewMode == .gray {
                 HStack {
-                    Text("Канал: \(Int(state.currentChannel)) / \(max(state.channelCount - 1, 0))")
+                    let channelIdx = Int(state.currentChannel)
+                    let wavelengthText: String = {
+                        if let wavelengths = state.wavelengths,
+                           channelIdx < wavelengths.count {
+                            return String(format: " (%.2f нм)", wavelengths[channelIdx])
+                        }
+                        return ""
+                    }()
+                    
+                    Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
                         .font(.system(size: 11))
+                        .monospacedDigit()
                     
                     Slider(value: $state.currentChannel,
                            in: 0...Double(max(state.channelCount - 1, 0)),
