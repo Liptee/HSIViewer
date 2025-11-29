@@ -333,7 +333,7 @@ struct ContentView: View {
             }
             
             if !cube.is2D && state.viewMode == .gray {
-                HStack {
+                VStack(alignment: .leading, spacing: 8) {
                     let channelIdx = Int(state.currentChannel)
                     let wavelengthText: String = {
                         if let wavelengths = state.wavelengths,
@@ -343,13 +343,19 @@ struct ContentView: View {
                         return ""
                     }()
                     
-                    Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
-                        .font(.system(size: 11))
-                        .monospacedDigit()
+                    HStack {
+                        Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
+                            .font(.system(size: 11))
+                            .monospacedDigit()
+                        
+                        Spacer()
+                    }
                     
-                    Slider(value: $state.currentChannel,
-                           in: 0...Double(max(state.channelCount - 1, 0)),
-                           step: 1.0)
+                    ChannelSliderView(
+                        currentChannel: $state.currentChannel,
+                        channelCount: state.channelCount,
+                        cube: cube
+                    )
                 }
             }
             
