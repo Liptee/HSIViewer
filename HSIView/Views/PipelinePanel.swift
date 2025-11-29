@@ -372,7 +372,7 @@ struct OperationEditorView: View {
         guard let op = operation else { return }
         
         switch op.type {
-        case .normalization:
+        case .normalization, .channelwiseNormalization:
             localNormalizationType = op.normalizationType ?? .none
             localNormalizationParams = op.normalizationParams ?? .default
             localPreserveDataType = op.preserveDataType ?? true
@@ -389,7 +389,7 @@ struct OperationEditorView: View {
         }
         
         switch op.type {
-        case .normalization:
+        case .normalization, .channelwiseNormalization:
             state.pipelineOperations[index].normalizationType = localNormalizationType
             state.pipelineOperations[index].normalizationParams = localNormalizationParams
             state.pipelineOperations[index].preserveDataType = localPreserveDataType
@@ -414,7 +414,7 @@ struct OperationEditorView: View {
     @ViewBuilder
     private func editorContent(for op: PipelineOperation) -> some View {
         switch op.type {
-        case .normalization:
+        case .normalization, .channelwiseNormalization:
             normalizationEditor(for: op)
         case .dataTypeConversion:
             dataTypeEditor(for: op)

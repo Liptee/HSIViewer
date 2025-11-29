@@ -273,6 +273,179 @@ class CubeNormalizer {
             return .float64(data)
         }
     }
+    
+    static func applyChannelwise(
+        _ type: CubeNormalizationType,
+        to cube: HyperCube,
+        parameters: CubeNormalizationParameters,
+        preserveDataType: Bool = false
+    ) -> HyperCube? {
+        guard type != .none else { return cube }
+        
+        let (height, width, channels) = cube.dims
+        guard channels > 0 else { return nil }
+        
+        let totalElements = height * width * channels
+        var allData = [Double](repeating: 0.0, count: totalElements)
+        
+        for ch in 0..<channels {
+            var channelData = [Double]()
+            channelData.reserveCapacity(height * width)
+            
+            for h in 0..<height {
+                for w in 0..<width {
+                    let idx = cube.linearIndex(i0: h, i1: w, i2: ch)
+                    let value = cube.getValue(at: idx)
+                    channelData.append(value)
+                }
+            }
+            
+            let normalizedChannel: [Double]
+            switch type {
+            case .none:
+                normalizedChannel = channelData
+                
+            case .minMax:
+                normalizedChannel = normalizeChannelMinMax(channelData, targetMin: 0.0, targetMax: 1.0)
+                
+            case .minMaxCustom:
+                normalizedChannel = normalizeChannelMinMax(channelData, targetMin: parameters.minValue, targetMax: parameters.maxValue)
+                
+            case .percentile:
+                normalizedChannel = normalizeChannelPercentile(channelData, lower: parameters.lowerPercentile, upper: parameters.upperPercentile)
+                
+            case .zScore:
+                normalizedChannel = normalizeChannelZScore(channelData)
+                
+            case .log:
+                normalizedChannel = normalizeChannelLog(channelData)
+                
+            case .sqrt:
+                normalizedChannel = normalizeChannelSqrt(channelData)
+            }
+            
+            for h in 0..<height {
+                for w in 0..<width {
+                    let idx = cube.linearIndex(i0: h, i1: w, i2: ch)
+                    let channelIdx = h * width + w
+                    allData[idx] = normalizedChannel[channelIdx]
+                }
+            }
+        }
+        
+        let storage: DataStorage
+        if preserveDataType, let preserveType = shouldPreserveChannelwise(cube: cube, normalizedData: allData) {
+            storage = wrapInStorage(allData, preserveType: preserveType) ?? .float64(allData)
+        } else {
+            storage = .float64(allData)
+        }
+        
+        return HyperCube(
+            dims: cube.dims,
+            storage: storage,
+            sourceFormat: cube.sourceFormat,
+            isFortranOrder: cube.isFortranOrder,
+            wavelengths: cube.wavelengths
+        )
+    }
+    
+    private static func normalizeChannelMinMax(_ data: [Double], targetMin: Double, targetMax: Double) -> [Double] {
+        guard !data.isEmpty else { return data }
+        
+        let channelMin = data.min() ?? 0.0
+        let channelMax = data.max() ?? 1.0
+        let range = channelMax - channelMin
+        
+        guard range > 1e-10 else {
+            return data.map { _ in targetMin }
+        }
+        
+        return data.map { value in
+            let normalized = (value - channelMin) / range
+            return targetMin + normalized * (targetMax - targetMin)
+        }
+    }
+    
+    private static func normalizeChannelPercentile(_ data: [Double], lower: Double, upper: Double) -> [Double] {
+        guard !data.isEmpty else { return data }
+        
+        var sorted = data.sorted()
+        let count = sorted.count
+        
+        let lowerIdx = max(0, min(count - 1, Int(Double(count - 1) * lower / 100.0)))
+        let upperIdx = max(0, min(count - 1, Int(Double(count - 1) * upper / 100.0)))
+        
+        let lowerValue = sorted[lowerIdx]
+        let upperValue = sorted[upperIdx]
+        let range = upperValue - lowerValue
+        
+        guard range > 1e-10 else {
+            return data.map { _ in 0.0 }
+        }
+        
+        return data.map { value in
+            let clamped = max(lowerValue, min(upperValue, value))
+            return (clamped - lowerValue) / range
+        }
+    }
+    
+    private static func normalizeChannelZScore(_ data: [Double]) -> [Double] {
+        guard !data.isEmpty else { return data }
+        
+        let mean = data.reduce(0.0, +) / Double(data.count)
+        let variance = data.map { pow($0 - mean, 2) }.reduce(0.0, +) / Double(data.count)
+        let std = sqrt(variance)
+        
+        guard std > 1e-10 else {
+            return data.map { _ in 0.0 }
+        }
+        
+        return data.map { ($0 - mean) / std }
+    }
+    
+    private static func normalizeChannelLog(_ data: [Double]) -> [Double] {
+        return data.map { log(max($0, 0.0) + 1.0) }
+    }
+    
+    private static func normalizeChannelSqrt(_ data: [Double]) -> [Double] {
+        return data.map { sqrt(max($0, 0.0)) }
+    }
+    
+    private static func shouldPreserveChannelwise(cube: HyperCube, normalizedData: [Double]) -> DataType? {
+        let originalType = cube.originalDataType
+        
+        guard let dataMin = normalizedData.min(),
+              let dataMax = normalizedData.max() else {
+            return nil
+        }
+        
+        switch originalType {
+        case .uint8:
+            if dataMin >= 0 && dataMax <= 255 {
+                return .uint8
+            }
+        case .uint16:
+            if dataMin >= 0 && dataMax <= 65535 {
+                return .uint16
+            }
+        case .int8:
+            if dataMin >= -128 && dataMax <= 127 {
+                return .int8
+            }
+        case .int16:
+            if dataMin >= -32768 && dataMax <= 32767 {
+                return .int16
+            }
+        case .float32:
+            return .float32
+        case .float64:
+            return .float64
+        default:
+            break
+        }
+        
+        return nil
+    }
 }
 
 
