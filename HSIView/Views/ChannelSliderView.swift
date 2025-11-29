@@ -88,12 +88,15 @@ struct ChannelSliderView: View {
             
             let (height, width, channels) = cube.dims
             let sampleSize = min(height * width, 10000)
+            let step = max(1, (height * width) / sampleSize)
+            
+            var globalMin = Double.infinity
+            var globalMax = -Double.infinity
+            var channelAverages: [Double] = []
             
             for ch in 0..<channels {
                 var sum: Double = 0.0
                 var count = 0
-                
-                let step = max(1, (height * width) / sampleSize)
                 
                 for h in stride(from: 0, to: height, by: step) {
                     for w in stride(from: 0, to: width, by: step) {
@@ -101,23 +104,21 @@ struct ChannelSliderView: View {
                         let value = cube.getValue(at: idx)
                         sum += value
                         count += 1
+                        
+                        globalMin = min(globalMin, value)
+                        globalMax = max(globalMax, value)
                     }
                 }
                 
                 let average = count > 0 ? sum / Double(count) : 0.0
-                
-                let normalizedValue: Double
-                switch cube.originalDataType {
-                case .uint8:
-                    normalizedValue = average / 255.0
-                case .uint16:
-                    normalizedValue = average / 65535.0
-                case .float32, .float64:
-                    normalizedValue = min(max(average, 0.0), 1.0)
-                default:
-                    normalizedValue = min(max(average / 255.0, 0.0), 1.0)
-                }
-                
+                channelAverages.append(average)
+            }
+            
+            let range = globalMax - globalMin
+            let safeRange = range > 1e-10 ? range : 1.0
+            
+            for average in channelAverages {
+                let normalizedValue = (average - globalMin) / safeRange
                 let grayValue = min(max(normalizedValue, 0.0), 1.0)
                 previews.append(Color(white: grayValue))
             }
