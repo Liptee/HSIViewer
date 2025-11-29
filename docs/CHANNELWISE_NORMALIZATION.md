@@ -355,3 +355,4 @@ func applyChannelwise(type, cube, parameters) -> HyperCube {
 **Дата:** 2025-11-29  
 **Автор:** HSIView Team
 
+

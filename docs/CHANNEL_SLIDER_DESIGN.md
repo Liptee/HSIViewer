@@ -404,3 +404,4 @@ LinearGradient(
 **Вдохновлено:** QuickTime Player timeline  
 **Автор:** HSIView Team
 
+

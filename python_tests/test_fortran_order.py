@@ -72,3 +72,4 @@ print()
 print(f"{'✅ C order ПРАВИЛЬНЫЙ!' if matches_c else '❌ C order НЕПРАВИЛЬНЫЙ!'}")
 
 
+

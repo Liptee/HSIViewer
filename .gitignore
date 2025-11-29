@@ -1,4 +1,5 @@
 test_data
+python_tests
 test_npy_files
 test_*.npy
 test_*.mat
