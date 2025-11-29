@@ -111,13 +111,18 @@ struct ContentView: View {
         }
         .onChange(of: state.pendingExport) { newValue in
             if let exportInfo = newValue {
-                performActualExport(format: exportInfo.format, wavelengths: exportInfo.wavelengths)
+                performActualExport(
+                    format: exportInfo.format,
+                    wavelengths: exportInfo.wavelengths,
+                    matVariableName: exportInfo.matVariableName,
+                    matWavelengthsAsVariable: exportInfo.matWavelengthsAsVariable
+                )
                 state.pendingExport = nil
             }
         }
     }
     
-    private func performActualExport(format: ExportFormat, wavelengths: Bool) {
+    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool) {
         guard let cube = state.cube else { return }
         
         let panel = NSSavePanel()
@@ -129,8 +134,13 @@ struct ContentView: View {
             panel.message = "Выберите базовое имя файла (будет создано много PNG)"
         } else {
             panel.nameFieldStringValue = "hypercube.\(format.fileExtension)"
-            if format == .npy {
+            switch format {
+            case .npy:
                 panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
+            case .mat:
+                panel.allowedContentTypes = [UTType(filenameExtension: "mat") ?? .data]
+            case .tiff:
+                break
             }
             panel.message = "Выберите путь для сохранения"
         }
@@ -146,6 +156,14 @@ struct ContentView: View {
                 switch format {
                 case .npy:
                     result = NpyExporter.export(cube: cube, to: saveURL, exportWavelengths: wavelengths)
+                case .mat:
+                    result = MatExporter.export(
+                        cube: cube,
+                        to: saveURL,
+                        variableName: matVariableName ?? "hypercube",
+                        exportWavelengths: wavelengths,
+                        wavelengthsAsVariable: matWavelengthsAsVariable
+                    )
                 case .tiff:
                     result = TiffExporter.export(cube: cube, to: saveURL, exportWavelengths: wavelengths)
                 }

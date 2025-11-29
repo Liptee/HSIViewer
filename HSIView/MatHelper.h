@@ -30,6 +30,15 @@ bool load_first_3d_double_cube(const char *path,
                                char *outName,
                                size_t outNameLen);
 
+bool save_3d_cube(const char *path,
+                  const char *varName,
+                  const MatCube3D *cube);
+
+bool save_wavelengths(const char *path,
+                      const char *varName,
+                      const double *wavelengths,
+                      size_t count);
+
 void free_cube(MatCube3D *cube);
 
 #ifdef __cplusplus

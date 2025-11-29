@@ -151,6 +151,138 @@ bool load_first_3d_double_cube(const char *path,
     return ok;
 }
 
+bool save_3d_cube(const char *path,
+                  const char *varName,
+                  const MatCube3D *cube)
+{
+    if (!path || !varName || !cube || !cube->data) {
+        return false;
+    }
+    
+    if (cube->rank != 3) {
+        return false;
+    }
+    
+    mat_t *mat = Mat_CreateVer(path, NULL, MAT_FT_MAT5);
+    if (!mat) {
+        return false;
+    }
+    
+    size_t dims[3] = {cube->dims[0], cube->dims[1], cube->dims[2]};
+    
+    enum matio_classes class_type;
+    enum matio_types data_type;
+    size_t element_size;
+    
+    switch (cube->data_type) {
+        case MAT_DATA_FLOAT64:
+            class_type = MAT_C_DOUBLE;
+            data_type = MAT_T_DOUBLE;
+            element_size = sizeof(double);
+            break;
+            
+        case MAT_DATA_FLOAT32:
+            class_type = MAT_C_SINGLE;
+            data_type = MAT_T_SINGLE;
+            element_size = sizeof(float);
+            break;
+            
+        case MAT_DATA_UINT8:
+            class_type = MAT_C_UINT8;
+            data_type = MAT_T_UINT8;
+            element_size = sizeof(uint8_t);
+            break;
+            
+        case MAT_DATA_UINT16:
+            class_type = MAT_C_UINT16;
+            data_type = MAT_T_UINT16;
+            element_size = sizeof(uint16_t);
+            break;
+            
+        case MAT_DATA_INT8:
+            class_type = MAT_C_INT8;
+            data_type = MAT_T_INT8;
+            element_size = sizeof(int8_t);
+            break;
+            
+        case MAT_DATA_INT16:
+            class_type = MAT_C_INT16;
+            data_type = MAT_T_INT16;
+            element_size = sizeof(int16_t);
+            break;
+            
+        default:
+            Mat_Close(mat);
+            return false;
+    }
+    
+    size_t total = dims[0] * dims[1] * dims[2];
+    void *data_copy = malloc(total * element_size);
+    if (!data_copy) {
+        Mat_Close(mat);
+        return false;
+    }
+    
+    memcpy(data_copy, cube->data, total * element_size);
+    
+    matvar_t *matvar = Mat_VarCreate(varName, class_type, data_type,
+                                     3, dims, data_copy, MAT_F_DONT_COPY_DATA);
+    
+    if (!matvar) {
+        free(data_copy);
+        Mat_Close(mat);
+        return false;
+    }
+    
+    int result = Mat_VarWrite(mat, matvar, MAT_COMPRESSION_NONE);
+    
+    Mat_VarFree(matvar);
+    Mat_Close(mat);
+    
+    return (result == 0);
+}
+
+bool save_wavelengths(const char *path,
+                      const char *varName,
+                      const double *wavelengths,
+                      size_t count)
+{
+    if (!path || !varName || !wavelengths || count == 0) {
+        return false;
+    }
+    
+    mat_t *mat = Mat_Open(path, MAT_ACC_RDWR);
+    if (!mat) {
+        return false;
+    }
+    
+    size_t dims[2] = {count, 1};
+    
+    double *data_copy = malloc(count * sizeof(double));
+    if (!data_copy) {
+        Mat_Close(mat);
+        return false;
+    }
+    
+    memcpy(data_copy, wavelengths, count * sizeof(double));
+    
+    matvar_t *matvar = Mat_VarCreate(varName, MAT_C_DOUBLE, MAT_T_DOUBLE,
+                                     2, dims, data_copy, MAT_F_DONT_COPY_DATA);
+    
+    if (!matvar) {
+        free(data_copy);
+        Mat_Close(mat);
+        return false;
+    }
+    
+    int result = Mat_VarWrite(mat, matvar, MAT_COMPRESSION_NONE);
+    
+    Mat_VarFree(matvar);
+    Mat_Close(mat);
+    
+    return (result == 0);
+}
+
 void free_cube(MatCube3D *cube)
 {
     if (!cube) return;

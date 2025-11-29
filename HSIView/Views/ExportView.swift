@@ -5,10 +5,13 @@ import UniformTypeIdentifiers
 struct PendingExportInfo: Equatable {
     let format: ExportFormat
     let wavelengths: Bool
+    let matVariableName: String?
+    let matWavelengthsAsVariable: Bool
 }
 
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
+    case mat = "MATLAB (.mat)"
     case tiff = "PNG Channels"
     
     var id: String { rawValue }
@@ -16,6 +19,7 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     var fileExtension: String {
         switch self {
         case .npy: return "npy"
+        case .mat: return "mat"
         case .tiff: return "png"
         }
     }
@@ -27,6 +31,8 @@ struct ExportView: View {
     
     @State private var selectedFormat: ExportFormat = .npy
     @State private var exportWavelengths: Bool = true
+    @State private var matVariableName: String = "hypercube"
+    @State private var matWavelengthsAsVariable: Bool = true
     @State private var isExporting: Bool = false
     @State private var exportError: String?
     
@@ -39,6 +45,11 @@ struct ExportView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     formatSection
+                    
+                    if selectedFormat == .mat {
+                        matOptionsSection
+                    }
+                    
                     wavelengthsSection
                     cubeInfoSection
                 }
@@ -88,12 +99,66 @@ struct ExportView: View {
                 icon: "doc.badge.gearshape",
                 text: "NumPy формат. Сохраняет тип данных и порядок (C/Fortran). Совместим с Python/NumPy."
             )
+        case .mat:
+            infoBox(
+                icon: "doc.badge.gearshape",
+                text: "MATLAB формат. Сохраняет тип данных. Совместим с MATLAB/Octave. Данные в column-major порядке."
+            )
         case .tiff:
             infoBox(
                 icon: "photo.stack",
                 text: "Экспорт каналов как отдельные PNG изображения. Поддержка только UInt8/UInt16."
             )
         }
+    }
+    
+    private var matOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Параметры MAT:")
+                .font(.system(size: 11, weight: .semibold))
+            
+            HStack(spacing: 8) {
+                Text("Имя переменной:")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                
+                TextField("hypercube", text: $matVariableName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .frame(maxWidth: 200)
+            }
+            
+            infoBox(
+                icon: "info.circle",
+                text: "Имя переменной в MAT файле (например: 'data', 'cube', 'hypercube')."
+            )
+            
+            if exportWavelengths {
+                Toggle(isOn: $matWavelengthsAsVariable) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform.path")
+                            .font(.system(size: 11))
+                        Text("Сохранить wavelengths в MAT как переменную")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                
+                if matWavelengthsAsVariable {
+                    infoBox(
+                        icon: "doc.badge.gearshape",
+                        text: "Wavelengths будут сохранены как переменная '\(matVariableName)_wavelengths' в том же MAT файле."
+                    )
+                } else {
+                    infoBox(
+                        icon: "doc.text",
+                        text: "Wavelengths будут сохранены в отдельный .txt файл."
+                    )
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(8)
     }
     
     private var wavelengthsSection: some View {
@@ -121,6 +186,11 @@ struct ExportView: View {
                 infoBox(
                     icon: "doc.text",
                     text: "Будет создан дополнительный файл '_wavelengths.txt' с длинами волн (по одному значению на строку)."
+                )
+            case .mat:
+                infoBox(
+                    icon: "doc.text",
+                    text: "Будет создан дополнительный файл '_wavelengths.txt' с длинами волн."
                 )
             case .tiff:
                 infoBox(
@@ -228,7 +298,12 @@ struct ExportView: View {
     }
     
     private func performExport() {
-        state.pendingExport = PendingExportInfo(format: selectedFormat, wavelengths: exportWavelengths)
+        state.pendingExport = PendingExportInfo(
+            format: selectedFormat,
+            wavelengths: exportWavelengths,
+            matVariableName: selectedFormat == .mat ? matVariableName : nil,
+            matWavelengthsAsVariable: matWavelengthsAsVariable
+        )
         dismiss()
     }
     
