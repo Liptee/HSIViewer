@@ -191,7 +191,8 @@ final class AppState: ObservableObject {
     }
     
     func addOperation(type: PipelineOperationType) {
-        let operation = PipelineOperation(type: type)
+        var operation = PipelineOperation(type: type)
+        operation.layout = layout
         pipelineOperations.append(operation)
         if pipelineAutoApply {
             applyPipeline()
@@ -253,7 +254,7 @@ final class AppState: ObservableObject {
     }
     
     func applyTrim() {
-        guard let current = cube else { return }
+        guard let original = originalCube else { return }
         
         let startChannel = Int(trimStart)
         let endChannel = Int(trimEnd)
@@ -263,7 +264,7 @@ final class AppState: ObservableObject {
             return
         }
         
-        guard let trimmedCube = trimChannels(cube: current, from: startChannel, to: endChannel) else {
+        guard let trimmedCube = trimChannels(cube: original, from: startChannel, to: endChannel) else {
             loadError = "Ошибка при обрезке каналов"
             return
         }
@@ -273,8 +274,11 @@ final class AppState: ObservableObject {
         }
         
         originalCube = trimmedCube
-        cube = trimmedCube
         layout = .chw
+        
+        for i in 0..<pipelineOperations.count {
+            pipelineOperations[i].layout = layout
+        }
         
         currentChannel = 0
         updateChannelCount()
@@ -282,7 +286,7 @@ final class AppState: ObservableObject {
         isTrimMode = false
         loadError = nil
         
-        pipelineOperations.removeAll()
+        applyPipeline()
     }
     
     private func trimChannels(cube: HyperCube, from startChannel: Int, to endChannel: Int) -> HyperCube? {

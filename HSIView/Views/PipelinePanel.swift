@@ -342,6 +342,7 @@ struct OperationEditorView: View {
     @State private var localPreserveDataType: Bool = true
     @State private var localTargetDataType: DataType = .float64
     @State private var localAutoScale: Bool = true
+    @State private var localRotationAngle: RotationAngle = .degree90
     
     var body: some View {
         VStack(spacing: 0) {
@@ -379,6 +380,8 @@ struct OperationEditorView: View {
         case .dataTypeConversion:
             localTargetDataType = op.targetDataType ?? .float64
             localAutoScale = op.autoScale ?? true
+        case .rotation:
+            localRotationAngle = op.rotationAngle ?? .degree90
         }
     }
     
@@ -396,6 +399,8 @@ struct OperationEditorView: View {
         case .dataTypeConversion:
             state.pipelineOperations[index].targetDataType = localTargetDataType
             state.pipelineOperations[index].autoScale = localAutoScale
+        case .rotation:
+            state.pipelineOperations[index].rotationAngle = localRotationAngle
         }
     }
     
@@ -418,6 +423,8 @@ struct OperationEditorView: View {
             normalizationEditor(for: op)
         case .dataTypeConversion:
             dataTypeEditor(for: op)
+        case .rotation:
+            rotationEditor(for: op)
         }
     }
     
@@ -522,6 +529,64 @@ struct OperationEditorView: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    
+    private func rotationEditor(for op: PipelineOperation) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Угол поворота:")
+                .font(.system(size: 11, weight: .medium))
+            
+            HStack(spacing: 12) {
+                ForEach(RotationAngle.allCases) { angle in
+                    Button(action: {
+                        localRotationAngle = angle
+                    }) {
+                        VStack(spacing: 8) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(localRotationAngle == angle ? Color.accentColor.opacity(0.2) : Color(NSColor.controlBackgroundColor))
+                                    .frame(width: 80, height: 80)
+                                
+                                Image(systemName: rotationIcon(for: angle))
+                                    .font(.system(size: 32))
+                                    .foregroundColor(localRotationAngle == angle ? .accentColor : .secondary)
+                            }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(localRotationAngle == angle ? Color.accentColor : Color.clear, lineWidth: 2)
+                            )
+                            
+                            Text(angle.rawValue)
+                                .font(.system(size: 12, weight: localRotationAngle == angle ? .semibold : .regular))
+                                .foregroundColor(localRotationAngle == angle ? .accentColor : .primary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            
+            Divider()
+            
+            HStack(spacing: 8) {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.secondary)
+                Text("Поворот выполняется по часовой стрелке относительно центра изображения")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+    
+    private func rotationIcon(for angle: RotationAngle) -> String {
+        switch angle {
+        case .degree90:
+            return "rotate.right"
+        case .degree180:
+            return "arrow.up.arrow.down"
+        case .degree270:
+            return "rotate.left"
         }
     }
     
