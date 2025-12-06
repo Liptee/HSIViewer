@@ -4,17 +4,45 @@ import UniformTypeIdentifiers
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var sharedState: AppState?
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        ensureSingleMainWindow()
+    }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
         let url = URL(fileURLWithPath: filename)
+        activateMainWindow()
         Self.sharedState?.open(url: url)
         return true
     }
 
-    func application(_ application: NSApplication,
-                     open urls: [URL]) {
+    func application(_ application: NSApplication, open urls: [URL]) {
         if let url = urls.first {
+            activateMainWindow()
             Self.sharedState?.open(url: url)
+        }
+    }
+    
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            activateMainWindow()
+        }
+        return true
+    }
+    
+    private func activateMainWindow() {
+        if let mainWindow = NSApp.windows.first(where: { $0.identifier?.rawValue == "main-window" }) {
+            mainWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+    
+    private func ensureSingleMainWindow() {
+        let mainWindows = NSApp.windows.filter { $0.identifier?.rawValue == "main-window" }
+        if mainWindows.count > 1 {
+            for window in mainWindows.dropFirst() {
+                window.close()
+            }
         }
     }
 }
@@ -29,13 +57,14 @@ struct HSIViewApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        Window("HSIView", id: "main-window") {
             ContentView()
                 .environmentObject(appState)
                 .onOpenURL { url in
                     appState.open(url: url)
                 }
         }
+        .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Открыть...") {

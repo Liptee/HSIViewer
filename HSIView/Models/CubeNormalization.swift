@@ -49,6 +49,7 @@ struct CubeNormalizationParameters {
     static let `default` = CubeNormalizationParameters()
 }
 
+
 class CubeNormalizer {
     static func apply(
         _ type: CubeNormalizationType,

@@ -182,6 +182,12 @@ struct ContentView: View {
         }
     }
     
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "v\(version) (\(build))"
+    }
+    
     private var topBar: some View {
         HStack {
             if let url = state.cubeURL {
@@ -202,6 +208,10 @@ struct ContentView: View {
                     .font(.system(size: 11))
                     .foregroundColor(.red)
             }
+            
+            Text(appVersion)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.secondary)
         }
         .padding(8)
         .background(
