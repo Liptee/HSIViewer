@@ -13,8 +13,8 @@ final class AppState: ObservableObject {
     
     @Published var wavelengths: [Double]?
     @Published var lambdaStart: String = "400"
-    @Published var lambdaEnd: String = ""
-    @Published var lambdaStep: String = "1"
+    @Published var lambdaEnd: String = "1000"
+    @Published var lambdaStep: String = ""
     
     @Published var zoomScale: CGFloat = 1.0
     @Published var imageOffset: CGSize = .zero
@@ -29,6 +29,10 @@ final class AppState: ObservableObject {
     
     @Published var showExportView: Bool = false
     @Published var pendingExport: PendingExportInfo? = nil
+    
+    @Published var isTrimMode: Bool = false
+    @Published var trimStart: Double = 0
+    @Published var trimEnd: Double = 0
     
     private var originalCube: HyperCube?
     
@@ -45,6 +49,7 @@ final class AppState: ObservableObject {
         channelCount = 0
         resetZoom()
         pipelineOperations.removeAll()
+        isTrimMode = false
         
         let result = ImageLoaderFactory.load(from: url)
         
@@ -136,16 +141,20 @@ final class AppState: ObservableObject {
         }
         
         guard let start = Double(lambdaStart.replacingOccurrences(of: ",", with: ".")),
-              let step = Double(lambdaStep.replacingOccurrences(of: ",", with: ".")),
-              step > 0 else {
-            loadError = "Некорректные параметры λ (start/step)"
+              let end = Double(lambdaEnd.replacingOccurrences(of: ",", with: ".")) else {
+            loadError = "Некорректные параметры λ (от/до)"
             return
         }
         
-        let end = WavelengthManager.calculateEnd(start: start, channels: channels, step: step)
-        lambdaEnd = String(format: "%.4g", end)
+        guard end > start else {
+            loadError = "Значение 'до' должно быть больше 'от'"
+            return
+        }
         
-        wavelengths = WavelengthManager.generate(start: start, channels: channels, step: step)
+        let step = WavelengthManager.calculateStep(start: start, end: end, channels: channels)
+        lambdaStep = String(format: "%.4g", step)
+        
+        wavelengths = WavelengthManager.generateFromRange(start: start, end: end, channels: channels)
         loadError = nil
     }
     
@@ -231,5 +240,191 @@ final class AppState: ObservableObject {
         }
         
         cube = result ?? original
+    }
+    
+    func enterTrimMode() {
+        isTrimMode = true
+        trimStart = 0
+        trimEnd = Double(max(channelCount - 1, 0))
+    }
+    
+    func exitTrimMode() {
+        isTrimMode = false
+    }
+    
+    func applyTrim() {
+        guard let current = cube else { return }
+        
+        let startChannel = Int(trimStart)
+        let endChannel = Int(trimEnd)
+        
+        guard startChannel >= 0, endChannel < channelCount, startChannel <= endChannel else {
+            loadError = "Некорректный диапазон обрезки"
+            return
+        }
+        
+        guard let trimmedCube = trimChannels(cube: current, from: startChannel, to: endChannel) else {
+            loadError = "Ошибка при обрезке каналов"
+            return
+        }
+        
+        if let wl = wavelengths, wl.count == channelCount {
+            wavelengths = Array(wl[startChannel...endChannel])
+        }
+        
+        originalCube = trimmedCube
+        cube = trimmedCube
+        layout = .chw
+        
+        currentChannel = 0
+        updateChannelCount()
+        
+        isTrimMode = false
+        loadError = nil
+        
+        pipelineOperations.removeAll()
+    }
+    
+    private func trimChannels(cube: HyperCube, from startChannel: Int, to endChannel: Int) -> HyperCube? {
+        let (d0, d1, d2) = cube.dims
+        let dimsArray = [d0, d1, d2]
+        
+        guard let axesInfo = cube.axes(for: layout) else { return nil }
+        let channelAxis = axesInfo.channel
+        let heightAxis = axesInfo.height
+        let widthAxis = axesInfo.width
+        
+        let heightSize = dimsArray[heightAxis]
+        let widthSize = dimsArray[widthAxis]
+        
+        let newChannelCount = endChannel - startChannel + 1
+        
+        let newDims = (newChannelCount, heightSize, widthSize)
+        let totalNewElements = newDims.0 * newDims.1 * newDims.2
+        
+        func buildIndices(ch: Int, h: Int, w: Int) -> (Int, Int, Int) {
+            var i0 = 0, i1 = 0, i2 = 0
+            
+            if channelAxis == 0 { i0 = ch }
+            else if channelAxis == 1 { i1 = ch }
+            else { i2 = ch }
+            
+            if heightAxis == 0 { i0 = h }
+            else if heightAxis == 1 { i1 = h }
+            else { i2 = h }
+            
+            if widthAxis == 0 { i0 = w }
+            else if widthAxis == 1 { i1 = w }
+            else { i2 = w }
+            
+            return (i0, i1, i2)
+        }
+        
+        switch cube.storage {
+        case .float64(let arr):
+            var newData = [Double]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            
+        case .float32(let arr):
+            var newData = [Float]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            
+        case .uint16(let arr):
+            var newData = [UInt16]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            
+        case .uint8(let arr):
+            var newData = [UInt8]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            
+        case .int16(let arr):
+            var newData = [Int16]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            
+        case .int32(let arr):
+            var newData = [Int32]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            
+        case .int8(let arr):
+            var newData = [Int8]()
+            newData.reserveCapacity(totalNewElements)
+            
+            for ch in startChannel...endChannel {
+                for h in 0..<heightSize {
+                    for w in 0..<widthSize {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        newData.append(arr[idx])
+                    }
+                }
+            }
+            return HyperCube(dims: newDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+        }
     }
 }

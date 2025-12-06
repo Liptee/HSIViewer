@@ -43,6 +43,19 @@ class WavelengthManager {
         return wavelengths
     }
     
+    static func generateFromRange(start: Double, end: Double, channels: Int) -> [Double] {
+        guard channels > 0 else { return [] }
+        guard channels > 1 else { return [start] }
+        
+        let step = (end - start) / Double(channels - 1)
+        return generate(start: start, channels: channels, step: step)
+    }
+    
+    static func calculateStep(start: Double, end: Double, channels: Int) -> Double {
+        guard channels > 1 else { return 0 }
+        return (end - start) / Double(channels - 1)
+    }
+    
     static func calculateEnd(start: Double, channels: Int, step: Double) -> Double {
         return start + Double(max(channels - 1, 0)) * step
     }

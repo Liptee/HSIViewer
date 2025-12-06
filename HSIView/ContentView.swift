@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var state: AppState
     @State private var tempZoomScale: CGFloat = 1.0
+    @State private var showWavelengthPopover: Bool = false
     @FocusState private var isImageFocused: Bool
     
     var body: some View {
@@ -359,55 +360,55 @@ struct ContentView: View {
                             .monospacedDigit()
                         
                         Spacer()
+                        
+                        if state.isTrimMode {
+                            trimInfoView
+                        }
                     }
                     
-                    ChannelSliderView(
-                        currentChannel: $state.currentChannel,
-                        channelCount: state.channelCount,
-                        cube: cube
-                    )
+                    HStack(spacing: 8) {
+                        ChannelSliderView(
+                            currentChannel: $state.currentChannel,
+                            channelCount: state.channelCount,
+                            cube: cube,
+                            layout: state.layout,
+                            isTrimMode: state.isTrimMode,
+                            trimStart: $state.trimStart,
+                            trimEnd: $state.trimEnd
+                        )
+                        
+                        trimControlButtons
+                    }
                 }
             }
             
             if !cube.is2D {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Длины волн (нм):")
-                        .font(.system(size: 11))
-                    
-                    HStack(spacing: 8) {
-                        Button("Загрузить из txt…") {
-                            openWavelengthTXT()
-                        }
-                        
-                        Text("или диапазон:")
-                            .font(.system(size: 11))
-                        
+                HStack(spacing: 12) {
+                    Button {
+                        showWavelengthPopover.toggle()
+                    } label: {
                         HStack(spacing: 4) {
-                            Text("от")
+                            Image(systemName: "wave.3.right")
+                                .font(.system(size: 10))
+                            Text("Длины волн")
                                 .font(.system(size: 11))
-                            TextField("start", text: $state.lambdaStart)
-                                .frame(width: 50)
-                            Text("до")
-                                .font(.system(size: 11))
-                            TextField("end", text: $state.lambdaEnd)
-                                .frame(width: 50)
-                            Text("шаг")
-                                .font(.system(size: 11))
-                            TextField("step", text: $state.lambdaStep)
-                                .frame(width: 50)
                         }
-                        
-                        Button("Сгенерировать") {
-                            state.generateWavelengthsFromParams()
-                        }
+                    }
+                    .popover(isPresented: $showWavelengthPopover, arrowEdge: .top) {
+                        wavelengthPopoverContent
                     }
                     
                     if let lambda = state.wavelengths {
-                        Text("λ count: \(lambda.count)")
+                        Text("λ: \(lambda.count) каналов")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
+                        if let first = lambda.first, let last = lambda.last {
+                            Text("(\(String(format: "%.0f", first)) – \(String(format: "%.0f", last)) нм)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
                     } else {
-                        Text("λ пока не заданы")
+                        Text("λ не заданы")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -423,6 +424,165 @@ struct ContentView: View {
         .onChange(of: state.cube?.dims.0) { _ in
             state.updateChannelCount()
         }
+    }
+    
+    private var trimControlButtons: some View {
+        VStack(spacing: 4) {
+            if state.isTrimMode {
+                Button {
+                    state.applyTrim()
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.green)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+                .background(Color.green.opacity(0.15))
+                .cornerRadius(6)
+                .help("Применить обрезку")
+                
+                Button {
+                    state.exitTrimMode()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+                .background(Color.red.opacity(0.15))
+                .cornerRadius(6)
+                .help("Отменить")
+            } else {
+                Button {
+                    state.enterTrimMode()
+                } label: {
+                    Image(systemName: "scissors")
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 28, height: 28)
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(6)
+                .help("Обрезать каналы")
+            }
+        }
+    }
+    
+    private var trimInfoView: some View {
+        HStack(spacing: 4) {
+            let startCh = Int(state.trimStart)
+            let endCh = Int(state.trimEnd)
+            let trimCount = endCh - startCh + 1
+            
+            if let wavelengths = state.wavelengths,
+               startCh < wavelengths.count,
+               endCh < wavelengths.count {
+                Text("Обрезка: \(String(format: "%.0f", wavelengths[startCh])) – \(String(format: "%.0f", wavelengths[endCh])) нм")
+                    .font(.system(size: 10))
+                    .foregroundColor(.yellow)
+                Text("(\(trimCount) кан.)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Обрезка: канал \(startCh) – \(endCh)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.yellow)
+                Text("(\(trimCount) кан.)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.yellow.opacity(0.15))
+        .cornerRadius(4)
+    }
+    
+    private var wavelengthPopoverContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Настройка длин волн")
+                .font(.system(size: 12, weight: .semibold))
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Диапазон (нм):")
+                    .font(.system(size: 11))
+                
+                HStack(spacing: 8) {
+                    Text("от")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    TextField("400", text: $state.lambdaStart)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                    
+                    Text("до")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    TextField("1000", text: $state.lambdaEnd)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                }
+                
+                if state.channelCount > 1 {
+                    let step = calculateDisplayStep()
+                    Text("Шаг: \(String(format: "%.2f", step)) нм")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                
+                Button("Применить диапазон") {
+                    state.generateWavelengthsFromParams()
+                    showWavelengthPopover = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Или загрузить из файла:")
+                    .font(.system(size: 11))
+                
+                Button("Выбрать .txt файл…") {
+                    openWavelengthTXT()
+                    showWavelengthPopover = false
+                }
+                .controlSize(.small)
+            }
+            
+            if let lambda = state.wavelengths {
+                Divider()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Текущие значения:")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text("\(lambda.count) каналов")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    if let first = lambda.first, let last = lambda.last {
+                        Text("\(String(format: "%.1f", first)) – \(String(format: "%.1f", last)) нм")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 220)
+    }
+    
+    private func calculateDisplayStep() -> Double {
+        guard let start = Double(state.lambdaStart.replacingOccurrences(of: ",", with: ".")),
+              let end = Double(state.lambdaEnd.replacingOccurrences(of: ",", with: ".")),
+              state.channelCount > 1 else {
+            return 0
+        }
+        return (end - start) / Double(state.channelCount - 1)
     }
     
     private func openWavelengthTXT() {

@@ -421,7 +421,7 @@
 				CODE_SIGN_ENTITLEMENTS = HSIView/HSIView.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HSIView/Info.plist;
@@ -437,7 +437,7 @@
 					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
 					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
 				);
-				MARKETING_VERSION = 0.4.2;
+				MARKETING_VERSION = 0.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -456,7 +456,7 @@
 				CODE_SIGN_ENTITLEMENTS = HSIView/HSIView.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HSIView/Info.plist;
@@ -472,7 +472,7 @@
 					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
 					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
 				);
-				MARKETING_VERSION = 0.4.2;
+				MARKETING_VERSION = 0.4.4;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
