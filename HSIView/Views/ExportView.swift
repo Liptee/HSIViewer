@@ -7,12 +7,14 @@ struct PendingExportInfo: Equatable {
     let wavelengths: Bool
     let matVariableName: String?
     let matWavelengthsAsVariable: Bool
+    let colorSynthesisMode: ColorSynthesisMode?
 }
 
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
     case mat = "MATLAB (.mat)"
     case tiff = "PNG Channels"
+    case quickPNG = "Быстрый PNG"
     
     var id: String { rawValue }
     
@@ -21,6 +23,27 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         case .npy: return "npy"
         case .mat: return "mat"
         case .tiff: return "png"
+        case .quickPNG: return "png"
+        }
+    }
+}
+
+enum ColorSynthesisMode: String, CaseIterable, Identifiable {
+    case trueColorRGB = "True Color RGB"
+    
+    var id: String { rawValue }
+    
+    var description: String {
+        switch self {
+        case .trueColorRGB:
+            return "R=630нм, G=530нм, B=450нм"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .trueColorRGB:
+            return "paintpalette"
         }
     }
 }
@@ -33,6 +56,7 @@ struct ExportView: View {
     @State private var exportWavelengths: Bool = true
     @State private var matVariableName: String = "hypercube"
     @State private var matWavelengthsAsVariable: Bool = true
+    @State private var colorSynthesisMode: ColorSynthesisMode = .trueColorRGB
     @State private var isExporting: Bool = false
     @State private var exportError: String?
     
@@ -50,7 +74,14 @@ struct ExportView: View {
                         matOptionsSection
                     }
                     
-                    wavelengthsSection
+                    if selectedFormat == .quickPNG {
+                        colorSynthesisSection
+                    }
+                    
+                    if selectedFormat != .quickPNG {
+                        wavelengthsSection
+                    }
+                    
                     cubeInfoSection
                 }
                 .padding(20)
@@ -109,7 +140,71 @@ struct ExportView: View {
                 icon: "photo.stack",
                 text: "Экспорт каналов как отдельные PNG изображения. Поддержка только UInt8/UInt16."
             )
+        case .quickPNG:
+            infoBox(
+                icon: "photo",
+                text: "Быстрый экспорт RGB изображения с выбранным режимом цветосинтеза."
+            )
         }
+    }
+    
+    private var colorSynthesisSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Режим цветосинтеза:")
+                .font(.system(size: 11, weight: .semibold))
+            
+            VStack(spacing: 8) {
+                ForEach(ColorSynthesisMode.allCases) { mode in
+                    Button(action: {
+                        colorSynthesisMode = mode
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: mode.iconName)
+                                .font(.system(size: 16))
+                                .foregroundColor(colorSynthesisMode == mode ? .accentColor : .secondary)
+                                .frame(width: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mode.rawValue)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.primary)
+                                Text(mode.description)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if colorSynthesisMode == mode {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(colorSynthesisMode == mode ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(colorSynthesisMode == mode ? Color.accentColor : Color.clear, lineWidth: 2)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+            if state.wavelengths == nil || state.wavelengths?.isEmpty == true {
+                infoBox(
+                    icon: "exclamationmark.triangle",
+                    text: "Для корректного цветосинтеза необходимо задать длины волн.",
+                    color: .orange
+                )
+            }
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(8)
     }
     
     private var matOptionsSection: some View {
@@ -197,6 +292,8 @@ struct ExportView: View {
                     icon: "doc.text",
                     text: "Будет создан файл 'hypercube_wavelengths.txt' с \(wavelengths.count) длинами волн."
                 )
+            case .quickPNG:
+                EmptyView()
             }
         } else {
             infoBox(
@@ -302,7 +399,8 @@ struct ExportView: View {
             format: selectedFormat,
             wavelengths: exportWavelengths,
             matVariableName: selectedFormat == .mat ? matVariableName : nil,
-            matWavelengthsAsVariable: matWavelengthsAsVariable
+            matWavelengthsAsVariable: matWavelengthsAsVariable,
+            colorSynthesisMode: selectedFormat == .quickPNG ? colorSynthesisMode : nil
         )
         dismiss()
     }

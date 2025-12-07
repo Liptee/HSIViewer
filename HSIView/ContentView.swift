@@ -116,33 +116,36 @@ struct ContentView: View {
                     format: exportInfo.format,
                     wavelengths: exportInfo.wavelengths,
                     matVariableName: exportInfo.matVariableName,
-                    matWavelengthsAsVariable: exportInfo.matWavelengthsAsVariable
+                    matWavelengthsAsVariable: exportInfo.matWavelengthsAsVariable,
+                    colorSynthesisMode: exportInfo.colorSynthesisMode
                 )
                 state.pendingExport = nil
             }
         }
     }
     
-    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool) {
+    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisMode: ColorSynthesisMode?) {
         guard let cube = state.cube else { return }
         
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         
-        if format == .tiff {
+        switch format {
+        case .tiff:
             panel.nameFieldStringValue = "hypercube"
             panel.allowedContentTypes = []
             panel.message = "Выберите базовое имя файла (будет создано много PNG)"
-        } else {
+        case .quickPNG:
+            panel.nameFieldStringValue = "export.png"
+            panel.allowedContentTypes = [UTType.png]
+            panel.message = "Выберите путь для сохранения PNG изображения"
+        case .npy:
             panel.nameFieldStringValue = "hypercube.\(format.fileExtension)"
-            switch format {
-            case .npy:
-                panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
-            case .mat:
-                panel.allowedContentTypes = [UTType(filenameExtension: "mat") ?? .data]
-            case .tiff:
-                break
-            }
+            panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
+            panel.message = "Выберите путь для сохранения"
+        case .mat:
+            panel.nameFieldStringValue = "hypercube.\(format.fileExtension)"
+            panel.allowedContentTypes = [UTType(filenameExtension: "mat") ?? .data]
             panel.message = "Выберите путь для сохранения"
         }
         
@@ -152,6 +155,8 @@ struct ContentView: View {
             }
             
             let wavelengthsToExport = wavelengths ? self.state.wavelengths : nil
+            let currentLayout = self.state.layout
+            let currentWavelengths = self.state.wavelengths
             
             DispatchQueue.global(qos: .userInitiated).async {
                 let result: Result<Void, Error>
@@ -169,6 +174,14 @@ struct ContentView: View {
                     )
                 case .tiff:
                     result = TiffExporter.export(cube: cube, to: saveURL, wavelengths: wavelengthsToExport)
+                case .quickPNG:
+                    result = QuickPNGExporter.export(
+                        cube: cube,
+                        to: saveURL,
+                        layout: currentLayout,
+                        wavelengths: currentWavelengths,
+                        mode: colorSynthesisMode ?? .trueColorRGB
+                    )
                 }
                 
                 DispatchQueue.main.async {
@@ -429,31 +442,21 @@ struct ContentView: View {
     private var trimControlButtons: some View {
         VStack(spacing: 4) {
             if state.isTrimMode {
-                Button {
+                TrimActionButton(
+                    icon: "checkmark",
+                    color: .green,
+                    tooltip: "Применить обрезку"
+                ) {
                     state.applyTrim()
-                } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.green)
                 }
-                .buttonStyle(.plain)
-                .frame(width: 28, height: 28)
-                .background(Color.green.opacity(0.15))
-                .cornerRadius(6)
-                .help("Применить обрезку")
                 
-                Button {
+                TrimActionButton(
+                    icon: "xmark",
+                    color: .red,
+                    tooltip: "Отменить"
+                ) {
                     state.exitTrimMode()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.red)
                 }
-                .buttonStyle(.plain)
-                .frame(width: 28, height: 28)
-                .background(Color.red.opacity(0.15))
-                .cornerRadius(6)
-                .help("Отменить")
             } else {
                 Button {
                     state.enterTrimMode()
@@ -612,5 +615,56 @@ struct ContentView: View {
             width: imageSize.width * scale,
             height: imageSize.height * scale
         )
+    }
+}
+
+struct TrimActionButton: View {
+    let icon: String
+    let color: Color
+    let tooltip: String
+    let action: () -> Void
+    
+    @State private var isHovered: Bool = false
+    @State private var isPressed: Bool = false
+    
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(backgroundColor)
+                    .shadow(color: isHovered ? color.opacity(0.3) : .clear, radius: 4, x: 0, y: 2)
+                
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(color.opacity(isHovered ? 0.8 : 0.4), lineWidth: isHovered ? 2 : 1)
+                
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(isHovered ? .white : color)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(width: 30, height: 30)
+        .scaleEffect(isPressed ? 0.92 : 1.0)
+        .animation(.easeInOut(duration: 0.1), value: isPressed)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+        .help(tooltip)
+    }
+    
+    private var backgroundColor: Color {
+        if isPressed {
+            return color.opacity(0.9)
+        } else if isHovered {
+            return color.opacity(0.75)
+        } else {
+            return color.opacity(0.15)
+        }
     }
 }
