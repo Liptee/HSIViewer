@@ -40,6 +40,12 @@ final class AppState: ObservableObject {
         guard let original = originalCube else { return cube }
         return cube
     }
+
+    var defaultExportBaseName: String {
+        guard let url = cubeURL else { return "hypercube" }
+        let rawName = url.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return rawName.isEmpty ? "hypercube" : rawName
+    }
     
     func open(url: URL) {
         cubeURL = url

@@ -129,22 +129,23 @@ struct ContentView: View {
         
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
+        let defaultBaseName = state.defaultExportBaseName
         
         switch format {
         case .tiff:
-            panel.nameFieldStringValue = "hypercube"
+            panel.nameFieldStringValue = defaultBaseName
             panel.allowedContentTypes = []
             panel.message = "Выберите базовое имя файла (будет создано много PNG)"
         case .quickPNG:
-            panel.nameFieldStringValue = "export.png"
+            panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType.png]
             panel.message = "Выберите путь для сохранения PNG изображения"
         case .npy:
-            panel.nameFieldStringValue = "hypercube.\(format.fileExtension)"
+            panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
             panel.message = "Выберите путь для сохранения"
         case .mat:
-            panel.nameFieldStringValue = "hypercube.\(format.fileExtension)"
+            panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType(filenameExtension: "mat") ?? .data]
             panel.message = "Выберите путь для сохранения"
         }

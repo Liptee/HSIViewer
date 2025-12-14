@@ -60,6 +60,10 @@ struct ExportView: View {
     @State private var isExporting: Bool = false
     @State private var exportError: String?
     
+    private var defaultExportBaseName: String {
+        state.defaultExportBaseName
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             headerView
@@ -290,7 +294,7 @@ struct ExportView: View {
             case .tiff:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан файл 'hypercube_wavelengths.txt' с \(wavelengths.count) длинами волн."
+                    text: "Будет создан файл '\(defaultExportBaseName)_wavelengths.txt' с \(wavelengths.count) длинами волн."
                 )
             case .quickPNG:
                 EmptyView()
@@ -411,4 +415,3 @@ struct ExportView: View {
         return formatter.string(fromByteCount: Int64(bytes))
     }
 }
-
