@@ -34,7 +34,11 @@ final class AppState: ObservableObject {
     @Published var trimStart: Double = 0
     @Published var trimEnd: Double = 0
     
+    @Published var isBusy: Bool = false
+    @Published var busyMessage: String?
+    
     private var originalCube: HyperCube?
+    private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
     
     var displayCube: HyperCube? {
         guard let original = originalCube else { return cube }
@@ -57,44 +61,14 @@ final class AppState: ObservableObject {
         pipelineOperations.removeAll()
         isTrimMode = false
         
-        let result = ImageLoaderFactory.load(from: url)
+        beginBusy(message: "Импорт гиперкуба…")
         
-        switch result {
-        case .success(let hyperCube):
-            originalCube = hyperCube
-            cube = hyperCube
-            normalizationType = .none
-            normalizationParams = .default
-            
-            let ext = url.pathExtension.lowercased()
-            if ext == "mat" {
-                layout = .auto
-            } else if ext == "tif" || ext == "tiff" {
-                layout = .hwc
-            } else if ext == "dat" || ext == "hdr" {
-                layout = .hwc
-            } else {
-                layout = .auto
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = ImageLoaderFactory.load(from: url)
+            DispatchQueue.main.async {
+                self.handleLoadResult(result: result, url: url)
             }
-            
-            updateChannelCount()
-            
-            if let enviWavelengths = hyperCube.wavelengths, !enviWavelengths.isEmpty {
-                wavelengths = enviWavelengths
-                if let first = enviWavelengths.first, let last = enviWavelengths.last {
-                    lambdaStart = String(format: "%.1f", first)
-                    lambdaEnd = String(format: "%.1f", last)
-                    if enviWavelengths.count > 1 {
-                        let step = (last - first) / Double(enviWavelengths.count - 1)
-                        lambdaStep = String(format: "%.2f", step)
-                    }
-                }
-            } else if wavelengths == nil {
-                generateWavelengthsFromParams()
-            }
-            
-        case .failure(let error):
-            loadError = error.localizedDescription
         }
     }
     
@@ -239,14 +213,17 @@ final class AppState: ObservableObject {
             return
         }
         
-        var result: HyperCube? = original
+        let operations = pipelineOperations
+        beginBusy(message: "Применение пайплайна…")
         
-        for operation in pipelineOperations {
-            guard let current = result else { break }
-            result = operation.apply(to: current)
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = self.processPipeline(original: original, operations: operations)
+            DispatchQueue.main.async {
+                self.cube = result ?? original
+                self.endBusy()
+            }
         }
-        
-        cube = result ?? original
     }
     
     func enterTrimMode() {
@@ -264,38 +241,61 @@ final class AppState: ObservableObject {
         
         let startChannel = Int(trimStart)
         let endChannel = Int(trimEnd)
+        let currentChannels = channelCount
         
-        guard startChannel >= 0, endChannel < channelCount, startChannel <= endChannel else {
+        guard startChannel >= 0, endChannel < currentChannels, startChannel <= endChannel else {
             loadError = "Некорректный диапазон обрезки"
             return
         }
         
-        guard let trimmedCube = trimChannels(cube: original, from: startChannel, to: endChannel) else {
-            loadError = "Ошибка при обрезке каналов"
-            return
+        let layoutSnapshot = layout
+        let wavelengthsSnapshot = wavelengths
+        let operationsSnapshot = pipelineOperations.map { operation -> PipelineOperation in
+            var updatedOperation = operation
+            updatedOperation.layout = .chw
+            return updatedOperation
         }
         
-        if let wl = wavelengths, wl.count == channelCount {
-            wavelengths = Array(wl[startChannel...endChannel])
+        beginBusy(message: "Обрезка каналов…")
+        
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            
+            guard let trimmedCube = self.trimChannels(cube: original, layout: layoutSnapshot, from: startChannel, to: endChannel) else {
+                DispatchQueue.main.async {
+                    self.loadError = "Ошибка при обрезке каналов"
+                    self.endBusy()
+                }
+                return
+            }
+            
+            let trimmedWavelengths: [Double]? = {
+                guard let wl = wavelengthsSnapshot, wl.count == currentChannels else { return nil }
+                return Array(wl[startChannel...endChannel])
+            }()
+            
+            let resultCube = self.processPipeline(original: trimmedCube, operations: operationsSnapshot)
+            
+            DispatchQueue.main.async {
+                self.originalCube = trimmedCube
+                self.layout = .chw
+                for index in self.pipelineOperations.indices {
+                    self.pipelineOperations[index].layout = self.layout
+                }
+                if let trimmedWavelengths {
+                    self.wavelengths = trimmedWavelengths
+                }
+                self.currentChannel = 0
+                self.cube = resultCube ?? trimmedCube
+                self.updateChannelCount()
+                self.isTrimMode = false
+                self.loadError = nil
+                self.endBusy()
+            }
         }
-        
-        originalCube = trimmedCube
-        layout = .chw
-        
-        for i in 0..<pipelineOperations.count {
-            pipelineOperations[i].layout = layout
-        }
-        
-        currentChannel = 0
-        updateChannelCount()
-        
-        isTrimMode = false
-        loadError = nil
-        
-        applyPipeline()
     }
     
-    private func trimChannels(cube: HyperCube, from startChannel: Int, to endChannel: Int) -> HyperCube? {
+    private func trimChannels(cube: HyperCube, layout: CubeLayout, from startChannel: Int, to endChannel: Int) -> HyperCube? {
         let (d0, d1, d2) = cube.dims
         let dimsArray = [d0, d1, d2]
         
@@ -436,5 +436,76 @@ final class AppState: ObservableObject {
             }
             return HyperCube(dims: newDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
         }
+    }
+    
+    private func processPipeline(original: HyperCube, operations: [PipelineOperation]) -> HyperCube? {
+        guard !operations.isEmpty else { return original }
+        
+        var result: HyperCube? = original
+        
+        for operation in operations {
+            guard let current = result else { break }
+            result = operation.apply(to: current)
+        }
+        
+        return result ?? original
+    }
+    
+    private func beginBusy(message: String) {
+        DispatchQueue.main.async {
+            self.busyMessage = message
+            if !self.isBusy {
+                self.isBusy = true
+            }
+        }
+    }
+    
+    private func endBusy() {
+        DispatchQueue.main.async {
+            self.busyMessage = nil
+            self.isBusy = false
+        }
+    }
+    
+    private func handleLoadResult(result: Result<HyperCube, ImageLoadError>, url: URL) {
+        switch result {
+        case .success(let hyperCube):
+            originalCube = hyperCube
+            cube = hyperCube
+            normalizationType = .none
+            normalizationParams = .default
+            
+            let ext = url.pathExtension.lowercased()
+            if ext == "mat" {
+                layout = .auto
+            } else if ext == "tif" || ext == "tiff" {
+                layout = .hwc
+            } else if ext == "dat" || ext == "hdr" {
+                layout = .hwc
+            } else {
+                layout = .auto
+            }
+            
+            updateChannelCount()
+            
+            if let enviWavelengths = hyperCube.wavelengths, !enviWavelengths.isEmpty {
+                wavelengths = enviWavelengths
+                if let first = enviWavelengths.first, let last = enviWavelengths.last {
+                    lambdaStart = String(format: "%.1f", first)
+                    lambdaEnd = String(format: "%.1f", last)
+                    if enviWavelengths.count > 1 {
+                        let step = (last - first) / Double(enviWavelengths.count - 1)
+                        lambdaStep = String(format: "%.2f", step)
+                    }
+                }
+            } else if wavelengths == nil {
+                generateWavelengthsFromParams()
+            }
+            
+        case .failure(let error):
+            loadError = error.localizedDescription
+        }
+        
+        endBusy()
     }
 }

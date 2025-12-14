@@ -9,6 +9,22 @@ struct ContentView: View {
     @FocusState private var isImageFocused: Bool
     
     var body: some View {
+        ZStack {
+            mainContent
+                .disabled(state.isBusy)
+            
+            if state.isBusy {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                    BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+    
+    private var mainContent: some View {
         VStack(spacing: 0) {
             topBar
             
@@ -667,5 +683,27 @@ struct TrimActionButton: View {
         } else {
             return color.opacity(0.15)
         }
+    }
+}
+
+struct BusyOverlayView: View {
+    let message: String
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle())
+                .scaleEffect(1.1)
+            Text(message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.primary)
+        }
+        .padding(.vertical, 24)
+        .padding(.horizontal, 32)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(NSColor.windowBackgroundColor))
+                .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
+        )
     }
 }
