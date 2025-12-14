@@ -104,7 +104,7 @@ struct ContentView: View {
                         
                         ScrollView {
                             VStack(spacing: 12) {
-                                ImageInfoPanel(cube: cube, layout: state.layout)
+                                ImageInfoPanel(cube: cube, layout: state.activeLayout)
                                     .id(cube.id)
                             }
                             .padding(12)
@@ -172,7 +172,7 @@ struct ContentView: View {
             }
             
             let wavelengthsToExport = wavelengths ? self.state.wavelengths : nil
-            let currentLayout = self.state.layout
+            let currentLayout = self.state.activeLayout
             let currentWavelengths = self.state.wavelengths
             
             DispatchQueue.global(qos: .userInitiated).async {
@@ -259,7 +259,7 @@ struct ContentView: View {
                 let chIdx = Int(state.currentChannel)
                 if let nsImage = ImageRenderer.renderGrayscale(
                     cube: cube,
-                    layout: state.layout,
+                    layout: state.activeLayout,
                     channelIndex: chIdx
                 ) {
                     let fittedSize = fittingSize(imageSize: nsImage.size, in: geoSize)
@@ -282,7 +282,7 @@ struct ContentView: View {
                    lambda.count >= state.channelCount,
                    let nsImage = ImageRenderer.renderRGB(
                     cube: cube,
-                    layout: state.layout,
+                    layout: state.activeLayout,
                     wavelengths: lambda
                    ) {
                     
@@ -401,7 +401,7 @@ struct ContentView: View {
                             currentChannel: $state.currentChannel,
                             channelCount: state.channelCount,
                             cube: cube,
-                            layout: state.layout,
+                            layout: state.activeLayout,
                             isTrimMode: state.isTrimMode,
                             trimStart: $state.trimStart,
                             trimEnd: $state.trimEnd
@@ -446,9 +446,6 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            state.updateChannelCount()
-        }
-        .onChange(of: state.layout) { _ in
             state.updateChannelCount()
         }
         .onChange(of: state.cube?.dims.0) { _ in

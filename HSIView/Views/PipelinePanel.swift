@@ -692,7 +692,7 @@ struct OperationEditorView: View {
     
     private func currentPreviewImage() -> NSImage? {
         guard let cube = state.cube else { return nil }
-        let layout = state.layout
+        let layout = state.activeLayout
         let totalChannels = cube.channelCount(for: layout)
         let clampedChannel = max(0, min(Int(state.currentChannel), max(totalChannels - 1, 0)))
         
@@ -723,7 +723,7 @@ struct OperationEditorView: View {
     private func spatialSize(for op: PipelineOperation) -> (width: Int, height: Int)? {
         guard let cube = state.cube else { return nil }
         let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
-        guard let axes = cube.axes(for: op.layout) ?? cube.axes(for: state.layout) else {
+        guard let axes = cube.axes(for: op.layout) ?? cube.axes(for: state.activeLayout) else {
             return nil
         }
         return (dims[axes.width], dims[axes.height])

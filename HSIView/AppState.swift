@@ -4,7 +4,13 @@ import AppKit
 final class AppState: ObservableObject {
     @Published var cube: HyperCube?
     @Published var cubeURL: URL?
-    @Published var layout: CubeLayout = .auto
+    @Published var layout: CubeLayout = .auto {
+        didSet {
+            guard oldValue != layout else { return }
+            updateResolvedLayout()
+            updateChannelCount()
+        }
+    }
     @Published var currentChannel: Double = 0
     @Published var channelCount: Int = 0
     @Published var loadError: String?
@@ -39,10 +45,24 @@ final class AppState: ObservableObject {
     
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
+    private var resolvedAutoLayout: CubeLayout = .auto
     
     var displayCube: HyperCube? {
         guard let original = originalCube else { return cube }
         return cube
+    }
+
+    var activeLayout: CubeLayout {
+        if layout == .auto {
+            if resolvedAutoLayout == .auto {
+                resolvedAutoLayout = inferLayout(for: cube ?? originalCube)
+            }
+            if resolvedAutoLayout == .auto {
+                return .chw
+            }
+            return resolvedAutoLayout
+        }
+        return layout
     }
 
     var defaultExportBaseName: String {
@@ -79,7 +99,7 @@ final class AppState: ObservableObject {
             return
         }
         
-        channelCount = cube.channelCount(for: layout)
+        channelCount = cube.channelCount(for: activeLayout)
         
         if channelCount <= 0 {
             currentChannel = 0
@@ -172,8 +192,8 @@ final class AppState: ObservableObject {
     
     func addOperation(type: PipelineOperationType) {
         var operation = PipelineOperation(type: type)
-        operation.layout = layout
-        operation.configureDefaults(with: cube, layout: layout)
+        operation.layout = activeLayout
+        operation.configureDefaults(with: cube, layout: activeLayout)
         pipelineOperations.append(operation)
         if pipelineAutoApply {
             applyPipeline()
@@ -249,7 +269,7 @@ final class AppState: ObservableObject {
             return
         }
         
-        let layoutSnapshot = layout
+        let layoutSnapshot = activeLayout
         let wavelengthsSnapshot = wavelengths
         let operationsSnapshot = pipelineOperations.map { operation -> PipelineOperation in
             var updatedOperation = operation
@@ -486,6 +506,7 @@ final class AppState: ObservableObject {
             } else {
                 layout = .auto
             }
+            updateResolvedLayout()
             
             updateChannelCount()
             
@@ -508,5 +529,28 @@ final class AppState: ObservableObject {
         }
         
         endBusy()
+    }
+
+    private func updateResolvedLayout() {
+        if layout == .auto {
+            resolvedAutoLayout = inferLayout(for: cube ?? originalCube)
+        } else {
+            resolvedAutoLayout = layout
+        }
+    }
+    
+    private func inferLayout(for cube: HyperCube?) -> CubeLayout {
+        guard let cube = cube,
+              let axes = cube.axes(for: .auto) else {
+            return resolvedAutoLayout
+        }
+        switch axes.channel {
+        case 0:
+            return .chw
+        case 2:
+            return .hwc
+        default:
+            return resolvedAutoLayout == .auto ? .chw : resolvedAutoLayout
+        }
     }
 }
