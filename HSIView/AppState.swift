@@ -43,6 +43,8 @@ final class AppState: ObservableObject {
     @Published var isBusy: Bool = false
     @Published var busyMessage: String?
     
+    @Published var pendingMatSelection: MatSelectionRequest?
+    
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
     private var resolvedAutoLayout: CubeLayout = .auto
@@ -80,6 +82,11 @@ final class AppState: ObservableObject {
         resetZoom()
         pipelineOperations.removeAll()
         isTrimMode = false
+        pendingMatSelection = nil
+        
+        if handleMatOpenIfNeeded(for: url) {
+            return
+        }
         
         beginBusy(message: "Импорт гиперкуба…")
         
@@ -495,6 +502,7 @@ final class AppState: ObservableObject {
             cube = hyperCube
             normalizationType = .none
             normalizationParams = .default
+            updateResolvedLayout()
             
             let ext = url.pathExtension.lowercased()
             if ext == "mat" {
@@ -529,6 +537,53 @@ final class AppState: ObservableObject {
         }
         
         endBusy()
+    }
+    
+    private func handleMatOpenIfNeeded(for url: URL) -> Bool {
+        guard url.pathExtension.lowercased() == "mat" else {
+            return false
+        }
+        
+        switch MatImageLoader.availableVariables(at: url) {
+        case .failure(let error):
+            loadError = error.localizedDescription
+        case .success(let options):
+            guard !options.isEmpty else {
+                loadError = "MAT файл не содержит подходящих 3D переменных"
+                return true
+            }
+            
+            if options.count == 1 {
+                loadMatCube(url: url, variableName: options[0].name)
+            } else {
+                pendingMatSelection = MatSelectionRequest(fileURL: url, options: options)
+            }
+        }
+        
+        return true
+    }
+    
+    private func loadMatCube(url: URL, variableName: String) {
+        beginBusy(message: "Импорт гиперкуба…")
+        
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = MatImageLoader.load(from: url, variableName: variableName)
+            DispatchQueue.main.async {
+                self.handleLoadResult(result: result, url: url)
+            }
+        }
+    }
+    
+    func cancelMatSelection() {
+        pendingMatSelection = nil
+        loadError = "Выбор переменной отменён"
+    }
+    
+    func confirmMatSelection(option: MatVariableOption) {
+        guard let request = pendingMatSelection else { return }
+        pendingMatSelection = nil
+        loadMatCube(url: request.fileURL, variableName: option.name)
     }
 
     private func updateResolvedLayout() {

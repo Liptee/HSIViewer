@@ -4,151 +4,233 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool is_supported_class(enum matio_classes class_type) {
+    switch (class_type) {
+        case MAT_C_DOUBLE:
+        case MAT_C_SINGLE:
+        case MAT_C_UINT8:
+        case MAT_C_UINT16:
+        case MAT_C_INT8:
+        case MAT_C_INT16:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool is_supported_type(enum matio_classes class_type,
+                              enum matio_types data_type) {
+    switch (class_type) {
+        case MAT_C_DOUBLE:
+            return data_type == MAT_T_DOUBLE;
+        case MAT_C_SINGLE:
+            return data_type == MAT_T_SINGLE;
+        case MAT_C_UINT8:
+            return data_type == MAT_T_UINT8;
+        case MAT_C_UINT16:
+            return data_type == MAT_T_UINT16;
+        case MAT_C_INT8:
+            return data_type == MAT_T_INT8;
+        case MAT_C_INT16:
+            return data_type == MAT_T_INT16;
+        default:
+            return false;
+    }
+}
+
+static MatDataType map_data_type(enum matio_classes class_type) {
+    switch (class_type) {
+        case MAT_C_DOUBLE: return MAT_DATA_FLOAT64;
+        case MAT_C_SINGLE: return MAT_DATA_FLOAT32;
+        case MAT_C_UINT8:  return MAT_DATA_UINT8;
+        case MAT_C_UINT16: return MAT_DATA_UINT16;
+        case MAT_C_INT8:   return MAT_DATA_INT8;
+        case MAT_C_INT16:  return MAT_DATA_INT16;
+        default:           return MAT_DATA_FLOAT64;
+    }
+}
+
+static bool is_supported_cube(matvar_t *var) {
+    if (!var) return false;
+    if (var->rank != 3) return false;
+    if (!is_supported_class(var->class_type)) return false;
+    return is_supported_type(var->class_type, var->data_type);
+}
+
+static bool copy_matvar_to_cube(matvar_t *var, MatCube3D *outCube) {
+    if (!var || !outCube || !is_supported_cube(var) || !var->data) {
+        return false;
+    }
+    
+    size_t d0 = var->dims[0];
+    size_t d1 = var->dims[1];
+    size_t d2 = var->dims[2];
+    size_t total = d0 * d1 * d2;
+    
+    void *buf = NULL;
+    MatDataType dataType = map_data_type(var->class_type);
+    
+    size_t elementSize = 0;
+    switch (dataType) {
+        case MAT_DATA_FLOAT64: elementSize = sizeof(double); break;
+        case MAT_DATA_FLOAT32: elementSize = sizeof(float); break;
+        case MAT_DATA_UINT8: elementSize = sizeof(uint8_t); break;
+        case MAT_DATA_UINT16: elementSize = sizeof(uint16_t); break;
+        case MAT_DATA_INT8: elementSize = sizeof(int8_t); break;
+        case MAT_DATA_INT16: elementSize = sizeof(int16_t); break;
+        default: return false;
+    }
+    
+    buf = malloc(total * elementSize);
+    if (!buf) {
+        return false;
+    }
+    
+    memcpy(buf, var->data, total * elementSize);
+    
+    outCube->data = buf;
+    outCube->dims[0] = d0;
+    outCube->dims[1] = d1;
+    outCube->dims[2] = d2;
+    outCube->rank = 3;
+    outCube->data_type = dataType;
+    
+    return true;
+}
+
+static void clear_cube(MatCube3D *cube) {
+    if (!cube) return;
+    cube->data = NULL;
+    cube->rank = 0;
+    cube->dims[0] = cube->dims[1] = cube->dims[2] = 0;
+    cube->data_type = MAT_DATA_FLOAT64;
+}
+
 bool load_first_3d_double_cube(const char *path,
                                MatCube3D *outCube,
                                char *outName,
                                size_t outNameLen)
 {
     if (!outCube) return false;
-    outCube->data = NULL;
-    outCube->rank = 0;
-    outCube->dims[0] = outCube->dims[1] = outCube->dims[2] = 0;
+    MatCubeInfo *list = NULL;
+    size_t count = 0;
+    clear_cube(outCube);
+    
+    if (!list_mat_cube_variables(path, &list, &count) || count == 0) {
+        if (list) {
+            free_mat_cube_info(list);
+        }
+        return false;
+    }
+    
+    const char *targetName = list[0].name;
+    bool ok = load_cube_by_name(path, targetName, outCube, outName, outNameLen);
+    free_mat_cube_info(list);
+    return ok;
+}
 
+bool load_cube_by_name(const char *path,
+                       const char *varName,
+                       MatCube3D *outCube,
+                       char *outName,
+                       size_t outNameLen)
+{
+    if (!path || !varName || !outCube) {
+        return false;
+    }
+    
+    clear_cube(outCube);
+    
     mat_t *mat = Mat_Open(path, MAT_ACC_RDONLY);
     if (!mat) {
         return false;
     }
-
-    matvar_t *info = NULL;
-    bool ok = false;
-
-    while ((info = Mat_VarReadNextInfo(mat)) != NULL) {
-        // Поддерживаем 3D массивы различных типов
-        if (info->rank == 3 &&
-            (info->class_type == MAT_C_DOUBLE || 
-             info->class_type == MAT_C_SINGLE ||
-             info->class_type == MAT_C_UINT8 ||
-             info->class_type == MAT_C_UINT16 ||
-             info->class_type == MAT_C_INT8 ||
-             info->class_type == MAT_C_INT16)) {
-
-            matvar_t *full = Mat_VarRead(mat, info->name);
-            if (!full || !full->data) {
-                if (full) Mat_VarFree(full);
-                Mat_VarFree(info);
-                continue;
-            }
-
-            // Проверяем поддерживаемые типы
-            if (!(full->class_type == MAT_C_DOUBLE || 
-                  full->class_type == MAT_C_SINGLE ||
-                  full->class_type == MAT_C_UINT8 ||
-                  full->class_type == MAT_C_UINT16 ||
-                  full->class_type == MAT_C_INT8 ||
-                  full->class_type == MAT_C_INT16)) {
-                Mat_VarFree(full);
-                Mat_VarFree(info);
-                continue;
-            }
-
-            size_t d0 = full->dims[0];
-            size_t d1 = full->dims[1];
-            size_t d2 = full->dims[2];
-            size_t total = d0 * d1 * d2;
-
-            void *buf = NULL;
-            MatDataType dataType;
-
-            // Копируем данные в оригинальном типе (без конвертации)
-            if (full->class_type == MAT_C_DOUBLE && full->data_type == MAT_T_DOUBLE) {
-                buf = malloc(total * sizeof(double));
-                if (!buf) {
-                    Mat_VarFree(full);
-                    Mat_VarFree(info);
-                    break;
-                }
-                memcpy(buf, full->data, total * sizeof(double));
-                dataType = MAT_DATA_FLOAT64;
-                
-            } else if (full->class_type == MAT_C_SINGLE && full->data_type == MAT_T_SINGLE) {
-                buf = malloc(total * sizeof(float));
-                if (!buf) {
-                    Mat_VarFree(full);
-                    Mat_VarFree(info);
-                    break;
-                }
-                memcpy(buf, full->data, total * sizeof(float));
-                dataType = MAT_DATA_FLOAT32;
-                
-            } else if (full->class_type == MAT_C_UINT8 && full->data_type == MAT_T_UINT8) {
-                buf = malloc(total * sizeof(uint8_t));
-                if (!buf) {
-                    Mat_VarFree(full);
-                    Mat_VarFree(info);
-                    break;
-                }
-                memcpy(buf, full->data, total * sizeof(uint8_t));
-                dataType = MAT_DATA_UINT8;
-                
-            } else if (full->class_type == MAT_C_UINT16 && full->data_type == MAT_T_UINT16) {
-                buf = malloc(total * sizeof(uint16_t));
-                if (!buf) {
-                    Mat_VarFree(full);
-                    Mat_VarFree(info);
-                    break;
-                }
-                memcpy(buf, full->data, total * sizeof(uint16_t));
-                dataType = MAT_DATA_UINT16;
-                
-            } else if (full->class_type == MAT_C_INT8 && full->data_type == MAT_T_INT8) {
-                buf = malloc(total * sizeof(int8_t));
-                if (!buf) {
-                    Mat_VarFree(full);
-                    Mat_VarFree(info);
-                    break;
-                }
-                memcpy(buf, full->data, total * sizeof(int8_t));
-                dataType = MAT_DATA_INT8;
-                
-            } else if (full->class_type == MAT_C_INT16 && full->data_type == MAT_T_INT16) {
-                buf = malloc(total * sizeof(int16_t));
-                if (!buf) {
-                    Mat_VarFree(full);
-                    Mat_VarFree(info);
-                    break;
-                }
-                memcpy(buf, full->data, total * sizeof(int16_t));
-                dataType = MAT_DATA_INT16;
-                
-            } else {
-                Mat_VarFree(full);
-                Mat_VarFree(info);
-                continue;
-            }
-
-            outCube->data = buf;
-            outCube->dims[0] = d0;
-            outCube->dims[1] = d1;
-            outCube->dims[2] = d2;
-            outCube->rank = 3;
-            outCube->data_type = dataType;
-
-            if (outName && outNameLen > 0) {
-                strncpy(outName, full->name, outNameLen - 1);
-                outName[outNameLen - 1] = '\0';
-            }
-
-            Mat_VarFree(full);
-            Mat_VarFree(info);
-            ok = true;
-            break;
-        }
-
-        Mat_VarFree(info);
+    
+    matvar_t *var = Mat_VarRead(mat, varName);
+    if (!var) {
+        Mat_Close(mat);
+        return false;
     }
-
+    
+    bool ok = copy_matvar_to_cube(var, outCube);
+    if (ok && outName && outNameLen > 0) {
+        strncpy(outName, var->name, outNameLen - 1);
+        outName[outNameLen - 1] = '\0';
+    }
+    
+    Mat_VarFree(var);
     Mat_Close(mat);
     return ok;
+}
+
+bool list_mat_cube_variables(const char *path,
+                             MatCubeInfo **outList,
+                             size_t *outCount)
+{
+    if (!outList || !outCount) {
+        return false;
+    }
+    
+    *outList = NULL;
+    *outCount = 0;
+    
+    mat_t *mat = Mat_Open(path, MAT_ACC_RDONLY);
+    if (!mat) {
+        return false;
+    }
+    
+    size_t capacity = 0;
+    MatCubeInfo *list = NULL;
+    matvar_t *info = NULL;
+    bool success = true;
+    
+    while ((info = Mat_VarReadNextInfo(mat)) != NULL) {
+        if (is_supported_class(info->class_type) && info->rank == 3) {
+            if (*outCount == capacity) {
+                size_t newCap = capacity == 0 ? 4 : capacity * 2;
+                MatCubeInfo *newList = realloc(list, newCap * sizeof(MatCubeInfo));
+                if (!newList) {
+                    success = false;
+                    Mat_VarFree(info);
+                    break;
+                }
+                list = newList;
+                capacity = newCap;
+            }
+            
+            MatCubeInfo *slot = &list[*outCount];
+            memset(slot, 0, sizeof(MatCubeInfo));
+            strncpy(slot->name, info->name, sizeof(slot->name) - 1);
+            slot->name[sizeof(slot->name) - 1] = '\0';
+            slot->dims[0] = info->dims[0];
+            slot->dims[1] = info->dims[1];
+            slot->dims[2] = info->dims[2];
+            slot->data_type = map_data_type(info->class_type);
+            (*outCount)++;
+        }
+        
+        Mat_VarFree(info);
+    }
+    
+    Mat_Close(mat);
+    
+    if (!success) {
+        if (list) {
+            free(list);
+        }
+        *outList = NULL;
+        *outCount = 0;
+        return false;
+    }
+    
+    *outList = list;
+    return true;
+}
+
+void free_mat_cube_info(MatCubeInfo *list) {
+    if (list) {
+        free(list);
+    }
 }
 
 bool save_3d_cube(const char *path,

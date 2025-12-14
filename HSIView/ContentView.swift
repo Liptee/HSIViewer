@@ -122,6 +122,10 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 960, minHeight: 500)
+        .sheet(item: $state.pendingMatSelection) { request in
+            MatVariableSelectionView(request: request)
+                .environmentObject(state)
+        }
         .sheet(isPresented: $state.showExportView) {
             ExportView()
                 .environmentObject(state)

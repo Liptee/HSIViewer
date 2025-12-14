@@ -25,10 +25,28 @@ typedef struct {
     MatDataType data_type;  // Тип данных
 } MatCube3D;
 
+typedef struct {
+    char name[256];
+    size_t dims[3];
+    MatDataType data_type;
+} MatCubeInfo;
+
 bool load_first_3d_double_cube(const char *path,
                                MatCube3D *outCube,
                                char *outName,
                                size_t outNameLen);
+
+bool load_cube_by_name(const char *path,
+                       const char *varName,
+                       MatCube3D *outCube,
+                       char *outName,
+                       size_t outNameLen);
+
+bool list_mat_cube_variables(const char *path,
+                             MatCubeInfo **outList,
+                             size_t *outCount);
+
+void free_mat_cube_info(MatCubeInfo *list);
 
 bool save_3d_cube(const char *path,
                   const char *varName,
