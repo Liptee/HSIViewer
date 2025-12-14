@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct PipelinePanel: View {
     @EnvironmentObject var state: AppState
@@ -343,6 +344,7 @@ struct OperationEditorView: View {
     @State private var localTargetDataType: DataType = .float64
     @State private var localAutoScale: Bool = true
     @State private var localRotationAngle: RotationAngle = .degree90
+    @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
     
     var body: some View {
         VStack(spacing: 0) {
@@ -363,8 +365,11 @@ struct OperationEditorView: View {
                 footerView
             }
         }
-        .frame(width: 400, height: 500)
+        .frame(width: 960, height: 620)
         .onAppear {
+            loadLocalState()
+        }
+        .onChange(of: operation?.id) { _ in
             loadLocalState()
         }
     }
@@ -382,6 +387,10 @@ struct OperationEditorView: View {
             localAutoScale = op.autoScale ?? true
         case .rotation:
             localRotationAngle = op.rotationAngle ?? .degree90
+        case .spatialCrop:
+            if let params = op.cropParameters {
+                localCropParameters = params
+            }
         }
     }
     
@@ -401,6 +410,8 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].autoScale = localAutoScale
         case .rotation:
             state.pipelineOperations[index].rotationAngle = localRotationAngle
+        case .spatialCrop:
+            state.pipelineOperations[index].cropParameters = localCropParameters
         }
     }
     
@@ -425,6 +436,8 @@ struct OperationEditorView: View {
             dataTypeEditor(for: op)
         case .rotation:
             rotationEditor(for: op)
+        case .spatialCrop:
+            cropEditor(for: op)
         }
     }
     
@@ -579,6 +592,187 @@ struct OperationEditorView: View {
         }
     }
     
+    private func cropEditor(for op: PipelineOperation) -> some View {
+        let preview = currentPreviewImage()
+        let currentSpatialSize = spatialSize(for: op)
+        
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("Выбор области обрезки:")
+                .font(.system(size: 11, weight: .medium))
+            
+            if let cropSize = currentSpatialSize, cropSize.width > 0, cropSize.height > 0 {
+                HStack(alignment: .top, spacing: 20) {
+                    SpatialCropPreview(
+                        image: preview,
+                        pixelWidth: cropSize.width,
+                        pixelHeight: cropSize.height,
+                        parameters: bindingForParameters(width: cropSize.width, height: cropSize.height)
+                    )
+                    .frame(height: 420)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(NSColor.controlBackgroundColor).opacity(0.15))
+                    .cornerRadius(14)
+                    
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Размер области")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("\(cropSize.width) × \(cropSize.height) px")
+                                .font(.system(size: 24, weight: .semibold, design: .rounded))
+                            Text("Layout: \(op.layout.rawValue)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Divider()
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Границы (px)")
+                                .font(.system(size: 11, weight: .semibold))
+                            
+                            VStack(spacing: 10) {
+                                cropValueField(
+                                    label: "Левая граница",
+                                    value: binding(for: \.left, width: cropSize.width, height: cropSize.height),
+                                    range: 0...max(cropSize.width - 1, 0)
+                                )
+                                
+                                cropValueField(
+                                    label: "Правая граница",
+                                    value: binding(for: \.right, width: cropSize.width, height: cropSize.height),
+                                    range: 0...max(cropSize.width - 1, 0)
+                                )
+                                
+                                cropValueField(
+                                    label: "Верхняя граница",
+                                    value: binding(for: \.top, width: cropSize.width, height: cropSize.height),
+                                    range: 0...max(cropSize.height - 1, 0)
+                                )
+                                
+                                cropValueField(
+                                    label: "Нижняя граница",
+                                    value: binding(for: \.bottom, width: cropSize.width, height: cropSize.height),
+                                    range: 0...max(cropSize.height - 1, 0)
+                                )
+                            }
+                        }
+                    }
+                    .frame(width: 280)
+                    .padding(14)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                    )
+                }
+                .onAppear {
+                    clampCropParametersIfNeeded(width: cropSize.width, height: cropSize.height)
+                }
+                .onChange(of: state.cube?.id) { _ in
+                    if let freshSize = spatialSize(for: op) {
+                        clampCropParametersIfNeeded(width: freshSize.width, height: freshSize.height)
+                    }
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                    .overlay(
+                        VStack(spacing: 8) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 28))
+                                .foregroundColor(.secondary)
+                            Text("Предпросмотр недоступен")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    )
+            }
+        }
+    }
+    
+    private func currentPreviewImage() -> NSImage? {
+        guard let cube = state.cube else { return nil }
+        let layout = state.layout
+        let totalChannels = cube.channelCount(for: layout)
+        let clampedChannel = max(0, min(Int(state.currentChannel), max(totalChannels - 1, 0)))
+        
+        switch state.viewMode {
+        case .gray:
+            return ImageRenderer.renderGrayscale(
+                cube: cube,
+                layout: layout,
+                channelIndex: clampedChannel
+            )
+        case .rgb:
+            if let wavelengths = state.wavelengths, wavelengths.count >= totalChannels {
+                return ImageRenderer.renderRGB(
+                    cube: cube,
+                    layout: layout,
+                    wavelengths: wavelengths
+                )
+            } else {
+                return ImageRenderer.renderGrayscale(
+                    cube: cube,
+                    layout: layout,
+                    channelIndex: clampedChannel
+                )
+            }
+        }
+    }
+    
+    private func spatialSize(for op: PipelineOperation) -> (width: Int, height: Int)? {
+        guard let cube = state.cube else { return nil }
+        let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        guard let axes = cube.axes(for: op.layout) ?? cube.axes(for: state.layout) else {
+            return nil
+        }
+        return (dims[axes.width], dims[axes.height])
+    }
+    
+    private func clampCropParametersIfNeeded(width: Int, height: Int) {
+        localCropParameters = localCropParameters.clamped(
+            maxWidth: max(width, 1),
+            maxHeight: max(height, 1)
+        )
+    }
+    
+    private func bindingForParameters(width: Int, height: Int) -> Binding<SpatialCropParameters> {
+        Binding(
+            get: { localCropParameters },
+            set: { newValue in
+                localCropParameters = newValue.clamped(maxWidth: width, maxHeight: height)
+            }
+        )
+    }
+    
+    private func binding(for keyPath: WritableKeyPath<SpatialCropParameters, Int>, width: Int, height: Int) -> Binding<Int> {
+        Binding(
+            get: { localCropParameters[keyPath: keyPath] },
+            set: { newValue in
+                localCropParameters[keyPath: keyPath] = newValue
+                localCropParameters = localCropParameters.clamped(maxWidth: width, maxHeight: height)
+            }
+        )
+    }
+    
+    private func cropValueField(label: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+            HStack(spacing: 8) {
+                TextField("0", value: value, format: .number)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 90)
+                Stepper("", value: value, in: range)
+                    .labelsHidden()
+                    .controlSize(.mini)
+            }
+            Text("\(value.wrappedValue) px")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+    }
+    
     private func rotationIcon(for angle: RotationAngle) -> String {
         switch angle {
         case .degree90:
@@ -622,3 +816,202 @@ struct OperationEditorView: View {
     }
 }
 
+struct SpatialCropPreview: View {
+    let image: NSImage?
+    let pixelWidth: Int
+    let pixelHeight: Int
+    @Binding var parameters: SpatialCropParameters
+    
+    var body: some View {
+        GeometryReader { proxy in
+            let containerSize = proxy.size
+            let fittedSize = fittedSize(for: image?.size ?? CGSize(width: 1, height: 1), in: containerSize)
+            let offsetX = (containerSize.width - fittedSize.width) / 2
+            let offsetY = (containerSize.height - fittedSize.height) / 2
+            
+            ZStack {
+                if let image = image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: fittedSize.width, height: fittedSize.height)
+                        .clipped()
+                } else {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(NSColor.windowBackgroundColor))
+                        .overlay(
+                            Text("Нет предпросмотра")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        )
+                        .frame(width: fittedSize.width, height: fittedSize.height)
+                }
+                
+                if pixelWidth > 0 && pixelHeight > 0 {
+                    CropOverlayView(
+                        parameters: $parameters,
+                        pixelWidth: pixelWidth,
+                        pixelHeight: pixelHeight
+                    )
+                    .frame(width: fittedSize.width, height: fittedSize.height)
+                }
+            }
+            .frame(width: fittedSize.width, height: fittedSize.height)
+            .position(x: offsetX + fittedSize.width / 2, y: offsetY + fittedSize.height / 2)
+        }
+    }
+    
+    private func fittedSize(for imageSize: CGSize, in container: CGSize) -> CGSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            let minSide = min(container.width, container.height)
+            return CGSize(width: minSide, height: minSide)
+        }
+        let widthScale = container.width / imageSize.width
+        let heightScale = container.height / imageSize.height
+        let scale = min(widthScale, heightScale)
+        return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+    }
+}
+
+private struct CropOverlayView: View {
+    @Binding var parameters: SpatialCropParameters
+    let pixelWidth: Int
+    let pixelHeight: Int
+    
+    @State private var dragSnapshot: SpatialCropParameters?
+    
+    var body: some View {
+        if pixelWidth <= 0 || pixelHeight <= 0 {
+            Color.clear
+        } else {
+            GeometryReader { geo in
+                let widthLimit = max(pixelWidth, 1)
+                let heightLimit = max(pixelHeight, 1)
+                let xScale = geo.size.width / CGFloat(widthLimit)
+                let yScale = geo.size.height / CGFloat(heightLimit)
+                let rect = cropRect(xScale: xScale, yScale: yScale)
+                
+                ZStack {
+                    Path { path in
+                        path.addRect(CGRect(origin: .zero, size: geo.size))
+                        path.addRect(rect)
+                    }
+                    .fill(Color.black.opacity(0.35), style: FillStyle(eoFill: true))
+                    
+                    Rectangle()
+                        .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.2)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                        .contentShape(Rectangle())
+                        .gesture(moveGesture(xScale: xScale, yScale: yScale))
+                    
+                    edgeHandle()
+                        .frame(width: 3, height: rect.height + 24)
+                        .position(x: rect.minX, y: rect.midY)
+                        .gesture(edgeGesture(.left, xScale: xScale, yScale: yScale))
+                    
+                    edgeHandle()
+                        .frame(width: 3, height: rect.height + 24)
+                        .position(x: rect.maxX, y: rect.midY)
+                        .gesture(edgeGesture(.right, xScale: xScale, yScale: yScale))
+                    
+                    horizontalHandle()
+                        .frame(width: rect.width + 24, height: 3)
+                        .position(x: rect.midX, y: rect.minY)
+                        .gesture(edgeGesture(.top, xScale: xScale, yScale: yScale))
+                    
+                    horizontalHandle()
+                        .frame(width: rect.width + 24, height: 3)
+                        .position(x: rect.midX, y: rect.maxY)
+                        .gesture(edgeGesture(.bottom, xScale: xScale, yScale: yScale))
+                }
+            }
+        }
+    }
+    
+    private func cropRect(xScale: CGFloat, yScale: CGFloat) -> CGRect {
+        let left = CGFloat(parameters.left) * xScale
+        let right = CGFloat(parameters.right + 1) * xScale
+        let top = CGFloat(parameters.top) * yScale
+        let bottom = CGFloat(parameters.bottom + 1) * yScale
+        return CGRect(
+            x: left,
+            y: top,
+            width: max(1, right - left),
+            height: max(1, bottom - top)
+        )
+    }
+    
+    @ViewBuilder
+    private func edgeHandle() -> some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Color.white.opacity(0.9))
+    }
+    
+    @ViewBuilder
+    private func horizontalHandle() -> some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Color.white.opacity(0.9))
+    }
+    
+    private func edgeGesture(_ edge: CropEdge, xScale: CGFloat, yScale: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if dragSnapshot == nil { dragSnapshot = parameters }
+                guard let start = dragSnapshot else { return }
+                var updated = start
+                switch edge {
+                case .left:
+                    updated.left = start.left + deltaPixels(value.translation.width, scale: xScale)
+                case .right:
+                    updated.right = start.right + deltaPixels(value.translation.width, scale: xScale)
+                case .top:
+                    updated.top = start.top + deltaPixels(value.translation.height, scale: yScale)
+                case .bottom:
+                    updated.bottom = start.bottom + deltaPixels(value.translation.height, scale: yScale)
+                }
+                parameters = updated.clamped(maxWidth: pixelWidth, maxHeight: pixelHeight)
+            }
+            .onEnded { _ in
+                dragSnapshot = nil
+            }
+    }
+    
+    private func moveGesture(xScale: CGFloat, yScale: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if dragSnapshot == nil { dragSnapshot = parameters }
+                guard let start = dragSnapshot else { return }
+                let rawDeltaX = deltaPixels(value.translation.width, scale: xScale)
+                let rawDeltaY = deltaPixels(value.translation.height, scale: yScale)
+                
+                let minDeltaX = -start.left
+                let maxDeltaX = (pixelWidth - 1) - start.right
+                let minDeltaY = -start.top
+                let maxDeltaY = (pixelHeight - 1) - start.bottom
+                
+                let clampedDeltaX = min(max(rawDeltaX, minDeltaX), maxDeltaX)
+                let clampedDeltaY = min(max(rawDeltaY, minDeltaY), maxDeltaY)
+                
+                var updated = start
+                updated.left = start.left + clampedDeltaX
+                updated.right = start.right + clampedDeltaX
+                updated.top = start.top + clampedDeltaY
+                updated.bottom = start.bottom + clampedDeltaY
+                parameters = updated
+            }
+            .onEnded { _ in
+                dragSnapshot = nil
+            }
+    }
+    
+    private func deltaPixels(_ translation: CGFloat, scale: CGFloat) -> Int {
+        guard scale.isFinite, scale != 0 else { return 0 }
+        return Int((translation / scale).rounded())
+    }
+    
+    private enum CropEdge {
+        case left, right, top, bottom
+    }
+}

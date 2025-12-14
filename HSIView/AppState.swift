@@ -173,6 +173,7 @@ final class AppState: ObservableObject {
     func addOperation(type: PipelineOperationType) {
         var operation = PipelineOperation(type: type)
         operation.layout = layout
+        operation.configureDefaults(with: cube, layout: layout)
         pipelineOperations.append(operation)
         if pipelineAutoApply {
             applyPipeline()

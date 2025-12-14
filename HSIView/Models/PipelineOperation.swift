@@ -5,6 +5,7 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case channelwiseNormalization = "Поканальная нормализация"
     case dataTypeConversion = "Тип данных"
     case rotation = "Поворот"
+    case spatialCrop = "Обрезка области"
     
     var id: String { rawValue }
     
@@ -18,6 +19,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "arrow.triangle.2.circlepath"
         case .rotation:
             return "rotate.right"
+        case .spatialCrop:
+            return "crop"
         }
     }
     
@@ -31,7 +34,35 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "Изменить тип данных"
         case .rotation:
             return "Повернуть изображение на 90°, 180° или 270°"
+        case .spatialCrop:
+            return "Обрезать изображение по пространственным границам"
         }
+    }
+}
+
+struct SpatialCropParameters: Equatable {
+    var left: Int
+    var right: Int
+    var top: Int
+    var bottom: Int
+    
+    var width: Int { max(0, right - left + 1) }
+    var height: Int { max(0, bottom - top + 1) }
+    
+    mutating func clamp(maxWidth: Int, maxHeight: Int) {
+        let widthLimit = max(1, maxWidth)
+        let heightLimit = max(1, maxHeight)
+        
+        left = min(max(left, 0), widthLimit - 1)
+        right = min(max(right, left), widthLimit - 1)
+        top = min(max(top, 0), heightLimit - 1)
+        bottom = min(max(bottom, top), heightLimit - 1)
+    }
+    
+    func clamped(maxWidth: Int, maxHeight: Int) -> SpatialCropParameters {
+        var copy = self
+        copy.clamp(maxWidth: maxWidth, maxHeight: maxHeight)
+        return copy
     }
 }
 
@@ -58,9 +89,10 @@ struct PipelineOperation: Identifiable, Equatable {
     var normalizationParams: CubeNormalizationParameters?
     var preserveDataType: Bool?
     var targetDataType: DataType?
-    var autoScale: Bool?
-    var rotationAngle: RotationAngle?
-    var layout: CubeLayout = .auto
+   var autoScale: Bool?
+   var rotationAngle: RotationAngle?
+   var layout: CubeLayout = .auto
+    var cropParameters: SpatialCropParameters?
     
     init(id: UUID = UUID(), type: PipelineOperationType) {
         self.id = id
@@ -76,6 +108,30 @@ struct PipelineOperation: Identifiable, Equatable {
             self.autoScale = true
         case .rotation:
             self.rotationAngle = .degree90
+        case .spatialCrop:
+            self.cropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
+        }
+    }
+    
+    mutating func configureDefaults(with cube: HyperCube?, layout: CubeLayout) {
+        guard let cube = cube else { return }
+        
+        switch type {
+        case .spatialCrop:
+            let dims = cube.dims
+            let dimsArray = [dims.0, dims.1, dims.2]
+            if let axes = cube.axes(for: layout) {
+                let width = dimsArray[axes.width]
+                let height = dimsArray[axes.height]
+                cropParameters = SpatialCropParameters(
+                    left: 0,
+                    right: max(width - 1, 0),
+                    top: 0,
+                    bottom: max(height - 1, 0)
+                )
+            }
+        default:
+            break
         }
     }
     
@@ -87,6 +143,8 @@ struct PipelineOperation: Identifiable, Equatable {
             return targetDataType?.rawValue ?? "Тип данных"
         case .rotation:
             return "Поворот \(rotationAngle?.rawValue ?? "")"
+        case .spatialCrop:
+            return "Обрезка области"
         }
     }
     
@@ -127,6 +185,11 @@ struct PipelineOperation: Identifiable, Equatable {
             return text
         case .rotation:
             return "По часовой стрелке"
+        case .spatialCrop:
+            if let params = cropParameters {
+                return "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
+            }
+            return "Настройте границы"
         }
     }
     
@@ -156,6 +219,9 @@ struct PipelineOperation: Identifiable, Equatable {
         case .rotation:
             guard let angle = rotationAngle else { return cube }
             return CubeRotator.rotate(cube, angle: angle, layout: layout)
+        case .spatialCrop:
+            guard let params = cropParameters else { return cube }
+            return CubeSpatialCropper.crop(cube: cube, parameters: params, layout: layout)
         }
     }
 }
@@ -313,3 +379,93 @@ class CubeRotator {
     }
 }
 
+class CubeSpatialCropper {
+    static func crop(cube: HyperCube, parameters: SpatialCropParameters, layout: CubeLayout) -> HyperCube? {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        
+        guard let axes = cube.axes(for: layout) else { return cube }
+        
+        let height = dimsArray[axes.height]
+        let width = dimsArray[axes.width]
+        
+        guard height > 0, width > 0 else { return cube }
+        
+        let clamped = parameters.clamped(maxWidth: width, maxHeight: height)
+        guard clamped.width > 0, clamped.height > 0 else { return cube }
+        
+        var newDims = dimsArray
+        newDims[axes.height] = clamped.height
+        newDims[axes.width] = clamped.width
+        let resultingDims = (newDims[0], newDims[1], newDims[2])
+        let totalElements = resultingDims.0 * resultingDims.1 * resultingDims.2
+        
+        switch cube.storage {
+        case .float64(let arr):
+            var newData = [Double](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .float32(let arr):
+            var newData = [Float](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .uint16(let arr):
+            var newData = [UInt16](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .uint8(let arr):
+            var newData = [UInt8](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int16(let arr):
+            var newData = [Int16](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int32(let arr):
+            var newData = [Int32](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int8(let arr):
+            var newData = [Int8](repeating: 0, count: totalElements)
+            fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
+            return HyperCube(dims: resultingDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        }
+    }
+    
+    private static func fillBuffer<T>(
+        cube: HyperCube,
+        source: [T],
+        into buffer: inout [T],
+        newDims: (Int, Int, Int),
+        axes: (channel: Int, height: Int, width: Int),
+        crop: SpatialCropParameters
+    ) {
+        for i0 in 0..<newDims.0 {
+            for i1 in 0..<newDims.1 {
+                for i2 in 0..<newDims.2 {
+                    var srcCoord = [i0, i1, i2]
+                    srcCoord[axes.height] += crop.top
+                    srcCoord[axes.width] += crop.left
+                    
+                    let srcIndex = cube.linearIndex(i0: srcCoord[0], i1: srcCoord[1], i2: srcCoord[2])
+                    let dstIndex = linearIndex(i0: i0, i1: i1, i2: i2, dims: newDims, fortran: cube.isFortranOrder)
+                    buffer[dstIndex] = source[srcIndex]
+                }
+            }
+        }
+    }
+    
+    private static func linearIndex(
+        i0: Int,
+        i1: Int,
+        i2: Int,
+        dims: (Int, Int, Int),
+        fortran: Bool
+    ) -> Int {
+        if fortran {
+            return i0 + dims.0 * (i1 + dims.1 * i2)
+        } else {
+            return i2 + dims.2 * (i1 + dims.1 * i0)
+        }
+    }
+}
