@@ -365,13 +365,20 @@ struct OperationEditorView: View {
                 footerView
             }
         }
-        .frame(width: 960, height: 620)
+        .frame(width: editorSize.width, height: editorSize.height)
         .onAppear {
             loadLocalState()
         }
         .onChange(of: operation?.id) { _ in
             loadLocalState()
         }
+    }
+
+    private var editorSize: CGSize {
+        guard let op = operation, op.type == .spatialCrop else {
+            return CGSize(width: 420, height: 540)
+        }
+        return CGSize(width: 960, height: 620)
     }
     
     private func loadLocalState() {
