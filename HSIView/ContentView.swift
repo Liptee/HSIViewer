@@ -106,6 +106,8 @@ struct ContentView: View {
                             VStack(spacing: 12) {
                                 ImageInfoPanel(cube: cube, layout: state.activeLayout)
                                     .id(cube.id)
+                                
+                                LibraryPanel()
                             }
                             .padding(12)
                         }

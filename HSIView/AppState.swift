@@ -44,10 +44,14 @@ final class AppState: ObservableObject {
     @Published var busyMessage: String?
     
     @Published var pendingMatSelection: MatSelectionRequest?
+    @Published var libraryEntries: [CubeLibraryEntry] = []
     
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
     private var resolvedAutoLayout: CubeLayout = .auto
+    private var sessionSnapshots: [URL: CubeSessionSnapshot] = [:]
+    private var pendingSessionRestore: CubeSessionSnapshot?
+    private var spectralTrimRange: ClosedRange<Int>?
     
     var displayCube: HyperCube? {
         guard let original = originalCube else { return cube }
@@ -74,17 +78,19 @@ final class AppState: ObservableObject {
     }
     
     func open(url: URL) {
-        cubeURL = url
+        persistCurrentSession()
+        let canonical = canonicalURL(url)
+        cubeURL = canonical
         loadError = nil
         cube = nil
         currentChannel = 0
         channelCount = 0
         resetZoom()
-        pipelineOperations.removeAll()
-        isTrimMode = false
         pendingMatSelection = nil
+        pendingSessionRestore = sessionSnapshots[canonical]
+        resetSessionState()
         
-        if handleMatOpenIfNeeded(for: url) {
+        if handleMatOpenIfNeeded(for: canonical) {
             return
         }
         
@@ -92,9 +98,9 @@ final class AppState: ObservableObject {
         
         processingQueue.async { [weak self] in
             guard let self else { return }
-            let result = ImageLoaderFactory.load(from: url)
+            let result = ImageLoaderFactory.load(from: canonical)
             DispatchQueue.main.async {
-                self.handleLoadResult(result: result, url: url)
+                self.handleLoadResult(result: result, url: canonical)
             }
         }
     }
@@ -284,6 +290,9 @@ final class AppState: ObservableObject {
             return updatedOperation
         }
         
+        let baseRange: ClosedRange<Int> = spectralTrimRange ?? 0...max(currentChannels - 1, 0)
+        let absoluteRange = (baseRange.lowerBound + startChannel)...(baseRange.lowerBound + endChannel)
+        
         beginBusy(message: "Обрезка каналов…")
         
         processingQueue.async { [weak self] in
@@ -317,6 +326,7 @@ final class AppState: ObservableObject {
                 self.cube = resultCube ?? trimmedCube
                 self.updateChannelCount()
                 self.isTrimMode = false
+                self.spectralTrimRange = absoluteRange
                 self.loadError = nil
                 self.endBusy()
             }
@@ -517,6 +527,7 @@ final class AppState: ObservableObject {
             updateResolvedLayout()
             
             updateChannelCount()
+            spectralTrimRange = nil
             
             if let enviWavelengths = hyperCube.wavelengths, !enviWavelengths.isEmpty {
                 wavelengths = enviWavelengths
@@ -532,11 +543,16 @@ final class AppState: ObservableObject {
                 generateWavelengthsFromParams()
             }
             
+            ensureLibraryContains(url: url)
+            let snapshot = pendingSessionRestore
+            pendingSessionRestore = nil
+            restoreSessionIfNeeded(snapshot)
+            
         case .failure(let error):
             loadError = error.localizedDescription
+            pendingSessionRestore = nil
+            endBusy()
         }
-        
-        endBusy()
     }
     
     private func handleMatOpenIfNeeded(for url: URL) -> Bool {
@@ -585,6 +601,16 @@ final class AppState: ObservableObject {
         pendingMatSelection = nil
         loadMatCube(url: request.fileURL, variableName: option.name)
     }
+    
+    func addLibraryEntries(from urls: [URL]) {
+        for rawURL in urls {
+            let canonical = canonicalURL(rawURL)
+            guard ImageLoaderFactory.loader(for: canonical) != nil else { continue }
+            if !libraryEntries.contains(where: { $0.url.standardizedFileURL == canonical }) {
+                libraryEntries.append(CubeLibraryEntry(url: canonical))
+            }
+        }
+    }
 
     private func updateResolvedLayout() {
         if layout == .auto {
@@ -607,5 +633,167 @@ final class AppState: ObservableObject {
         default:
             return resolvedAutoLayout == .auto ? .chw : resolvedAutoLayout
         }
+    }
+    
+    private func restoreSessionIfNeeded(_ snapshot: CubeSessionSnapshot?) {
+        guard let snapshot else {
+            spectralTrimRange = nil
+            endBusy()
+            return
+        }
+        busyMessage = "Восстановление настроек…"
+        restoreSession(from: snapshot)
+    }
+    
+    private func restoreSession(from snapshot: CubeSessionSnapshot) {
+        if let range = snapshot.spectralTrimRange {
+            restoreTrim(range: range, snapshot: snapshot)
+        } else {
+            applySnapshot(snapshot)
+            endBusy()
+        }
+    }
+    
+    private func restoreTrim(range: ClosedRange<Int>, snapshot: CubeSessionSnapshot) {
+        guard let sourceCube = originalCube else {
+            applySnapshot(snapshot)
+            endBusy()
+            return
+        }
+        let layoutSnapshot = activeLayout
+        let availableChannels = sourceCube.channelCount(for: layoutSnapshot)
+        guard range.lowerBound >= 0, range.upperBound < availableChannels else {
+            applySnapshotWithoutTrim(snapshot)
+            endBusy()
+            return
+        }
+        
+        busyMessage = "Восстановление обрезки…"
+        
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            guard let trimmed = self.trimChannels(
+                cube: sourceCube,
+                layout: layoutSnapshot,
+                from: range.lowerBound,
+                to: range.upperBound
+            ) else {
+                DispatchQueue.main.async {
+                    self.applySnapshotWithoutTrim(snapshot)
+                    self.endBusy()
+                }
+                return
+            }
+            
+            DispatchQueue.main.async {
+                self.originalCube = trimmed
+                self.cube = trimmed
+                self.spectralTrimRange = range
+                self.updateChannelCount()
+                self.applySnapshot(snapshot)
+                self.endBusy()
+            }
+        }
+    }
+    
+    private func applySnapshot(_ snapshot: CubeSessionSnapshot) {
+        wavelengths = snapshot.wavelengths
+        lambdaStart = snapshot.lambdaStart
+        lambdaEnd = snapshot.lambdaEnd
+        lambdaStep = snapshot.lambdaStep
+        trimStart = snapshot.trimStart
+        trimEnd = snapshot.trimEnd
+        isTrimMode = false
+        normalizationType = snapshot.normalizationType
+        normalizationParams = snapshot.normalizationParams
+        autoScaleOnTypeConversion = snapshot.autoScaleOnTypeConversion
+        pipelineOperations = snapshot.pipelineOperations
+        pipelineAutoApply = snapshot.pipelineAutoApply
+        layout = snapshot.layout
+        viewMode = snapshot.viewMode
+        zoomScale = snapshot.zoomScale
+        imageOffset = snapshot.imageOffset
+        spectralTrimRange = snapshot.spectralTrimRange
+        
+        let maxChannel = max(channelCount - 1, 0)
+        if maxChannel >= 0 {
+            currentChannel = max(0, min(snapshot.currentChannel, Double(maxChannel)))
+        } else {
+            currentChannel = 0
+        }
+        
+        let maxTrim = Double(max(channelCount - 1, 0))
+        trimStart = max(0, min(snapshot.trimStart, maxTrim))
+        trimEnd = max(trimStart, min(snapshot.trimEnd, maxTrim))
+        
+        updateResolvedLayout()
+        
+        if pipelineAutoApply && !pipelineOperations.isEmpty {
+            applyPipeline()
+        }
+    }
+    
+    private func applySnapshotWithoutTrim(_ snapshot: CubeSessionSnapshot) {
+        var adjusted = snapshot
+        adjusted.spectralTrimRange = nil
+        applySnapshot(adjusted)
+    }
+    
+    private func persistCurrentSession() {
+        guard let url = cubeURL?.standardizedFileURL else { return }
+        guard cube != nil else { return }
+        let snapshot = CubeSessionSnapshot(
+            pipelineOperations: pipelineOperations,
+            pipelineAutoApply: pipelineAutoApply,
+            wavelengths: wavelengths,
+            lambdaStart: lambdaStart,
+            lambdaEnd: lambdaEnd,
+            lambdaStep: lambdaStep,
+            trimStart: trimStart,
+            trimEnd: trimEnd,
+            spectralTrimRange: spectralTrimRange,
+            normalizationType: normalizationType,
+            normalizationParams: normalizationParams,
+            autoScaleOnTypeConversion: autoScaleOnTypeConversion,
+            layout: layout,
+            viewMode: viewMode,
+            currentChannel: currentChannel,
+            zoomScale: zoomScale,
+            imageOffset: imageOffset
+        )
+        sessionSnapshots[canonicalURL(url)] = snapshot
+    }
+    
+    private func resetSessionState() {
+        pipelineOperations.removeAll()
+        pipelineAutoApply = true
+        wavelengths = nil
+        lambdaStart = "400"
+        lambdaEnd = "1000"
+        lambdaStep = ""
+        normalizationType = .none
+        normalizationParams = .default
+        autoScaleOnTypeConversion = true
+        trimStart = 0
+        trimEnd = 0
+        currentChannel = 0
+        zoomScale = 1.0
+        imageOffset = .zero
+        isTrimMode = false
+        spectralTrimRange = nil
+        viewMode = .gray
+        layout = .auto
+        updateResolvedLayout()
+    }
+    
+    private func ensureLibraryContains(url: URL) {
+        let canonical = canonicalURL(url)
+        if !libraryEntries.contains(where: { $0.url.standardizedFileURL == canonical }) {
+            libraryEntries.append(CubeLibraryEntry(url: canonical))
+        }
+    }
+    
+    private func canonicalURL(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
     }
 }
