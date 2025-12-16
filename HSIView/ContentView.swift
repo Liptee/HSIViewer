@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var state: AppState
     @State private var tempZoomScale: CGFloat = 1.0
+    @State private var dragOffset: CGSize = .zero
     @State private var showWavelengthPopover: Bool = false
     @FocusState private var isImageFocused: Bool
     
@@ -58,7 +59,21 @@ struct ContentView: View {
                         if let cube = state.cube {
                             cubeView(cube: cube, geoSize: geo.size)
                                 .scaleEffect(state.zoomScale)
-                                .offset(state.imageOffset)
+                                .offset(
+                                    x: state.imageOffset.width + dragOffset.width,
+                                    y: state.imageOffset.height + dragOffset.height
+                                )
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { value in
+                                            dragOffset = value.translation
+                                        }
+                                        .onEnded { value in
+                                            state.imageOffset.width += value.translation.width
+                                            state.imageOffset.height += value.translation.height
+                                            dragOffset = .zero
+                                        }
+                                )
                                 .gesture(
                                     MagnificationGesture()
                                         .onChanged { value in
