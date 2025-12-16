@@ -9,18 +9,21 @@ struct ContentView: View {
     @FocusState private var isImageFocused: Bool
     
     var body: some View {
-        ZStack {
-            mainContent
-                .disabled(state.isBusy)
-            
-            if state.isBusy {
-                ZStack {
-                    Color.black.opacity(0.25)
-                        .ignoresSafeArea()
-                    BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
+        GeometryReader { proxy in
+            ZStack {
+                mainContent
+                    .disabled(state.isBusy)
+                
+                if state.isBusy {
+                    ZStack {
+                        Color.black.opacity(0.25)
+                            .ignoresSafeArea()
+                        BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
+                    }
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
     
@@ -32,35 +35,34 @@ struct ContentView: View {
                 if state.cube != nil {
                     PipelinePanel()
                         .environmentObject(state)
-                        .padding(12)
+                        .padding(.leading, 12)
                     
                     Divider()
                 }
                 
                 GeometryReader { geo in
-                    ScrollView([.horizontal, .vertical]) {
-                        ZStack {
-                            if let cube = state.cube {
-                                cubeView(cube: cube, geoSize: geo.size)
-                                    .scaleEffect(state.zoomScale)
-                                    .offset(state.imageOffset)
-                                    .gesture(
-                                        MagnificationGesture()
-                                            .onChanged { value in
-                                                tempZoomScale = value
-                                            }
-                                            .onEnded { value in
-                                                state.zoomScale *= value
-                                                state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
-                                                tempZoomScale = 1.0
-                                            }
-                                    )
-                                    .scaleEffect(tempZoomScale)
-                                    .focusable()
-                                    .focused($isImageFocused)
-                                    .onAppear {
-                                        isImageFocused = true
-                                    }
+                    ZStack {
+                        if let cube = state.cube {
+                            cubeView(cube: cube, geoSize: geo.size)
+                                .scaleEffect(state.zoomScale)
+                                .offset(state.imageOffset)
+                                .gesture(
+                                    MagnificationGesture()
+                                        .onChanged { value in
+                                            tempZoomScale = value
+                                        }
+                                        .onEnded { value in
+                                            state.zoomScale *= value
+                                            state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
+                                            tempZoomScale = 1.0
+                                        }
+                                )
+                                .scaleEffect(tempZoomScale)
+                                .focusable()
+                                .focused($isImageFocused)
+                                .onAppear {
+                                    isImageFocused = true
+                                }
                         } else {
                             VStack(spacing: 8) {
                                 Text("Открой гиперспектральный куб")
@@ -73,13 +75,9 @@ struct ContentView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
-                        }
-                        .frame(
-                            width: geo.size.width,
-                            height: geo.size.height,
-                            alignment: .center
-                        )
                     }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
                     .onKeyPress(.leftArrow) {
                         state.moveImage(by: CGSize(width: 20, height: 0))
                         return .handled
@@ -99,23 +97,23 @@ struct ContentView: View {
                 }
                 
                 if let cube = state.cube {
-                    VStack(spacing: 0) {
-                        Divider()
-                        
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ImageInfoPanel(cube: cube, layout: state.activeLayout)
-                                    .id(cube.id)
-                                
-                                LibraryPanel()
-                            }
-                            .padding(12)
+                    Divider()
+                    
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ImageInfoPanel(cube: cube, layout: state.activeLayout)
+                                .id(cube.id)
+                            
+                            LibraryPanel()
                         }
-                        .frame(width: 260)
-                        .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+                        .padding(12)
                     }
+                    .frame(width: 260)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+                    .padding(.trailing, 12)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             
             if let cube = state.cube {
                 bottomControls(cube: cube)
