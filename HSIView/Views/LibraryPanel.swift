@@ -119,6 +119,19 @@ struct LibraryPanel: View {
         .highPriorityGesture(doubleTap)
         .simultaneousGesture(singleTap)
         .contextMenu {
+            Button("Копировать обработку") {
+                state.copyProcessing(from: entry)
+            }
+            .disabled(!state.canCopyProcessing(from: entry))
+            
+            if state.hasProcessingClipboard {
+                Button("Вставить обработку") {
+                    state.pasteProcessing(to: entry)
+                }
+            }
+            
+            Divider()
+            
             Button(role: .destructive) {
                 removeEntry(entry)
             } label: {

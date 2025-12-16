@@ -45,6 +45,7 @@ final class AppState: ObservableObject {
     
     @Published var pendingMatSelection: MatSelectionRequest?
     @Published var libraryEntries: [CubeLibraryEntry] = []
+    @Published private(set) var hasProcessingClipboard: Bool = false
     
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
@@ -52,6 +53,11 @@ final class AppState: ObservableObject {
     private var sessionSnapshots: [URL: CubeSessionSnapshot] = [:]
     private var pendingSessionRestore: CubeSessionSnapshot?
     private var spectralTrimRange: ClosedRange<Int>?
+    private var processingClipboard: ProcessingClipboard? {
+        didSet {
+            hasProcessingClipboard = processingClipboard != nil
+        }
+    }
     
     var displayCube: HyperCube? {
         guard let original = originalCube else { return cube }
@@ -617,6 +623,41 @@ final class AppState: ObservableObject {
         libraryEntries.removeAll { $0.canonicalPath == entry.canonicalPath }
         sessionSnapshots.removeValue(forKey: canonical)
     }
+    
+    func canCopyProcessing(from entry: CubeLibraryEntry) -> Bool {
+        return snapshot(for: entry) != nil
+    }
+    
+    func copyProcessing(from entry: CubeLibraryEntry) {
+        guard let snapshot = snapshot(for: entry) else { return }
+        processingClipboard = ProcessingClipboard(
+            pipelineOperations: snapshot.pipelineOperations,
+            spectralTrimRange: snapshot.spectralTrimRange,
+            trimStart: snapshot.trimStart,
+            trimEnd: snapshot.trimEnd
+        )
+    }
+    
+    func pasteProcessing(to entry: CubeLibraryEntry) {
+        guard let clipboard = processingClipboard else { return }
+        let canonical = canonicalURL(entry.url)
+        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty()
+        snapshot.pipelineOperations = clipboard.pipelineOperations
+        snapshot.spectralTrimRange = clipboard.spectralTrimRange
+        snapshot.trimStart = clipboard.trimStart
+        snapshot.trimEnd = clipboard.trimEnd
+        sessionSnapshots[canonical] = snapshot
+        
+        if let currentURL = cubeURL?.standardizedFileURL, currentURL == canonical {
+            pipelineOperations = clipboard.pipelineOperations
+            trimStart = clipboard.trimStart
+            trimEnd = max(trimStart, clipboard.trimEnd)
+            spectralTrimRange = clipboard.spectralTrimRange
+            if pipelineAutoApply {
+                applyPipeline()
+            }
+        }
+    }
 
     private func updateResolvedLayout() {
         if layout == .auto {
@@ -747,26 +788,7 @@ final class AppState: ObservableObject {
     
     private func persistCurrentSession() {
         guard let url = cubeURL?.standardizedFileURL else { return }
-        guard cube != nil else { return }
-        let snapshot = CubeSessionSnapshot(
-            pipelineOperations: pipelineOperations,
-            pipelineAutoApply: pipelineAutoApply,
-            wavelengths: wavelengths,
-            lambdaStart: lambdaStart,
-            lambdaEnd: lambdaEnd,
-            lambdaStep: lambdaStep,
-            trimStart: trimStart,
-            trimEnd: trimEnd,
-            spectralTrimRange: spectralTrimRange,
-            normalizationType: normalizationType,
-            normalizationParams: normalizationParams,
-            autoScaleOnTypeConversion: autoScaleOnTypeConversion,
-            layout: layout,
-            viewMode: viewMode,
-            currentChannel: currentChannel,
-            zoomScale: zoomScale,
-            imageOffset: imageOffset
-        )
+        guard let snapshot = makeSnapshot() else { return }
         sessionSnapshots[canonicalURL(url)] = snapshot
     }
     
@@ -801,5 +823,36 @@ final class AppState: ObservableObject {
     
     private func canonicalURL(_ url: URL) -> URL {
         url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+    
+    private func makeSnapshot() -> CubeSessionSnapshot? {
+        guard cube != nil else { return nil }
+        return CubeSessionSnapshot(
+            pipelineOperations: pipelineOperations,
+            pipelineAutoApply: pipelineAutoApply,
+            wavelengths: wavelengths,
+            lambdaStart: lambdaStart,
+            lambdaEnd: lambdaEnd,
+            lambdaStep: lambdaStep,
+            trimStart: trimStart,
+            trimEnd: trimEnd,
+            spectralTrimRange: spectralTrimRange,
+            normalizationType: normalizationType,
+            normalizationParams: normalizationParams,
+            autoScaleOnTypeConversion: autoScaleOnTypeConversion,
+            layout: layout,
+            viewMode: viewMode,
+            currentChannel: currentChannel,
+            zoomScale: zoomScale,
+            imageOffset: imageOffset
+        )
+    }
+    
+    private func snapshot(for entry: CubeLibraryEntry) -> CubeSessionSnapshot? {
+        let canonical = canonicalURL(entry.url)
+        if let currentURL = cubeURL?.standardizedFileURL, currentURL == canonical {
+            return makeSnapshot()
+        }
+        return sessionSnapshots[canonical]
     }
 }

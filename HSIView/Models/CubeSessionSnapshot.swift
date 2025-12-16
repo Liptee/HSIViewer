@@ -19,4 +19,26 @@ struct CubeSessionSnapshot {
     var currentChannel: Double
     var zoomScale: CGFloat
     var imageOffset: CGSize
+    
+    static func empty() -> CubeSessionSnapshot {
+        CubeSessionSnapshot(
+            pipelineOperations: [],
+            pipelineAutoApply: true,
+            wavelengths: nil,
+            lambdaStart: "400",
+            lambdaEnd: "1000",
+            lambdaStep: "",
+            trimStart: 0,
+            trimEnd: 0,
+            spectralTrimRange: nil,
+            normalizationType: .none,
+            normalizationParams: .default,
+            autoScaleOnTypeConversion: true,
+            layout: .auto,
+            viewMode: .gray,
+            currentChannel: 0,
+            zoomScale: 1.0,
+            imageOffset: .zero
+        )
+    }
 }
