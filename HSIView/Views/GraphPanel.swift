@@ -3,7 +3,7 @@ import Charts
 
 struct GraphPanel: View {
     @EnvironmentObject var state: AppState
-    let panelWidth: CGFloat = 320
+    let panelWidth: CGFloat = 400
     
     var body: some View {
         ZStack(alignment: .leading) {
@@ -89,10 +89,10 @@ struct GraphPanel: View {
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
                 }
             }
-            .chartXAxisLabel(spectrum.wavelengths != nil ? "Длина волны (нм)" : "Номер канала")
-            .chartYAxisLabel("Интенсивность")
+            .chartXAxisLabel(spectrum.wavelengths != nil ? "λ (нм)" : "Канал")
+            .chartYAxisLabel("I")
             .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                AxisMarks(values: .automatic) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
                         .foregroundStyle(Color.secondary.opacity(0.3))
                     AxisTick()
@@ -101,7 +101,7 @@ struct GraphPanel: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                AxisMarks(values: .automatic) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
                         .foregroundStyle(Color.secondary.opacity(0.3))
                     AxisTick()
@@ -109,8 +109,8 @@ struct GraphPanel: View {
                         .font(.system(size: 9))
                 }
             }
-            .frame(height: 200)
-            .padding(.horizontal, 8)
+            .frame(height: 280)
+            .padding(.horizontal, 4)
             
             statisticsView(spectrum)
         }
