@@ -168,6 +168,32 @@ struct ContentView: View {
     }
     
     private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisMode: ColorSynthesisMode?) {
+        if state.exportEntireLibrary {
+            guard !state.libraryEntries.isEmpty else { return }
+            
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = false
+            panel.prompt = "Выбрать папку"
+            panel.message = "Выберите папку для сохранения экспортированных файлов библиотеки"
+            
+            let response = panel.runModal()
+            guard response == .OK, let folderURL = panel.url else {
+                return
+            }
+            
+            exportLibraryEntries(
+                to: folderURL,
+                format: format,
+                wavelengths: wavelengths,
+                matVariableName: matVariableName,
+                matWavelengthsAsVariable: matWavelengthsAsVariable,
+                colorSynthesisMode: colorSynthesisMode
+            )
+            return
+        }
+        
         guard let cube = state.cube else { return }
         
         let panel = NSSavePanel()
@@ -234,6 +260,66 @@ struct ContentView: View {
                         print("Export successful")
                     case .failure(let error):
                         print("Export error: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+    
+    private func exportLibraryEntries(to destinationFolder: URL, format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisMode: ColorSynthesisMode?) {
+        let entries = state.libraryEntries
+        guard !entries.isEmpty else { return }
+        let includeWavelengths = wavelengths
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            for entry in entries {
+                autoreleasepool {
+                    guard let payload = state.exportPayload(for: entry) else {
+                        print("Пропуск \(entry.fileName) — нет данных для экспорта")
+                        return
+                    }
+                    
+                    let baseName = payload.baseName
+                    let wavelengthsToExport = includeWavelengths ? payload.wavelengths : nil
+                    let result: Result<Void, Error>
+                    
+                    switch format {
+                    case .npy:
+                        let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("npy")
+                        result = NpyExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport)
+                    case .mat:
+                        let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("mat")
+                        let varName = (matVariableName?.isEmpty == false ? matVariableName! : "hypercube")
+                        result = MatExporter.export(
+                            cube: payload.cube,
+                            to: target,
+                            variableName: varName,
+                            wavelengths: wavelengthsToExport,
+                            wavelengthsAsVariable: matWavelengthsAsVariable && includeWavelengths
+                        )
+                    case .tiff:
+                        let target = destinationFolder.appendingPathComponent(baseName)
+                        result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport)
+                    case .quickPNG:
+                        if let mode = colorSynthesisMode {
+                            let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")
+                            result = QuickPNGExporter.export(
+                                cube: payload.cube,
+                                to: target,
+                                layout: payload.layout,
+                                wavelengths: payload.wavelengths,
+                                mode: mode
+                            )
+                        } else {
+                            result = .failure(ExportError.writeError("Не выбран режим цветосинтеза"))
+                        }
+                    }
+                    
+                    switch result {
+                    case .success:
+                        print("Экспортирован \(entry.fileName)")
+                    case .failure(let error):
+                        print("Ошибка экспорта \(entry.fileName): \(error.localizedDescription)")
                     }
                 }
             }

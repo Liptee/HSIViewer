@@ -73,6 +73,7 @@ struct ExportView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     formatSection
+                    libraryExportSection
                     
                     if selectedFormat == .mat {
                         matOptionsSection
@@ -123,6 +124,33 @@ struct ExportView: View {
             .pickerStyle(.segmented)
             
             formatDescription
+        }
+    }
+    
+    private var libraryExportSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $state.exportEntireLibrary) {
+                HStack(spacing: 6) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 11))
+                    Text("Экспортировать всю библиотеку")
+                        .font(.system(size: 11, weight: .medium))
+                }
+            }
+            .disabled(state.libraryEntries.isEmpty)
+            
+            if state.libraryEntries.isEmpty {
+                infoBox(
+                    icon: "exclamationmark.triangle",
+                    text: "Библиотека пуста. Добавьте файлы или выключите опцию экспорта библиотеки.",
+                    color: .orange
+                )
+            } else if state.exportEntireLibrary {
+                infoBox(
+                    icon: "folder",
+                    text: "Будет экспортировано \(state.libraryEntries.count) файлов. Для каждого используется сохранённая обработка из библиотеки."
+                )
+            }
         }
     }
     
@@ -313,13 +341,24 @@ struct ExportView: View {
             Text("Информация о кубе:")
                 .font(.system(size: 11, weight: .semibold))
             
-            if let cube = state.cube {
+            if state.exportEntireLibrary {
+                infoRow(label: "Файлов в библиотеке", value: "\(state.libraryEntries.count)")
+                if let current = state.cubeURL {
+                    infoRow(label: "Текущий файл", value: current.lastPathComponent)
+                }
+            } else if let cube = state.cube {
                 VStack(spacing: 4) {
                     infoRow(label: "Размер", value: "\(cube.dims.0) × \(cube.dims.1) × \(cube.dims.2)")
                     infoRow(label: "Тип данных", value: cube.originalDataType.rawValue)
                     infoRow(label: "Порядок", value: cube.isFortranOrder ? "Fortran" : "C")
                     infoRow(label: "Память", value: formatMemorySize(bytes: cube.storage.sizeInBytes))
                 }
+            } else {
+                infoBox(
+                    icon: "exclamationmark.triangle",
+                    text: "Открой гиперкуб или включите экспорт всей библиотеки.",
+                    color: .orange
+                )
             }
         }
     }
@@ -378,6 +417,9 @@ struct ExportView: View {
             .controlSize(.large)
             .keyboardShortcut(.escape, modifiers: [])
             
+            let singleCubeMissing = !state.exportEntireLibrary && state.cube == nil
+            let libraryUnavailable = state.exportEntireLibrary && state.libraryEntries.isEmpty
+            
             Button(action: performExport) {
                 HStack {
                     if isExporting {
@@ -392,13 +434,27 @@ struct ExportView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(isExporting || state.cube == nil)
+            .disabled(isExporting || singleCubeMissing || libraryUnavailable)
             .keyboardShortcut(.return, modifiers: [])
         }
         .padding(16)
     }
     
     private func performExport() {
+        exportError = nil
+        
+        if state.exportEntireLibrary {
+            guard !state.libraryEntries.isEmpty else {
+                exportError = "Библиотека пуста"
+                return
+            }
+        } else {
+            guard state.cube != nil else {
+                exportError = "Открой гиперкуб для экспорта"
+                return
+            }
+        }
+        
         state.pendingExport = PendingExportInfo(
             format: selectedFormat,
             wavelengths: exportWavelengths,

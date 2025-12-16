@@ -20,25 +20,23 @@ struct CubeSessionSnapshot {
     var zoomScale: CGFloat
     var imageOffset: CGSize
     
-    static func empty() -> CubeSessionSnapshot {
-        CubeSessionSnapshot(
-            pipelineOperations: [],
-            pipelineAutoApply: true,
-            wavelengths: nil,
-            lambdaStart: "400",
-            lambdaEnd: "1000",
-            lambdaStep: "",
-            trimStart: 0,
-            trimEnd: 0,
-            spectralTrimRange: nil,
-            normalizationType: .none,
-            normalizationParams: .default,
-            autoScaleOnTypeConversion: true,
-            layout: .auto,
-            viewMode: .gray,
-            currentChannel: 0,
-            zoomScale: 1.0,
-            imageOffset: .zero
-        )
-    }
+    static let empty = CubeSessionSnapshot(
+        pipelineOperations: [],
+        pipelineAutoApply: true,
+        wavelengths: nil,
+        lambdaStart: "400",
+        lambdaEnd: "1000",
+        lambdaStep: "",
+        trimStart: 0,
+        trimEnd: 0,
+        spectralTrimRange: nil,
+        normalizationType: .none,
+        normalizationParams: .default,
+        autoScaleOnTypeConversion: true,
+        layout: .auto,
+        viewMode: .gray,
+        currentChannel: 0,
+        zoomScale: 1.0,
+        imageOffset: .zero
+    )
 }

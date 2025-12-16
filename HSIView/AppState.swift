@@ -35,6 +35,7 @@ final class AppState: ObservableObject {
     
     @Published var showExportView: Bool = false
     @Published var pendingExport: PendingExportInfo? = nil
+    @Published var exportEntireLibrary: Bool = false
     
     @Published var isTrimMode: Bool = false
     @Published var trimStart: Double = 0
@@ -624,6 +625,36 @@ final class AppState: ObservableObject {
         sessionSnapshots.removeValue(forKey: canonical)
     }
     
+    func exportPayload(for entry: CubeLibraryEntry) -> CubeExportPayload? {
+        let canonical = canonicalURL(entry.url)
+        let entrySnapshot: CubeSessionSnapshot = {
+            if Thread.isMainThread {
+                return snapshot(for: entry) ?? CubeSessionSnapshot.empty
+            } else {
+                return DispatchQueue.main.sync {
+                    snapshot(for: entry) ?? CubeSessionSnapshot.empty
+                }
+            }
+        }()
+        let loadResult = ImageLoaderFactory.load(from: canonical)
+        
+        guard case .success(let rawCube) = loadResult else {
+            return nil
+        }
+        
+        guard let prepared = prepareCubeForExport(cube: rawCube, snapshot: entrySnapshot) else {
+            return nil
+        }
+        
+        let baseName = entry.url.deletingPathExtension().lastPathComponent
+        return CubeExportPayload(
+            cube: prepared.cube,
+            wavelengths: prepared.wavelengths,
+            layout: prepared.layout,
+            baseName: baseName
+        )
+    }
+    
     func canCopyProcessing(from entry: CubeLibraryEntry) -> Bool {
         return snapshot(for: entry) != nil
     }
@@ -641,7 +672,7 @@ final class AppState: ObservableObject {
     func pasteProcessing(to entry: CubeLibraryEntry) {
         guard let clipboard = processingClipboard else { return }
         let canonical = canonicalURL(entry.url)
-        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty()
+        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty
         snapshot.pipelineOperations = clipboard.pipelineOperations
         snapshot.spectralTrimRange = clipboard.spectralTrimRange
         snapshot.trimStart = clipboard.trimStart
@@ -854,5 +885,54 @@ final class AppState: ObservableObject {
             return makeSnapshot()
         }
         return sessionSnapshots[canonical]
+    }
+    
+    private func prepareCubeForExport(cube: HyperCube, snapshot: CubeSessionSnapshot) -> (cube: HyperCube, wavelengths: [Double]?, layout: CubeLayout)? {
+        var workingCube = cube
+        var layout = snapshot.layout
+        var wavelengths = snapshot.wavelengths ?? cube.wavelengths
+        
+        if let trimRange = snapshot.spectralTrimRange {
+            guard trimRange.lowerBound >= 0 else { return nil }
+            guard let trimmed = trimChannels(
+                cube: workingCube,
+                layout: layout,
+                from: trimRange.lowerBound,
+                to: trimRange.upperBound
+            ) else {
+                return nil
+            }
+            workingCube = trimmed
+            layout = .chw
+            if let stored = snapshot.wavelengths, !stored.isEmpty {
+                wavelengths = stored
+            } else if let wl = wavelengths, wl.count > trimRange.lowerBound {
+                let lower = max(0, min(trimRange.lowerBound, wl.count - 1))
+                let upper = max(lower, min(trimRange.upperBound, wl.count - 1))
+                wavelengths = Array(wl[lower...upper])
+            }
+        }
+        
+        if !snapshot.pipelineOperations.isEmpty {
+            workingCube = processPipeline(original: workingCube, operations: snapshot.pipelineOperations) ?? workingCube
+        }
+        
+        let resolvedLayout = resolveLayout(for: workingCube, preferred: layout)
+        return (workingCube, wavelengths, resolvedLayout)
+    }
+    
+    private func resolveLayout(for cube: HyperCube, preferred: CubeLayout) -> CubeLayout {
+        guard preferred == .auto else { return preferred }
+        guard let axes = cube.axes(for: .auto) else {
+            return .chw
+        }
+        switch axes.channel {
+        case 0:
+            return .chw
+        case 2:
+            return .hwc
+        default:
+            return .chw
+        }
     }
 }

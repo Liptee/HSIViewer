@@ -24,6 +24,7 @@ struct LibraryPanel: View {
         )
         .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted, perform: handleDrop(providers:))
         .focusable(true)
+        .focusEffectDisabled(true)
         .focused($isFocused)
         .onDeleteCommand(perform: deleteSelectedEntry)
         .onChange(of: state.libraryEntries) { entries in
