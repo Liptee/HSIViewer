@@ -7,6 +7,8 @@ struct ContentView: View {
     @State private var tempZoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
     @State private var showWavelengthPopover: Bool = false
+    @State private var currentImageSize: CGSize = .zero
+    @State private var currentGeoSize: CGSize = .zero
     @FocusState private var isImageFocused: Bool
     
     var body: some View {
@@ -124,22 +126,45 @@ struct ContentView: View {
                         state.moveImage(by: CGSize(width: 0, height: -20))
                         return .handled
                     }
+                    .onTapGesture { location in
+                        handleImageClick(at: location, geoSize: geo.size)
+                    }
+                    .onChange(of: geo.size) { newSize in
+                        currentGeoSize = newSize
+                    }
+                    .onHover { isHovering in
+                        if state.activeAnalysisTool == .spectrumGraph && state.cube != nil {
+                            if isHovering {
+                                NSCursor.crosshair.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
+                    }
+                    .onChange(of: state.activeAnalysisTool) { _ in
+                        NSCursor.pop()
+                    }
                 }
                 
                 if let cube = state.cube {
                     Divider()
                     
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            ImageInfoPanel(cube: cube, layout: state.activeLayout)
-                                .id(cube.id)
-                            
-                            LibraryPanel()
+                    ZStack(alignment: .trailing) {
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                ImageInfoPanel(cube: cube, layout: state.activeLayout)
+                                    .id(cube.id)
+                                
+                                LibraryPanel()
+                            }
+                            .padding(12)
                         }
-                        .padding(12)
+                        .frame(width: 260)
+                        .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+                        
+                        GraphPanel()
+                            .environmentObject(state)
                     }
-                    .frame(width: 260)
-                    .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
                     .padding(.trailing, 12)
                 }
             }
@@ -377,31 +402,46 @@ struct ContentView: View {
     }
     
     private var topBar: some View {
-        HStack {
-            if let url = state.cubeURL {
-                Text(url.lastPathComponent)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } else {
-                Text("Файл не выбран")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+        HStack(alignment: .center) {
+            HStack(spacing: 8) {
+                if let url = state.cubeURL {
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("Файл не выбран")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                
+                if let error = state.loadError {
+                    Text("•")
+                        .foregroundColor(.secondary)
+                    Text(error)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: 300, alignment: .leading)
+            
+            Spacer()
+            
+            if state.cube != nil {
+                ToolbarDockView()
+                    .environmentObject(state)
             }
             
             Spacer()
             
-            if let error = state.loadError {
-                Text(error)
-                    .font(.system(size: 11))
-                    .foregroundColor(.red)
-            }
-            
             Text(appVersion)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(.secondary)
+                .frame(maxWidth: 300, alignment: .trailing)
         }
-        .padding(8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .background(
             Color(NSColor.windowBackgroundColor)
                 .opacity(0.9)
@@ -429,6 +469,13 @@ struct ContentView: View {
                                height: fittedSize.height,
                                alignment: .center)
                         .background(Color.black.opacity(0.02))
+                        .onAppear {
+                            currentImageSize = nsImage.size
+                            currentGeoSize = geoSize
+                        }
+                        .onChange(of: nsImage.size) { newSize in
+                            currentImageSize = newSize
+                        }
                 } else {
                     Text("Не удалось построить изображение")
                         .foregroundColor(.red)
@@ -453,6 +500,13 @@ struct ContentView: View {
                                height: fittedSize.height,
                                alignment: .center)
                         .background(Color.black.opacity(0.02))
+                        .onAppear {
+                            currentImageSize = nsImage.size
+                            currentGeoSize = geoSize
+                        }
+                        .onChange(of: nsImage.size) { newSize in
+                            currentImageSize = newSize
+                        }
                 } else {
                     Text("Для RGB нужен список λ длиной ≥ \(state.channelCount)")
                         .font(.system(size: 12))
@@ -786,6 +840,37 @@ struct ContentView: View {
             width: imageSize.width * scale,
             height: imageSize.height * scale
         )
+    }
+    
+    private func handleImageClick(at location: CGPoint, geoSize: CGSize) {
+        guard state.activeAnalysisTool == .spectrumGraph else { return }
+        guard currentImageSize.width > 0, currentImageSize.height > 0 else { return }
+        
+        let fittedSize = fittingSize(imageSize: currentImageSize, in: geoSize)
+        let totalZoom = state.zoomScale * tempZoomScale
+        let scaledImageSize = CGSize(
+            width: fittedSize.width * totalZoom,
+            height: fittedSize.height * totalZoom
+        )
+        
+        let centerX = geoSize.width / 2
+        let centerY = geoSize.height / 2
+        
+        let imageOriginX = centerX - scaledImageSize.width / 2 + state.imageOffset.width + dragOffset.width
+        let imageOriginY = centerY - scaledImageSize.height / 2 + state.imageOffset.height + dragOffset.height
+        
+        let relativeX = location.x - imageOriginX
+        let relativeY = location.y - imageOriginY
+        
+        guard relativeX >= 0, relativeX < scaledImageSize.width,
+              relativeY >= 0, relativeY < scaledImageSize.height else {
+            return
+        }
+        
+        let pixelX = Int((relativeX / scaledImageSize.width) * currentImageSize.width)
+        let pixelY = Int((relativeY / scaledImageSize.height) * currentImageSize.height)
+        
+        state.extractSpectrum(at: pixelX, pixelY: pixelY)
     }
 }
 

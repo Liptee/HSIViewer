@@ -49,6 +49,10 @@ final class AppState: ObservableObject {
     @Published private(set) var hasProcessingClipboard: Bool = false
     @Published var libraryExportProgressState: LibraryExportProgressState?
     
+    @Published var activeAnalysisTool: AnalysisTool = .none
+    @Published var isGraphPanelExpanded: Bool = false
+    @Published var spectrumData: SpectrumData?
+    
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
     private var resolvedAutoLayout: CubeLayout = .auto
@@ -188,6 +192,63 @@ final class AppState: ObservableObject {
     func moveImage(by delta: CGSize) {
         imageOffset.width += delta.width
         imageOffset.height += delta.height
+    }
+    
+    func toggleAnalysisTool(_ tool: AnalysisTool) {
+        if activeAnalysisTool == tool {
+            activeAnalysisTool = .none
+            spectrumData = nil
+        } else {
+            activeAnalysisTool = tool
+            if tool == .spectrumGraph {
+                isGraphPanelExpanded = true
+            }
+        }
+    }
+    
+    func extractSpectrum(at pixelX: Int, pixelY: Int) {
+        guard let cube = cube else { return }
+        guard activeAnalysisTool == .spectrumGraph else { return }
+        
+        let layout = activeLayout
+        let (d0, d1, d2) = cube.dims
+        let dimsArray = [d0, d1, d2]
+        
+        guard let axes = cube.axes(for: layout) else { return }
+        
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        
+        guard pixelX >= 0, pixelX < width, pixelY >= 0, pixelY < height else { return }
+        
+        var spectrum = [Double]()
+        spectrum.reserveCapacity(channels)
+        
+        for ch in 0..<channels {
+            var indices = [0, 0, 0]
+            indices[axes.channel] = ch
+            indices[axes.height] = pixelY
+            indices[axes.width] = pixelX
+            
+            let value = cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+            spectrum.append(value)
+        }
+        
+        spectrumData = SpectrumData(
+            pixelX: pixelX,
+            pixelY: pixelY,
+            values: spectrum,
+            wavelengths: wavelengths
+        )
+        
+        if !isGraphPanelExpanded {
+            isGraphPanelExpanded = true
+        }
+    }
+    
+    func toggleGraphPanel() {
+        isGraphPanelExpanded.toggle()
     }
     
     func applyNormalization() {
@@ -1001,4 +1062,32 @@ struct LibraryExportProgressState: Equatable {
         guard total > 0 else { return 0 }
         return min(1.0, max(0.0, Double(completed) / Double(total)))
     }
+}
+
+enum AnalysisTool: String, CaseIterable, Identifiable {
+    case none
+    case spectrumGraph
+    
+    var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .none: return ""
+        case .spectrumGraph: return "График спектра"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .none: return ""
+        case .spectrumGraph: return "chart.xyaxis.line"
+        }
+    }
+}
+
+struct SpectrumData: Equatable {
+    let pixelX: Int
+    let pixelY: Int
+    let values: [Double]
+    let wavelengths: [Double]?
 }
