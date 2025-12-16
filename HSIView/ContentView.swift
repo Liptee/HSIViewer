@@ -146,6 +146,27 @@ struct ContentView: View {
         }
     }
     
+    @ViewBuilder
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            ScrollView {
+                VStack(spacing: 12) {
+                    if let cube = state.cube {
+                        ImageInfoPanel(cube: cube, layout: state.activeLayout)
+                            .id(cube.id)
+                    }
+                    
+                    LibraryPanel()
+                }
+                .padding(12)
+            }
+            .frame(width: 260)
+            .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+        }
+    }
+    
     private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisMode: ColorSynthesisMode?) {
         guard let cube = state.cube else { return }
         

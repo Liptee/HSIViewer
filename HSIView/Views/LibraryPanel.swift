@@ -5,6 +5,8 @@ struct LibraryPanel: View {
     @EnvironmentObject var state: AppState
     @State private var isExpanded: Bool = true
     @State private var isTargeted: Bool = false
+    @State private var selectedEntryID: CubeLibraryEntry.ID?
+    @FocusState private var isFocused: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -21,6 +23,15 @@ struct LibraryPanel: View {
                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
         )
         .onDrop(of: [UTType.fileURL], isTargeted: $isTargeted, perform: handleDrop(providers:))
+        .focusable(true)
+        .focused($isFocused)
+        .onDeleteCommand(perform: deleteSelectedEntry)
+        .onChange(of: state.libraryEntries) { entries in
+            guard let currentID = selectedEntryID else { return }
+            if !entries.contains(where: { $0.id == currentID }) {
+                selectedEntryID = nil
+            }
+        }
     }
     
     private var header: some View {
@@ -72,7 +83,20 @@ struct LibraryPanel: View {
     @ViewBuilder
     private func libraryRow(for entry: CubeLibraryEntry) -> some View {
         let isActive = isEntryActive(entry)
-        VStack(alignment: .leading, spacing: 4) {
+        let isSelected = selectedEntryID == entry.id && !isActive
+        let singleTap = TapGesture()
+            .onEnded {
+                selectedEntryID = entry.id
+                isFocused = true
+            }
+        
+        let doubleTap = TapGesture(count: 2)
+            .onEnded {
+                selectedEntryID = entry.id
+                state.open(url: entry.url)
+            }
+        
+        return VStack(alignment: .leading, spacing: 4) {
             Text(entry.fileName)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isActive ? .accentColor : .primary)
@@ -85,15 +109,21 @@ struct LibraryPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isActive ? Color.accentColor.opacity(0.15) : Color(NSColor.controlBackgroundColor).opacity(0.2))
+                .fill(backgroundColor(isActive: isActive, isSelected: isSelected))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isActive ? Color.accentColor : Color(NSColor.separatorColor.withAlphaComponent(0.6)), lineWidth: 1)
+                .stroke(borderColor(isActive: isActive, isSelected: isSelected), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            state.open(url: entry.url)
+        .highPriorityGesture(doubleTap)
+        .simultaneousGesture(singleTap)
+        .contextMenu {
+            Button(role: .destructive) {
+                removeEntry(entry)
+            } label: {
+                Text("Удалить из библиотеки")
+            }
         }
     }
     
@@ -115,5 +145,37 @@ struct LibraryPanel: View {
     private func isEntryActive(_ entry: CubeLibraryEntry) -> Bool {
         guard let current = state.cubeURL?.standardizedFileURL.path else { return false }
         return current == entry.url.standardizedFileURL.path
+    }
+    
+    private func backgroundColor(isActive: Bool, isSelected: Bool) -> Color {
+        if isActive {
+            return Color.accentColor.opacity(0.2)
+        } else if isSelected {
+            return Color(NSColor.selectedControlColor).opacity(0.3)
+        } else {
+            return Color(NSColor.controlBackgroundColor).opacity(0.2)
+        }
+    }
+    
+    private func borderColor(isActive: Bool, isSelected: Bool) -> Color {
+        if isActive {
+            return Color.accentColor
+        } else if isSelected {
+            return Color(NSColor.selectedControlColor)
+        } else {
+            return Color(NSColor.separatorColor.withAlphaComponent(0.6))
+        }
+    }
+    
+    private func deleteSelectedEntry() {
+        guard let entry = state.libraryEntries.first(where: { $0.id == selectedEntryID }) else { return }
+        removeEntry(entry)
+    }
+    
+    private func removeEntry(_ entry: CubeLibraryEntry) {
+        state.removeLibraryEntry(entry)
+        if selectedEntryID == entry.id {
+            selectedEntryID = nil
+        }
     }
 }

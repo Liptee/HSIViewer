@@ -611,6 +611,12 @@ final class AppState: ObservableObject {
             }
         }
     }
+    
+    func removeLibraryEntry(_ entry: CubeLibraryEntry) {
+        let canonical = canonicalURL(entry.url)
+        libraryEntries.removeAll { $0.canonicalPath == entry.canonicalPath }
+        sessionSnapshots.removeValue(forKey: canonical)
+    }
 
     private func updateResolvedLayout() {
         if layout == .auto {
