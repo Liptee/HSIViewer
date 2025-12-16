@@ -47,6 +47,7 @@ final class AppState: ObservableObject {
     @Published var pendingMatSelection: MatSelectionRequest?
     @Published var libraryEntries: [CubeLibraryEntry] = []
     @Published private(set) var hasProcessingClipboard: Bool = false
+    @Published var libraryExportProgressState: LibraryExportProgressState?
     
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
@@ -54,6 +55,7 @@ final class AppState: ObservableObject {
     private var sessionSnapshots: [URL: CubeSessionSnapshot] = [:]
     private var pendingSessionRestore: CubeSessionSnapshot?
     private var spectralTrimRange: ClosedRange<Int>?
+    private var libraryExportDismissWorkItem: DispatchWorkItem?
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -690,6 +692,52 @@ final class AppState: ObservableObject {
         }
     }
 
+    func beginLibraryExportProgress(total: Int) {
+        DispatchQueue.main.async {
+            self.libraryExportDismissWorkItem?.cancel()
+            self.libraryExportProgressState = LibraryExportProgressState(
+                phase: .running,
+                completed: 0,
+                total: total,
+                message: "Экспорт библиотеки…"
+            )
+        }
+    }
+    
+    func updateLibraryExportProgress(completed: Int, total: Int) {
+        DispatchQueue.main.async {
+            guard self.libraryExportProgressState != nil else { return }
+            self.libraryExportProgressState = LibraryExportProgressState(
+                phase: .running,
+                completed: completed,
+                total: total,
+                message: "Экспорт библиотеки…"
+            )
+        }
+    }
+    
+    func finishLibraryExportProgress(success: Bool, total: Int, message: String) {
+        DispatchQueue.main.async {
+            self.libraryExportDismissWorkItem?.cancel()
+            self.libraryExportProgressState = LibraryExportProgressState(
+                phase: success ? .success : .failure,
+                completed: total,
+                total: total,
+                message: message
+            )
+            
+            let delay: TimeInterval = success ? 3 : 5
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                if self.libraryExportProgressState?.phase == (success ? .success : .failure) {
+                    self.libraryExportProgressState = nil
+                }
+            }
+            self.libraryExportDismissWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        }
+    }
+
     private func updateResolvedLayout() {
         if layout == .auto {
             resolvedAutoLayout = inferLayout(for: cube ?? originalCube)
@@ -934,5 +982,23 @@ final class AppState: ObservableObject {
         default:
             return .chw
         }
+    }
+}
+
+struct LibraryExportProgressState: Equatable {
+    enum Phase: Equatable {
+        case running
+        case success
+        case failure
+    }
+    
+    var phase: Phase
+    var completed: Int
+    var total: Int
+    var message: String?
+    
+    var progress: Double {
+        guard total > 0 else { return 0 }
+        return min(1.0, max(0.0, Double(completed) / Double(total)))
     }
 }

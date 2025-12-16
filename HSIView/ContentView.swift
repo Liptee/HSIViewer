@@ -22,6 +22,19 @@ struct ContentView: View {
                     }
                     .transition(.opacity)
                 }
+                
+                if let exportInfo = state.libraryExportProgressState {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            LibraryExportToastView(state: exportInfo)
+                                .frame(maxWidth: 280)
+                        }
+                        Spacer()
+                    }
+                    .padding(16)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -58,11 +71,6 @@ struct ContentView: View {
                                         }
                                 )
                                 .scaleEffect(tempZoomScale)
-                                .focusable()
-                                .focused($isImageFocused)
-                                .onAppear {
-                                    isImageFocused = true
-                                }
                         } else {
                             VStack(spacing: 8) {
                                 Text("Открой гиперспектральный куб")
@@ -78,6 +86,13 @@ struct ContentView: View {
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
+                    .contentShape(Rectangle())
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($isImageFocused)
+                    .onAppear {
+                        isImageFocused = true
+                    }
                     .onKeyPress(.leftArrow) {
                         state.moveImage(by: CGSize(width: 20, height: 0))
                         return .handled
@@ -268,11 +283,18 @@ struct ContentView: View {
         let entries = state.libraryEntries
         guard !entries.isEmpty else { return }
         let includeWavelengths = wavelengths
+        state.beginLibraryExportProgress(total: entries.count)
         
         DispatchQueue.global(qos: .userInitiated).async {
+            var completed = 0
+            var allSuccess = true
+            
             for entry in entries {
                 autoreleasepool {
                     guard let payload = state.exportPayload(for: entry) else {
+                        allSuccess = false
+                        completed += 1
+                        state.updateLibraryExportProgress(completed: completed, total: entries.count)
                         print("Пропуск \(entry.fileName) — нет данных для экспорта")
                         return
                     }
@@ -318,9 +340,18 @@ struct ContentView: View {
                         print("Экспортирован \(entry.fileName)")
                     case .failure(let error):
                         print("Ошибка экспорта \(entry.fileName): \(error.localizedDescription)")
+                        allSuccess = false
                     }
+                    
+                    completed += 1
+                    state.updateLibraryExportProgress(completed: completed, total: entries.count)
                 }
             }
+            
+            let message = allSuccess
+                ? "Экспорт библиотеки завершён"
+                : "Экспорт выполнен с ошибками"
+            state.finishLibraryExportProgress(success: allSuccess, total: entries.count, message: message)
         }
     }
     
@@ -740,6 +771,83 @@ struct ContentView: View {
             width: imageSize.width * scale,
             height: imageSize.height * scale
         )
+    }
+}
+
+private struct LibraryExportToastView: View {
+    let state: LibraryExportProgressState
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(iconColor)
+                Text(titleText)
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            
+            switch state.phase {
+            case .running:
+                ProgressView(value: state.progress)
+                    .progressViewStyle(.linear)
+                Text("\(state.completed) / \(state.total)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+            case .success, .failure:
+                Text(state.message ?? defaultMessage)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 6)
+    }
+    
+    private var titleText: String {
+        switch state.phase {
+        case .running:
+            return "Экспорт библиотеки"
+        case .success:
+            return "Готово"
+        case .failure:
+            return "Ошибка экспорта"
+        }
+    }
+    
+    private var iconName: String {
+        switch state.phase {
+        case .running:
+            return "tray.full"
+        case .success:
+            return "checkmark.circle.fill"
+        case .failure:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch state.phase {
+        case .running:
+            return .accentColor
+        case .success:
+            return .green
+        case .failure:
+            return .orange
+        }
+    }
+    
+    private var defaultMessage: String {
+        switch state.phase {
+        case .success:
+            return "Все файлы успешно экспортированы"
+        case .failure:
+            return "При экспорте возникли ошибки"
+        case .running:
+            return ""
+        }
     }
 }
 
