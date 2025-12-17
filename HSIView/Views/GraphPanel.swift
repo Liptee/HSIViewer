@@ -4,6 +4,7 @@ import Charts
 struct GraphPanel: View {
     @EnvironmentObject var state: AppState
     @State private var selectedSampleID: UUID?
+    @FocusState private var hasFocus: Bool
     let panelWidth: CGFloat = 400
     
     var body: some View {
@@ -89,7 +90,9 @@ struct GraphPanel: View {
         
         let seriesMapping = samples.map { ($0.id.uuidString, $0.displayColor) }
         
-        VStack(alignment: .leading, spacing: 8) {
+        let cubeName = state.cubeURL?.lastPathComponent ?? "Куб"
+        
+        return VStack(alignment: .leading, spacing: 8) {
             Chart {
                 ForEach(samples) { sample in
                     let seriesID = sample.id.uuidString
@@ -133,11 +136,11 @@ struct GraphPanel: View {
             .frame(height: 280)
             .padding(.horizontal, 4)
             
-            samplesLegend(samples)
+            samplesLegend(samples, cubeName: cubeName)
             
             VStack(alignment: .leading, spacing: 6) {
                 if let pending = state.pendingSpectrumSample {
-                    Text("Выбрана точка: (\(pending.pixelX), \(pending.pixelY)) — не сохранена")
+                    Text("Выбрана точка: \(cubeName): (\(pending.pixelX), \(pending.pixelY)) — не сохранена")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -172,10 +175,18 @@ struct GraphPanel: View {
         .padding(12)
         .focusable()
         .focusEffectDisabled()
+        .focused($hasFocus)
+        .onAppear { hasFocus = true }
         .onDeleteCommand(perform: deleteSelectedSamples)
+        .onChange(of: state.displayedSpectrumSamples) { samples in
+            guard let selectedID = selectedSampleID else { return }
+            if !samples.contains(where: { $0.id == selectedID }) {
+                selectedSampleID = nil
+            }
+        }
     }
     
-    private func samplesLegend(_ samples: [SpectrumSample]) -> some View {
+    private func samplesLegend(_ samples: [SpectrumSample], cubeName: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
             
@@ -183,7 +194,11 @@ struct GraphPanel: View {
                 SampleRow(
                     sample: sample,
                     isSelected: selectedSampleID == sample.id,
-                    onSelect: { selectedSampleID = sample.id }
+                    title: "\(cubeName): (\(sample.pixelX), \(sample.pixelY))",
+                    onSelect: {
+                        selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
+                        hasFocus = true
+                    }
                 )
             }
             .padding(.top, 4)
@@ -219,7 +234,11 @@ extension GraphPanel {
     
     private func deleteSamples(_ samples: [SpectrumSample]) {
         for sample in samples {
-            state.removeSpectrumSample(with: sample.id)
+            if state.pendingSpectrumSample?.id == sample.id {
+                state.pendingSpectrumSample = nil
+            } else {
+                state.removeSpectrumSample(with: sample.id)
+            }
             if selectedSampleID == sample.id {
                 selectedSampleID = nil
             }
@@ -234,6 +253,7 @@ extension GraphPanel {
 private struct SampleRow: View {
     let sample: SpectrumSample
     let isSelected: Bool
+    let title: String
     let onSelect: () -> Void
     
     var body: some View {
@@ -245,8 +265,8 @@ private struct SampleRow: View {
                     Circle()
                         .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
                 )
-            Text("(\(sample.pixelX), \(sample.pixelY))")
-                .font(.system(size: 10, design: .monospaced))
+            Text(title)
+                .font(.system(size: 10))
             Spacer()
         }
         .padding(6)

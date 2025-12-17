@@ -80,6 +80,14 @@ enum RotationAngle: String, CaseIterable, Identifiable {
         case .degree270: return 270
         }
     }
+    
+    var quarterTurns: Int {
+        switch self {
+        case .degree90: return 1
+        case .degree180: return 2
+        case .degree270: return 3
+        }
+    }
 }
 
 struct PipelineOperation: Identifiable, Equatable {

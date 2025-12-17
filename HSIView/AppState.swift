@@ -2,7 +2,11 @@ import Foundation
 import AppKit
 
 final class AppState: ObservableObject {
-    @Published var cube: HyperCube?
+    @Published var cube: HyperCube? {
+        didSet {
+            handleCubeChange(previousCube: oldValue)
+        }
+    }
     @Published var cubeURL: URL?
     @Published var layout: CubeLayout = .auto {
         didSet {
@@ -69,6 +73,8 @@ final class AppState: ObservableObject {
     private var libraryExportDismissWorkItem: DispatchWorkItem?
     private var spectrumColorCounter: Int = 0
     private var suppressSpectrumRefresh: Bool = false
+    private var spectrumRotationTurns: Int = 0
+    private var spectrumSpatialSize: (width: Int, height: Int)?
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -224,13 +230,10 @@ final class AppState: ObservableObject {
     func toggleAnalysisTool(_ tool: AnalysisTool) {
         if activeAnalysisTool == tool {
             activeAnalysisTool = .none
-            resetSpectrumSelections()
         } else {
             activeAnalysisTool = tool
             if tool == .spectrumGraph {
                 isGraphPanelExpanded = true
-            } else {
-                resetSpectrumSelections()
             }
         }
     }
@@ -315,6 +318,11 @@ final class AppState: ObservableObject {
                 originalCube = converted
             }
         }
+    }
+    
+    private func handleCubeChange(previousCube: HyperCube?) {
+        adjustSpectrumGeometry(previousCube: previousCube, newCube: cube)
+        refreshSpectrumSamples()
     }
     
     func addOperation(type: PipelineOperationType) {
@@ -948,6 +956,7 @@ final class AppState: ObservableObject {
         zoomScale = snapshot.zoomScale
         imageOffset = snapshot.imageOffset
         spectralTrimRange = snapshot.spectralTrimRange
+        restoreSpectrumSamples(from: snapshot.spectrumSamples)
         
         let maxChannel = max(channelCount - 1, 0)
         if maxChannel >= 0 {
@@ -999,6 +1008,8 @@ final class AppState: ObservableObject {
         viewMode = .gray
         layout = .auto
         resetSpectrumSelections()
+        spectrumSpatialSize = nil
+        spectrumRotationTurns = pipelineRotationTurns()
         updateResolvedLayout()
     }
     
@@ -1015,6 +1026,15 @@ final class AppState: ObservableObject {
     
     private func makeSnapshot() -> CubeSessionSnapshot? {
         guard cube != nil else { return nil }
+        let descriptors = spectrumSamples.map {
+            SpectrumSampleDescriptor(
+                id: $0.id,
+                pixelX: $0.pixelX,
+                pixelY: $0.pixelY,
+                colorIndex: $0.colorIndex
+            )
+        }
+        
         return CubeSessionSnapshot(
             pipelineOperations: pipelineOperations,
             pipelineAutoApply: pipelineAutoApply,
@@ -1032,7 +1052,8 @@ final class AppState: ObservableObject {
             viewMode: viewMode,
             currentChannel: currentChannel,
             zoomScale: zoomScale,
-            imageOffset: imageOffset
+            imageOffset: imageOffset,
+            spectrumSamples: descriptors
         )
     }
     
@@ -1169,6 +1190,138 @@ final class AppState: ObservableObject {
                 id: pending.id
             )
         }
+    }
+    
+    private func adjustSpectrumGeometry(previousCube: HyperCube?, newCube: HyperCube?) {
+        let currentTurns = pipelineRotationTurns()
+        
+        guard let newCube else {
+            spectrumSpatialSize = nil
+            spectrumRotationTurns = currentTurns
+            return
+        }
+        
+        let newSize = cubeSpatialSize(for: newCube)
+        
+        if let previousSize = spectrumSpatialSize,
+           previousCube != nil {
+            let delta = normalizedTurns(currentTurns - spectrumRotationTurns)
+            if delta != 0 {
+                rotateSpectrumSamples(by: delta, previousSize: previousSize)
+            }
+        }
+        
+        spectrumSpatialSize = newSize ?? spectrumSpatialSize
+        spectrumRotationTurns = currentTurns
+    }
+    
+    private func cubeSpatialSize(for cube: HyperCube) -> (width: Int, height: Int)? {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: activeLayout) else { return nil }
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        return (width, height)
+    }
+    
+    private func rotateSpectrumSamples(by turns: Int, previousSize: (width: Int, height: Int)) {
+        guard turns % 4 != 0 else { return }
+        
+        spectrumSamples = spectrumSamples.map { sample in
+            let rotated = rotatePoint(x: sample.pixelX, y: sample.pixelY, turns: turns, size: previousSize)
+            return SpectrumSample(
+                id: sample.id,
+                pixelX: rotated.x,
+                pixelY: rotated.y,
+                values: sample.values,
+                wavelengths: sample.wavelengths,
+                colorIndex: sample.colorIndex
+            )
+        }
+        
+        if let pending = pendingSpectrumSample {
+            let rotated = rotatePoint(x: pending.pixelX, y: pending.pixelY, turns: turns, size: previousSize)
+            pendingSpectrumSample = SpectrumSample(
+                id: pending.id,
+                pixelX: rotated.x,
+                pixelY: rotated.y,
+                values: pending.values,
+                wavelengths: pending.wavelengths,
+                colorIndex: pending.colorIndex
+            )
+        }
+    }
+    
+    private func rotatePoint(
+        x: Int,
+        y: Int,
+        turns: Int,
+        size: (width: Int, height: Int)
+    ) -> (x: Int, y: Int) {
+        guard size.width > 0, size.height > 0 else {
+            return (0, 0)
+        }
+        var currentX = x
+        var currentY = y
+        var width = size.width
+        var height = size.height
+        
+        let normalized = normalizedTurns(turns)
+        for _ in 0..<normalized {
+            let newX = height - 1 - currentY
+            let newY = currentX
+            currentX = newX
+            currentY = newY
+            (width, height) = (height, width)
+        }
+        
+        currentX = max(0, min(currentX, max(width - 1, 0)))
+        currentY = max(0, min(currentY, max(height - 1, 0)))
+        return (currentX, currentY)
+    }
+    
+    private func normalizedTurns(_ value: Int) -> Int {
+        var result = value % 4
+        if result < 0 { result += 4 }
+        return result
+    }
+    
+    private func pipelineRotationTurns() -> Int {
+        var turns = 0
+        for operation in pipelineOperations {
+            if operation.type == .rotation, let angle = operation.rotationAngle {
+                turns = (turns + angle.quarterTurns) % 4
+            }
+        }
+        return turns
+    }
+    
+    private func restoreSpectrumSamples(from descriptors: [SpectrumSampleDescriptor]) {
+        guard cube != nil else {
+            spectrumSamples.removeAll()
+            pendingSpectrumSample = nil
+            spectrumColorCounter = 0
+            return
+        }
+        
+        var restored: [SpectrumSample] = []
+        var nextColorIndex = 0
+        
+        for descriptor in descriptors {
+            if let sample = makeSpectrumSample(
+                pixelX: descriptor.pixelX,
+                pixelY: descriptor.pixelY,
+                colorIndex: descriptor.colorIndex,
+                id: descriptor.id
+            ) {
+                restored.append(sample)
+                nextColorIndex = max(nextColorIndex, descriptor.colorIndex + 1)
+            }
+        }
+        
+        spectrumSamples = restored
+        pendingSpectrumSample = nil
+        spectrumColorCounter = max(nextColorIndex, restored.count)
     }
     
     private func resetSpectrumSelections() {

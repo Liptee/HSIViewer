@@ -19,6 +19,7 @@ struct CubeSessionSnapshot {
     var currentChannel: Double
     var zoomScale: CGFloat
     var imageOffset: CGSize
+    var spectrumSamples: [SpectrumSampleDescriptor]
     
     static let empty = CubeSessionSnapshot(
         pipelineOperations: [],
@@ -37,6 +38,14 @@ struct CubeSessionSnapshot {
         viewMode: .gray,
         currentChannel: 0,
         zoomScale: 1.0,
-        imageOffset: .zero
+        imageOffset: .zero,
+        spectrumSamples: []
     )
+}
+
+struct SpectrumSampleDescriptor: Equatable {
+    var id: UUID
+    var pixelX: Int
+    var pixelY: Int
+    var colorIndex: Int
 }
