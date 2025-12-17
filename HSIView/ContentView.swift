@@ -459,23 +459,7 @@ struct ContentView: View {
                     layout: state.activeLayout,
                     channelIndex: chIdx
                 ) {
-                    let fittedSize = fittingSize(imageSize: nsImage.size, in: geoSize)
-                    
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: fittedSize.width,
-                               height: fittedSize.height,
-                               alignment: .center)
-                        .background(Color.black.opacity(0.02))
-                        .onAppear {
-                            currentImageSize = nsImage.size
-                            currentGeoSize = geoSize
-                        }
-                        .onChange(of: nsImage.size) { newSize in
-                            currentImageSize = newSize
-                        }
+                    spectrumImageView(nsImage: nsImage, geoSize: geoSize)
                 } else {
                     Text("Не удалось построить изображение")
                         .foregroundColor(.red)
@@ -489,30 +473,44 @@ struct ContentView: View {
                     layout: state.activeLayout,
                     wavelengths: lambda
                    ) {
-                    
-                    let fittedSize = fittingSize(imageSize: nsImage.size, in: geoSize)
-                    
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: fittedSize.width,
-                               height: fittedSize.height,
-                               alignment: .center)
-                        .background(Color.black.opacity(0.02))
-                        .onAppear {
-                            currentImageSize = nsImage.size
-                            currentGeoSize = geoSize
-                        }
-                        .onChange(of: nsImage.size) { newSize in
-                            currentImageSize = newSize
-                        }
+                    spectrumImageView(nsImage: nsImage, geoSize: geoSize)
                 } else {
                     Text("Для RGB нужен список λ длиной ≥ \(state.channelCount)")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
             }
+        }
+    }
+    
+    private func spectrumImageView(nsImage: NSImage, geoSize: CGSize) -> some View {
+        let fittedSize = fittingSize(imageSize: nsImage.size, in: geoSize)
+        
+        return ZStack(alignment: .topLeading) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: fittedSize.width,
+                       height: fittedSize.height,
+                       alignment: .center)
+            
+            SpectrumPointsOverlay(
+                samples: state.activeSpectrumSamples,
+                originalSize: nsImage.size,
+                displaySize: fittedSize
+            )
+        }
+        .frame(width: fittedSize.width,
+               height: fittedSize.height,
+               alignment: .center)
+        .background(Color.black.opacity(0.02))
+        .onAppear {
+            currentImageSize = nsImage.size
+            currentGeoSize = geoSize
+        }
+        .onChange(of: nsImage.size) { newSize in
+            currentImageSize = newSize
         }
     }
     
@@ -948,6 +946,40 @@ private struct LibraryExportToastView: View {
         case .running:
             return ""
         }
+    }
+}
+
+private struct SpectrumPointsOverlay: View {
+    let samples: [SpectrumSample]
+    let originalSize: CGSize
+    let displaySize: CGSize
+    
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(samples) { sample in
+                let position = position(for: sample)
+                Circle()
+                    .fill(sample.displayColor)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.9), lineWidth: 1)
+                    )
+                    .frame(width: 10, height: 10)
+                    .position(x: position.x, y: position.y)
+            }
+        }
+        .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+    
+    private func position(for sample: SpectrumSample) -> CGPoint {
+        let width = max(originalSize.width - 1, 1)
+        let height = max(originalSize.height - 1, 1)
+        let xRatio = CGFloat(sample.pixelX) / width
+        let yRatio = CGFloat(sample.pixelY) / height
+        let x = xRatio * displaySize.width
+        let y = yRatio * displaySize.height
+        return CGPoint(x: x, y: y)
     }
 }
 

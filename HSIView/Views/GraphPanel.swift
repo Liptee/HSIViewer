@@ -3,6 +3,7 @@ import Charts
 
 struct GraphPanel: View {
     @EnvironmentObject var state: AppState
+    @State private var selectedSampleID: UUID?
     let panelWidth: CGFloat = 400
     
     var body: some View {
@@ -23,10 +24,10 @@ struct GraphPanel: View {
             
             Divider()
             
-            if let spectrum = state.spectrumData {
-                spectrumChart(spectrum)
-            } else {
+            if state.displayedSpectrumSamples.isEmpty {
                 emptyState
+            } else {
+                spectrumChart(state.displayedSpectrumSamples)
             }
         }
         .frame(width: panelWidth)
@@ -46,11 +47,9 @@ struct GraphPanel: View {
             
             Spacer()
             
-            if let spectrum = state.spectrumData {
-                Text("(\(spectrum.pixelX), \(spectrum.pixelY))")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
+            Text(state.spectrumSamples.isEmpty ? "Нет сохранённых точек" : "Сохранено: \(state.spectrumSamples.count)")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -76,21 +75,43 @@ struct GraphPanel: View {
     }
     
     @ViewBuilder
-    private func spectrumChart(_ spectrum: SpectrumData) -> some View {
+    private func spectrumChart(_ samples: [SpectrumSample]) -> some View {
+        let usesWavelengths = samples.contains { $0.wavelengths != nil }
+        let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
+        let xAllValues: [Double] = samples.flatMap { sample in
+            let xs = sample.wavelengths ?? (0..<sample.values.count).map { Double($0) }
+            return xs
+        }
+        let minX = xAllValues.min() ?? 0
+        let maxXRaw = xAllValues.max() ?? minX
+        let adjustedMaxX = maxXRaw == minX ? minX + 1 : maxXRaw
+        let domain = minX...adjustedMaxX
+        
+        let seriesMapping = samples.map { ($0.id.uuidString, $0.displayColor) }
+        
         VStack(alignment: .leading, spacing: 8) {
             Chart {
-                ForEach(Array(spectrum.values.enumerated()), id: \.offset) { index, value in
-                    let xValue: Double = spectrum.wavelengths?[safe: index] ?? Double(index)
-                    LineMark(
-                        x: .value(spectrum.wavelengths != nil ? "λ (нм)" : "Канал", xValue),
-                        y: .value("Интенсивность", value)
-                    )
-                    .foregroundStyle(Color.accentColor.gradient)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                ForEach(samples) { sample in
+                    let seriesID = sample.id.uuidString
+                    ForEach(Array(sample.values.enumerated()), id: \.offset) { index, value in
+                        let xValue: Double = sample.wavelengths?[safe: index] ?? Double(index)
+                        LineMark(
+                            x: .value(axisLabel, xValue),
+                            y: .value("Интенсивность", value),
+                            series: .value("Точка", seriesID)
+                        )
+                        .foregroundStyle(by: .value("Точка", seriesID))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    }
                 }
             }
-            .chartXAxisLabel(spectrum.wavelengths != nil ? "λ (нм)" : "Канал")
+            .chartXAxisLabel(axisLabel)
             .chartYAxisLabel("I")
+            .chartXScale(domain: domain)
+            .chartForegroundStyleScale(
+                domain: seriesMapping.map { $0.0 },
+                range: seriesMapping.map { $0.1 }
+            )
             .chartXAxis {
                 AxisMarks(values: .automatic) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
@@ -112,24 +133,58 @@ struct GraphPanel: View {
             .frame(height: 280)
             .padding(.horizontal, 4)
             
-            statisticsView(spectrum)
+            samplesLegend(samples)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                if let pending = state.pendingSpectrumSample {
+                    Text("Выбрана точка: (\(pending.pixelX), \(pending.pixelY)) — не сохранена")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                
+                Button(action: { state.savePendingSpectrumSample() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pin.fill")
+                        Text("Сохранить точку")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(state.pendingSpectrumSample == nil)
+                
+                if let selectedID = selectedSampleID,
+                   let sample = samples.first(where: { $0.id == selectedID }) {
+                    Button(role: .destructive) {
+                        deleteSamples([sample])
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "trash")
+                            Text("Удалить точку")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
         }
         .padding(12)
+        .focusable()
+        .focusEffectDisabled()
+        .onDeleteCommand(perform: deleteSelectedSamples)
     }
     
-    private func statisticsView(_ spectrum: SpectrumData) -> some View {
-        let values = spectrum.values
-        let minVal = values.min() ?? 0
-        let maxVal = values.max() ?? 0
-        let avgVal = values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
-        
-        return VStack(alignment: .leading, spacing: 6) {
+    private func samplesLegend(_ samples: [SpectrumSample]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             Divider()
             
-            HStack(spacing: 16) {
-                StatItem(label: "Min", value: minVal)
-                StatItem(label: "Max", value: maxVal)
-                StatItem(label: "Avg", value: avgVal)
+            ForEach(samples) { sample in
+                SampleRow(
+                    sample: sample,
+                    isSelected: selectedSampleID == sample.id,
+                    onSelect: { selectedSampleID = sample.id }
+                )
             }
             .padding(.top, 4)
         }
@@ -156,25 +211,57 @@ struct GraphPanel: View {
     }
 }
 
-private struct StatItem: View {
-    let label: String
-    let value: Double
+extension GraphPanel {
+    private func deleteSelectedSamples() {
+        guard let selectedID = selectedSampleID else { return }
+        deleteSamples(samplesMatching(ids: [selectedID]))
+    }
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary)
-            Text(formatValue(value))
-                .font(.system(size: 10, design: .monospaced))
+    private func deleteSamples(_ samples: [SpectrumSample]) {
+        for sample in samples {
+            state.removeSpectrumSample(with: sample.id)
+            if selectedSampleID == sample.id {
+                selectedSampleID = nil
+            }
         }
     }
     
-    private func formatValue(_ val: Double) -> String {
-        if abs(val) < 0.001 || abs(val) >= 10000 {
-            return String(format: "%.2e", val)
+    private func samplesMatching(ids: [UUID]) -> [SpectrumSample] {
+        state.displayedSpectrumSamples.filter { ids.contains($0.id) }
+    }
+}
+
+private struct SampleRow: View {
+    let sample: SpectrumSample
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(sample.displayColor)
+                .frame(width: 10, height: 10)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
+                )
+            Text("(\(sample.pixelX), \(sample.pixelY))")
+                .font(.system(size: 10, design: .monospaced))
+            Spacer()
         }
-        return String(format: "%.4f", val)
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect()
+        }
     }
 }
 
@@ -183,4 +270,3 @@ extension Collection {
         indices.contains(index) ? self[index] : nil
     }
 }
-

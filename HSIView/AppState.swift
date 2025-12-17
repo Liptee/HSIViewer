@@ -17,7 +17,13 @@ final class AppState: ObservableObject {
     
     @Published var viewMode: ViewMode = .gray
     
-    @Published var wavelengths: [Double]?
+    @Published var wavelengths: [Double]? = nil {
+        didSet {
+            if suppressSpectrumRefresh { return }
+            if oldValue == nil && wavelengths == nil { return }
+            refreshSpectrumSamples()
+        }
+    }
     @Published var lambdaStart: String = "400"
     @Published var lambdaEnd: String = "1000"
     @Published var lambdaStep: String = ""
@@ -51,7 +57,8 @@ final class AppState: ObservableObject {
     
     @Published var activeAnalysisTool: AnalysisTool = .none
     @Published var isGraphPanelExpanded: Bool = false
-    @Published var spectrumData: SpectrumData?
+    @Published var spectrumSamples: [SpectrumSample] = []
+    @Published var pendingSpectrumSample: SpectrumSample?
     
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
@@ -60,6 +67,8 @@ final class AppState: ObservableObject {
     private var pendingSessionRestore: CubeSessionSnapshot?
     private var spectralTrimRange: ClosedRange<Int>?
     private var libraryExportDismissWorkItem: DispatchWorkItem?
+    private var spectrumColorCounter: Int = 0
+    private var suppressSpectrumRefresh: Bool = false
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -82,6 +91,24 @@ final class AppState: ObservableObject {
             return resolvedAutoLayout
         }
         return layout
+    }
+    
+    var activeSpectrumSamples: [SpectrumSample] {
+        var result = spectrumSamples
+        if let pending = pendingSpectrumSample {
+            result.append(pending)
+        }
+        return result
+    }
+    
+    var displayedSpectrumSamples: [SpectrumSample] {
+        let samples = activeSpectrumSamples
+        guard isTrimMode else { return samples }
+        let maxIndex = max(channelCount - 1, 0)
+        let lower = max(0, min(Int(trimStart), maxIndex))
+        let upper = max(lower, min(Int(trimEnd), maxIndex))
+        let range = lower...upper
+        return samples.compactMap { $0.trimmed(to: range) }
     }
 
     var defaultExportBaseName: String {
@@ -197,11 +224,13 @@ final class AppState: ObservableObject {
     func toggleAnalysisTool(_ tool: AnalysisTool) {
         if activeAnalysisTool == tool {
             activeAnalysisTool = .none
-            spectrumData = nil
+            resetSpectrumSelections()
         } else {
             activeAnalysisTool = tool
             if tool == .spectrumGraph {
                 isGraphPanelExpanded = true
+            } else {
+                resetSpectrumSelections()
             }
         }
     }
@@ -235,16 +264,31 @@ final class AppState: ObservableObject {
             spectrum.append(value)
         }
         
-        spectrumData = SpectrumData(
+        let colorIndex = pendingSpectrumSample?.colorIndex ?? spectrumColorCounter
+        
+        let sample = SpectrumSample(
             pixelX: pixelX,
             pixelY: pixelY,
             values: spectrum,
-            wavelengths: wavelengths
+            wavelengths: wavelengths,
+            colorIndex: colorIndex
         )
+        pendingSpectrumSample = sample
         
         if !isGraphPanelExpanded {
             isGraphPanelExpanded = true
         }
+    }
+    
+    func savePendingSpectrumSample() {
+        guard let pending = pendingSpectrumSample else { return }
+        spectrumSamples.append(pending)
+        pendingSpectrumSample = nil
+        spectrumColorCounter = max(spectrumColorCounter, pending.colorIndex + 1)
+    }
+    
+    func removeSpectrumSample(with id: UUID) {
+        spectrumSamples.removeAll { $0.id == id }
     }
     
     func toggleGraphPanel() {
@@ -389,15 +433,18 @@ final class AppState: ObservableObject {
                 for index in self.pipelineOperations.indices {
                     self.pipelineOperations[index].layout = self.layout
                 }
-                if let trimmedWavelengths {
-                    self.wavelengths = trimmedWavelengths
-                }
                 self.currentChannel = 0
                 self.cube = resultCube ?? trimmedCube
                 self.updateChannelCount()
                 self.isTrimMode = false
                 self.spectralTrimRange = absoluteRange
                 self.loadError = nil
+                self.suppressSpectrumRefresh = true
+                if let trimmedWavelengths {
+                    self.wavelengths = trimmedWavelengths
+                }
+                self.suppressSpectrumRefresh = false
+                self.refreshSpectrumSamples()
                 self.endBusy()
             }
         }
@@ -951,6 +998,7 @@ final class AppState: ObservableObject {
         spectralTrimRange = nil
         viewMode = .gray
         layout = .auto
+        resetSpectrumSelections()
         updateResolvedLayout()
     }
     
@@ -1044,6 +1092,90 @@ final class AppState: ObservableObject {
             return .chw
         }
     }
+    
+    private func makeSpectrumSample(
+        pixelX: Int,
+        pixelY: Int,
+        colorIndex: Int,
+        id: UUID = UUID()
+    ) -> SpectrumSample? {
+        guard let spectrumValues = buildSpectrumValues(pixelX: pixelX, pixelY: pixelY) else { return nil }
+        return SpectrumSample(
+            id: id,
+            pixelX: pixelX,
+            pixelY: pixelY,
+            values: spectrumValues,
+            wavelengths: wavelengths,
+            colorIndex: colorIndex
+        )
+    }
+    
+    private func buildSpectrumValues(pixelX: Int, pixelY: Int) -> [Double]? {
+        guard let cube = cube else { return nil }
+        
+        let layout = activeLayout
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        
+        guard let axes = cube.axes(for: layout) else { return nil }
+        
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        
+        guard pixelX >= 0, pixelX < width, pixelY >= 0, pixelY < height else { return nil }
+        
+        var spectrum: [Double] = Array(repeating: 0, count: channels)
+        for ch in 0..<channels {
+            var indices = [0, 0, 0]
+            indices[axes.channel] = ch
+            indices[axes.height] = pixelY
+            indices[axes.width] = pixelX
+            
+            let value = cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+            spectrum[ch] = value
+        }
+        return spectrum
+    }
+    
+    private func refreshSpectrumSamples() {
+        guard cube != nil else {
+            spectrumSamples.removeAll()
+            pendingSpectrumSample = nil
+            return
+        }
+        if spectrumSamples.isEmpty && pendingSpectrumSample == nil {
+            return
+        }
+        
+        var updated: [SpectrumSample] = []
+        for sample in spectrumSamples {
+            if let refreshed = makeSpectrumSample(
+                pixelX: sample.pixelX,
+                pixelY: sample.pixelY,
+                colorIndex: sample.colorIndex,
+                id: sample.id
+            ) {
+                updated.append(refreshed)
+            }
+        }
+        spectrumSamples = updated
+        
+        if let pending = pendingSpectrumSample {
+            pendingSpectrumSample = makeSpectrumSample(
+                pixelX: pending.pixelX,
+                pixelY: pending.pixelY,
+                colorIndex: pending.colorIndex,
+                id: pending.id
+            )
+        }
+    }
+    
+    private func resetSpectrumSelections() {
+        spectrumSamples.removeAll()
+        pendingSpectrumSample = nil
+        spectrumColorCounter = 0
+    }
 }
 
 struct LibraryExportProgressState: Equatable {
@@ -1085,9 +1217,46 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
     }
 }
 
-struct SpectrumData: Equatable {
+struct SpectrumSample: Identifiable, Equatable {
+    let id: UUID
     let pixelX: Int
     let pixelY: Int
     let values: [Double]
     let wavelengths: [Double]?
+    let colorIndex: Int
+    
+    init(
+        id: UUID = UUID(),
+        pixelX: Int,
+        pixelY: Int,
+        values: [Double],
+        wavelengths: [Double]?,
+        colorIndex: Int
+    ) {
+        self.id = id
+        self.pixelX = pixelX
+        self.pixelY = pixelY
+        self.values = values
+        self.wavelengths = wavelengths
+        self.colorIndex = colorIndex
+    }
+    
+    var nsColor: NSColor {
+        let palette = SpectrumColorPalette.colors
+        guard !palette.isEmpty else { return .systemPink }
+        return palette[colorIndex % palette.count]
+    }
+}
+
+enum SpectrumColorPalette {
+    static let colors: [NSColor] = [
+        .systemPink,
+        .systemBlue,
+        .systemGreen,
+        .systemOrange,
+        .systemPurple,
+        .systemRed,
+        .systemTeal,
+        .systemYellow
+    ]
 }
