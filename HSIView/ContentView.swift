@@ -495,11 +495,13 @@ struct ContentView: View {
                        height: fittedSize.height,
                        alignment: .center)
             
-            SpectrumPointsOverlay(
-                samples: state.activeSpectrumSamples,
-                originalSize: nsImage.size,
-                displaySize: fittedSize
-            )
+            if state.activeAnalysisTool == .spectrumGraph {
+                SpectrumPointsOverlay(
+                    samples: state.activeSpectrumSamples,
+                    originalSize: nsImage.size,
+                    displaySize: fittedSize
+                )
+            }
         }
         .frame(width: fittedSize.width,
                height: fittedSize.height,

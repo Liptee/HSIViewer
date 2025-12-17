@@ -115,6 +115,7 @@ struct GraphPanel: View {
                 domain: seriesMapping.map { $0.0 },
                 range: seriesMapping.map { $0.1 }
             )
+            .chartLegend(.hidden)
             .chartXAxis {
                 AxisMarks(values: .automatic) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
