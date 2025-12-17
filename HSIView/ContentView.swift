@@ -9,7 +9,11 @@ struct ContentView: View {
     @State private var showWavelengthPopover: Bool = false
     @State private var currentImageSize: CGSize = .zero
     @State private var currentGeoSize: CGSize = .zero
+    @State private var roiDragStartPixel: PixelCoordinate?
+    @State private var roiPreviewRect: SpectrumROIRect?
     @FocusState private var isImageFocused: Bool
+    
+    private let imageCoordinateSpaceName = "image-canvas"
     
     var body: some View {
         GeometryReader { proxy in
@@ -60,34 +64,11 @@ struct ContentView: View {
                     ZStack {
                         if let cube = state.cube {
                             cubeView(cube: cube, geoSize: geo.size)
-                                .scaleEffect(state.zoomScale)
+                                .scaleEffect(state.zoomScale * tempZoomScale)
                                 .offset(
                                     x: state.imageOffset.width + dragOffset.width,
                                     y: state.imageOffset.height + dragOffset.height
                                 )
-                                .gesture(
-                                    DragGesture()
-                                        .onChanged { value in
-                                            dragOffset = value.translation
-                                        }
-                                        .onEnded { value in
-                                            state.imageOffset.width += value.translation.width
-                                            state.imageOffset.height += value.translation.height
-                                            dragOffset = .zero
-                                        }
-                                )
-                                .gesture(
-                                    MagnificationGesture()
-                                        .onChanged { value in
-                                            tempZoomScale = value
-                                        }
-                                        .onEnded { value in
-                                            state.zoomScale *= value
-                                            state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
-                                            tempZoomScale = 1.0
-                                        }
-                                )
-                                .scaleEffect(tempZoomScale)
                         } else {
                             VStack(spacing: 8) {
                                 Text("Открой гиперспектральный куб")
@@ -104,6 +85,41 @@ struct ContentView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .contentShape(Rectangle())
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                tempZoomScale = value
+                            }
+                            .onEnded { value in
+                                state.zoomScale *= value
+                                state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
+                                tempZoomScale = 1.0
+                            }
+                    )
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if state.activeAnalysisTool == .spectrumGraphROI {
+                                    handleROIDrag(value: value, geoSize: geo.size)
+                                } else {
+                                    dragOffset = value.translation
+                                }
+                            }
+                            .onEnded { value in
+                                if state.activeAnalysisTool == .spectrumGraphROI {
+                                    handleROIDragEnd(value: value, geoSize: geo.size)
+                                } else {
+                                    state.imageOffset.width += value.translation.width
+                                    state.imageOffset.height += value.translation.height
+                                }
+                                dragOffset = .zero
+                            }
+                    )
+                    .onTapGesture { location in
+                        if state.activeAnalysisTool == .spectrumGraph {
+                            handleImageClick(at: location, geoSize: geo.size)
+                        }
+                    }
                     .focusable()
                     .focusEffectDisabled()
                     .focused($isImageFocused)
@@ -111,29 +127,31 @@ struct ContentView: View {
                         isImageFocused = true
                     }
                     .onKeyPress(.leftArrow) {
+                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
                         state.moveImage(by: CGSize(width: 20, height: 0))
                         return .handled
                     }
                     .onKeyPress(.rightArrow) {
+                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
                         state.moveImage(by: CGSize(width: -20, height: 0))
                         return .handled
                     }
                     .onKeyPress(.upArrow) {
+                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
                         state.moveImage(by: CGSize(width: 0, height: 20))
                         return .handled
                     }
                     .onKeyPress(.downArrow) {
+                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
                         state.moveImage(by: CGSize(width: 0, height: -20))
                         return .handled
-                    }
-                    .onTapGesture { location in
-                        handleImageClick(at: location, geoSize: geo.size)
                     }
                     .onChange(of: geo.size) { newSize in
                         currentGeoSize = newSize
                     }
                     .onHover { isHovering in
-                        if state.activeAnalysisTool == .spectrumGraph && state.cube != nil {
+                        if (state.activeAnalysisTool == .spectrumGraph || state.activeAnalysisTool == .spectrumGraphROI),
+                           state.cube != nil {
                             if isHovering {
                                 NSCursor.crosshair.push()
                             } else {
@@ -143,8 +161,15 @@ struct ContentView: View {
                     }
                     .onChange(of: state.activeAnalysisTool) { _ in
                         NSCursor.pop()
+                        roiPreviewRect = nil
+                        roiDragStartPixel = nil
+                    }
+                    .onChange(of: state.cubeURL) { _ in
+                        roiPreviewRect = nil
+                        roiDragStartPixel = nil
                     }
                 }
+                .coordinateSpace(name: imageCoordinateSpaceName)
                 
                 if let cube = state.cube {
                     Divider()
@@ -501,6 +526,13 @@ struct ContentView: View {
                     originalSize: nsImage.size,
                     displaySize: fittedSize
                 )
+            } else if state.activeAnalysisTool == .spectrumGraphROI {
+                SpectrumROIsOverlay(
+                    samples: state.activeROISamples,
+                    temporaryRect: roiPreviewRect,
+                    originalSize: nsImage.size,
+                    displaySize: fittedSize
+                )
             }
         }
         .frame(width: fittedSize.width,
@@ -844,7 +876,12 @@ struct ContentView: View {
     
     private func handleImageClick(at location: CGPoint, geoSize: CGSize) {
         guard state.activeAnalysisTool == .spectrumGraph else { return }
-        guard currentImageSize.width > 0, currentImageSize.height > 0 else { return }
+        guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
+        state.extractSpectrum(at: pixel.x, pixelY: pixel.y)
+    }
+    
+    private func pixelCoordinate(for location: CGPoint, geoSize: CGSize) -> PixelCoordinate? {
+        guard currentImageSize.width > 0, currentImageSize.height > 0 else { return nil }
         
         let fittedSize = fittingSize(imageSize: currentImageSize, in: geoSize)
         let totalZoom = state.zoomScale * tempZoomScale
@@ -864,13 +901,57 @@ struct ContentView: View {
         
         guard relativeX >= 0, relativeX < scaledImageSize.width,
               relativeY >= 0, relativeY < scaledImageSize.height else {
-            return
+            return nil
         }
         
-        let pixelX = Int((relativeX / scaledImageSize.width) * currentImageSize.width)
-        let pixelY = Int((relativeY / scaledImageSize.height) * currentImageSize.height)
+        let maxX = max(Int(currentImageSize.width) - 1, 0)
+        let maxY = max(Int(currentImageSize.height) - 1, 0)
+        let rawX = Int((relativeX / scaledImageSize.width) * currentImageSize.width)
+        let rawY = Int((relativeY / scaledImageSize.height) * currentImageSize.height)
+        let pixelX = max(0, min(rawX, maxX))
+        let pixelY = max(0, min(rawY, maxY))
         
-        state.extractSpectrum(at: pixelX, pixelY: pixelY)
+        return PixelCoordinate(x: pixelX, y: pixelY)
+    }
+    
+    private func roiRect(from start: PixelCoordinate, to end: PixelCoordinate) -> SpectrumROIRect {
+        let minX = min(start.x, end.x)
+        let minY = min(start.y, end.y)
+        let width = abs(end.x - start.x) + 1
+        let height = abs(end.y - start.y) + 1
+        return SpectrumROIRect(minX: minX, minY: minY, width: width, height: height)
+    }
+    
+    private func handleROIDrag(value: DragGesture.Value, geoSize: CGSize) {
+        guard let startPixel = roiDragStartPixel ?? pixelCoordinate(for: value.startLocation, geoSize: geoSize) else { return }
+        guard let currentPixel = pixelCoordinate(for: value.location, geoSize: geoSize) else { return }
+        roiDragStartPixel = startPixel
+        roiPreviewRect = roiRect(from: startPixel, to: currentPixel)
+    }
+    
+    private func handleROIDragEnd(value: DragGesture.Value, geoSize: CGSize) {
+        defer {
+            roiDragStartPixel = nil
+            roiPreviewRect = nil
+        }
+        guard
+            let startPixel = roiDragStartPixel ?? pixelCoordinate(for: value.startLocation, geoSize: geoSize),
+            let endPixel = pixelCoordinate(for: value.location, geoSize: geoSize)
+        else { return }
+        let rect = roiRect(from: startPixel, to: endPixel)
+        state.extractROISpectrum(for: rect)
+    }
+    
+    private func roiSelectionGesture(in geoSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(imageCoordinateSpaceName))
+            .onChanged { value in
+                guard state.activeAnalysisTool == .spectrumGraphROI else { return }
+                handleROIDrag(value: value, geoSize: geoSize)
+            }
+            .onEnded { value in
+                guard state.activeAnalysisTool == .spectrumGraphROI else { return }
+                handleROIDragEnd(value: value, geoSize: geoSize)
+            }
     }
 }
 
@@ -983,6 +1064,59 @@ private struct SpectrumPointsOverlay: View {
         let y = yRatio * displaySize.height
         return CGPoint(x: x, y: y)
     }
+}
+
+private struct SpectrumROIsOverlay: View {
+    let samples: [SpectrumROISample]
+    let temporaryRect: SpectrumROIRect?
+    let originalSize: CGSize
+    let displaySize: CGSize
+    
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(samples) { sample in
+                roiPath(for: sample.rect)
+                    .stroke(sample.displayColor, lineWidth: 1.5)
+                    .background(
+                        roiPath(for: sample.rect)
+                            .fill(sample.displayColor.opacity(0.08))
+                    )
+            }
+            
+            if let temp = temporaryRect {
+                roiPath(for: temp)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .background(
+                        roiPath(for: temp)
+                            .fill(Color.accentColor.opacity(0.05))
+                    )
+            }
+        }
+        .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+    
+    private func roiPath(for rect: SpectrumROIRect) -> Path {
+        Path { path in
+            path.addRoundedRect(in: frame(for: rect), cornerSize: CGSize(width: 4, height: 4))
+        }
+    }
+    
+    private func frame(for rect: SpectrumROIRect) -> CGRect {
+        guard originalSize.width > 0, originalSize.height > 0 else { return .zero }
+        let scaleX = displaySize.width / originalSize.width
+        let scaleY = displaySize.height / originalSize.height
+        let x = CGFloat(rect.minX) * scaleX
+        let y = CGFloat(rect.minY) * scaleY
+        let width = CGFloat(rect.width) * scaleX
+        let height = CGFloat(rect.height) * scaleY
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+private struct PixelCoordinate: Equatable {
+    let x: Int
+    let y: Int
 }
 
 struct TrimActionButton: View {

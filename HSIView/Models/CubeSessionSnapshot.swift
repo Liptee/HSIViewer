@@ -20,6 +20,8 @@ struct CubeSessionSnapshot {
     var zoomScale: CGFloat
     var imageOffset: CGSize
     var spectrumSamples: [SpectrumSampleDescriptor]
+    var roiSamples: [SpectrumROISampleDescriptor]
+    var roiAggregationMode: SpectrumROIAggregationMode
     
     static let empty = CubeSessionSnapshot(
         pipelineOperations: [],
@@ -39,7 +41,9 @@ struct CubeSessionSnapshot {
         currentChannel: 0,
         zoomScale: 1.0,
         imageOffset: .zero,
-        spectrumSamples: []
+        spectrumSamples: [],
+        roiSamples: [],
+        roiAggregationMode: .mean
     )
 }
 
@@ -48,4 +52,17 @@ struct SpectrumSampleDescriptor: Equatable {
     var pixelX: Int
     var pixelY: Int
     var colorIndex: Int
+}
+
+struct SpectrumROISampleDescriptor: Equatable {
+    var id: UUID
+    var minX: Int
+    var minY: Int
+    var width: Int
+    var height: Int
+    var colorIndex: Int
+    
+    var rect: SpectrumROIRect {
+        SpectrumROIRect(minX: minX, minY: minY, width: width, height: height)
+    }
 }

@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
             if suppressSpectrumRefresh { return }
             if oldValue == nil && wavelengths == nil { return }
             refreshSpectrumSamples()
+            refreshROISamples()
         }
     }
     @Published var lambdaStart: String = "400"
@@ -63,6 +64,14 @@ final class AppState: ObservableObject {
     @Published var isGraphPanelExpanded: Bool = false
     @Published var spectrumSamples: [SpectrumSample] = []
     @Published var pendingSpectrumSample: SpectrumSample?
+    @Published var roiSamples: [SpectrumROISample] = []
+    @Published var pendingROISample: SpectrumROISample?
+    @Published var roiAggregationMode: SpectrumROIAggregationMode = .mean {
+        didSet {
+            guard oldValue != roiAggregationMode else { return }
+            refreshROISamples()
+        }
+    }
     
     private var originalCube: HyperCube?
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
@@ -72,6 +81,7 @@ final class AppState: ObservableObject {
     private var spectralTrimRange: ClosedRange<Int>?
     private var libraryExportDismissWorkItem: DispatchWorkItem?
     private var spectrumColorCounter: Int = 0
+    private var roiColorCounter: Int = 0
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
@@ -109,6 +119,24 @@ final class AppState: ObservableObject {
     
     var displayedSpectrumSamples: [SpectrumSample] {
         let samples = activeSpectrumSamples
+        guard isTrimMode else { return samples }
+        let maxIndex = max(channelCount - 1, 0)
+        let lower = max(0, min(Int(trimStart), maxIndex))
+        let upper = max(lower, min(Int(trimEnd), maxIndex))
+        let range = lower...upper
+        return samples.compactMap { $0.trimmed(to: range) }
+    }
+    
+    var activeROISamples: [SpectrumROISample] {
+        var items = roiSamples
+        if let pending = pendingROISample {
+            items.append(pending)
+        }
+        return items
+    }
+    
+    var displayedROISamples: [SpectrumROISample] {
+        let samples = activeROISamples
         guard isTrimMode else { return samples }
         let maxIndex = max(channelCount - 1, 0)
         let lower = max(0, min(Int(trimStart), maxIndex))
@@ -232,7 +260,7 @@ final class AppState: ObservableObject {
             activeAnalysisTool = .none
         } else {
             activeAnalysisTool = tool
-            if tool == .spectrumGraph {
+            if tool == .spectrumGraph || tool == .spectrumGraphROI {
                 isGraphPanelExpanded = true
             }
         }
@@ -283,6 +311,21 @@ final class AppState: ObservableObject {
         }
     }
     
+    func extractROISpectrum(for rect: SpectrumROIRect) {
+        guard cube != nil else { return }
+        guard activeAnalysisTool == .spectrumGraphROI else { return }
+        guard rect.width > 0, rect.height > 0 else { return }
+        guard let sample = makeROISample(
+            rect: rect,
+            colorIndex: pendingROISample?.colorIndex ?? roiColorCounter,
+            id: pendingROISample?.id ?? UUID()
+        ) else { return }
+        pendingROISample = sample
+        if !isGraphPanelExpanded {
+            isGraphPanelExpanded = true
+        }
+    }
+    
     func savePendingSpectrumSample() {
         guard let pending = pendingSpectrumSample else { return }
         spectrumSamples.append(pending)
@@ -292,6 +335,17 @@ final class AppState: ObservableObject {
     
     func removeSpectrumSample(with id: UUID) {
         spectrumSamples.removeAll { $0.id == id }
+    }
+    
+    func savePendingROISample() {
+        guard let pending = pendingROISample else { return }
+        roiSamples.append(pending)
+        pendingROISample = nil
+        roiColorCounter = max(roiColorCounter, pending.colorIndex + 1)
+    }
+    
+    func removeROISample(with id: UUID) {
+        roiSamples.removeAll { $0.id == id }
     }
     
     func toggleGraphPanel() {
@@ -323,6 +377,7 @@ final class AppState: ObservableObject {
     private func handleCubeChange(previousCube: HyperCube?) {
         adjustSpectrumGeometry(previousCube: previousCube, newCube: cube)
         refreshSpectrumSamples()
+        refreshROISamples()
     }
     
     func addOperation(type: PipelineOperationType) {
@@ -453,6 +508,7 @@ final class AppState: ObservableObject {
                 }
                 self.suppressSpectrumRefresh = false
                 self.refreshSpectrumSamples()
+                self.refreshROISamples()
                 self.endBusy()
             }
         }
@@ -956,7 +1012,9 @@ final class AppState: ObservableObject {
         zoomScale = snapshot.zoomScale
         imageOffset = snapshot.imageOffset
         spectralTrimRange = snapshot.spectralTrimRange
+        roiAggregationMode = snapshot.roiAggregationMode
         restoreSpectrumSamples(from: snapshot.spectrumSamples)
+        restoreROISamples(from: snapshot.roiSamples)
         
         let maxChannel = max(channelCount - 1, 0)
         if maxChannel >= 0 {
@@ -1034,6 +1092,16 @@ final class AppState: ObservableObject {
                 colorIndex: $0.colorIndex
             )
         }
+        let roiDescriptors = roiSamples.map {
+            SpectrumROISampleDescriptor(
+                id: $0.id,
+                minX: $0.rect.minX,
+                minY: $0.rect.minY,
+                width: $0.rect.width,
+                height: $0.rect.height,
+                colorIndex: $0.colorIndex
+            )
+        }
         
         return CubeSessionSnapshot(
             pipelineOperations: pipelineOperations,
@@ -1053,7 +1121,9 @@ final class AppState: ObservableObject {
             currentChannel: currentChannel,
             zoomScale: zoomScale,
             imageOffset: imageOffset,
-            spectrumSamples: descriptors
+            spectrumSamples: descriptors,
+            roiSamples: roiDescriptors,
+            roiAggregationMode: roiAggregationMode
         )
     }
     
@@ -1159,6 +1229,84 @@ final class AppState: ObservableObject {
         return spectrum
     }
     
+    private func makeROISample(
+        rect: SpectrumROIRect,
+        colorIndex: Int,
+        id: UUID = UUID()
+    ) -> SpectrumROISample? {
+        guard let normalizedRect = normalizedROIRect(rect) else { return nil }
+        guard let spectrumValues = buildROISpectrumValues(rect: normalizedRect) else { return nil }
+        return SpectrumROISample(
+            id: id,
+            rect: normalizedRect,
+            values: spectrumValues,
+            wavelengths: wavelengths,
+            colorIndex: colorIndex
+        )
+    }
+    
+    private func normalizedROIRect(_ rect: SpectrumROIRect) -> SpectrumROIRect? {
+        guard let cube = cube else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: activeLayout) else { return nil }
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        return rect.clamped(maxWidth: width, maxHeight: height)
+    }
+    
+    private func buildROISpectrumValues(rect: SpectrumROIRect) -> [Double]? {
+        guard rect.width > 0, rect.height > 0 else { return nil }
+        guard let cube = cube else { return nil }
+        
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: activeLayout) else { return nil }
+        
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        
+        guard rect.minX >= 0, rect.maxX < width, rect.minY >= 0, rect.maxY < height else { return nil }
+        let pixelCount = rect.area
+        guard pixelCount > 0 else { return nil }
+        
+        var aggregated: [Double] = []
+        aggregated.reserveCapacity(channels)
+        
+        for ch in 0..<channels {
+            var buffer: [Double] = []
+            buffer.reserveCapacity(pixelCount)
+            for y in rect.minY..<(rect.minY + rect.height) {
+                for x in rect.minX..<(rect.minX + rect.width) {
+                    var indices = [0, 0, 0]
+                    indices[axes.channel] = ch
+                    indices[axes.height] = y
+                    indices[axes.width] = x
+                    let value = cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+                    buffer.append(value)
+                }
+            }
+            
+            let aggregatedValue: Double
+            switch roiAggregationMode {
+            case .mean:
+                aggregatedValue = buffer.reduce(0, +) / Double(buffer.count)
+            case .median:
+                let sorted = buffer.sorted()
+                let mid = sorted.count / 2
+                if sorted.count % 2 == 0 {
+                    aggregatedValue = (sorted[mid - 1] + sorted[mid]) / 2.0
+                } else {
+                    aggregatedValue = sorted[mid]
+                }
+            }
+            aggregated.append(aggregatedValue)
+        }
+        
+        return aggregated
+    }
+    
     private func refreshSpectrumSamples() {
         guard cube != nil else {
             spectrumSamples.removeAll()
@@ -1192,6 +1340,38 @@ final class AppState: ObservableObject {
         }
     }
     
+    private func refreshROISamples() {
+        guard cube != nil else {
+            roiSamples.removeAll()
+            pendingROISample = nil
+            roiColorCounter = 0
+            return
+        }
+        if roiSamples.isEmpty && pendingROISample == nil {
+            return
+        }
+        
+        var updated: [SpectrumROISample] = []
+        for sample in roiSamples {
+            if let refreshed = makeROISample(
+                rect: sample.rect,
+                colorIndex: sample.colorIndex,
+                id: sample.id
+            ) {
+                updated.append(refreshed)
+            }
+        }
+        roiSamples = updated
+        
+        if let pending = pendingROISample {
+            pendingROISample = makeROISample(
+                rect: pending.rect,
+                colorIndex: pending.colorIndex,
+                id: pending.id
+            )
+        }
+    }
+    
     private func adjustSpectrumGeometry(previousCube: HyperCube?, newCube: HyperCube?) {
         let currentTurns = pipelineRotationTurns()
         
@@ -1208,6 +1388,7 @@ final class AppState: ObservableObject {
             let delta = normalizedTurns(currentTurns - spectrumRotationTurns)
             if delta != 0 {
                 rotateSpectrumSamples(by: delta, previousSize: previousSize)
+                rotateROISamples(by: delta, previousSize: previousSize)
             }
         }
         
@@ -1250,6 +1431,89 @@ final class AppState: ObservableObject {
                 colorIndex: pending.colorIndex
             )
         }
+    }
+    
+    private func rotateROISamples(by turns: Int, previousSize: (width: Int, height: Int)) {
+        guard turns % 4 != 0 else { return }
+        
+        roiSamples = roiSamples.map { sample in
+            let rotatedRect = rotateRect(sample.rect, turns: turns, size: previousSize)
+            return SpectrumROISample(
+                id: sample.id,
+                rect: rotatedRect,
+                values: sample.values,
+                wavelengths: sample.wavelengths,
+                colorIndex: sample.colorIndex
+            )
+        }
+        
+        if let pending = pendingROISample {
+            let rotatedRect = rotateRect(pending.rect, turns: turns, size: previousSize)
+            pendingROISample = SpectrumROISample(
+                id: pending.id,
+                rect: rotatedRect,
+                values: pending.values,
+                wavelengths: pending.wavelengths,
+                colorIndex: pending.colorIndex
+            )
+        }
+    }
+    
+    private func rotateRect(
+        _ rect: SpectrumROIRect,
+        turns: Int,
+        size: (width: Int, height: Int)
+    ) -> SpectrumROIRect {
+        guard size.width > 0, size.height > 0 else { return rect }
+        
+        let normalized = normalizedTurns(turns)
+        if normalized == 0 { return rect }
+        
+        var currentRect = rect
+        var width = size.width
+        var height = size.height
+        
+        for _ in 0..<normalized {
+            let corners = [
+                (x: currentRect.minX, y: currentRect.minY),
+                (x: currentRect.maxX, y: currentRect.minY),
+                (x: currentRect.minX, y: currentRect.maxY),
+                (x: currentRect.maxX, y: currentRect.maxY)
+            ]
+            
+            let transformed = corners.map { point -> (x: Int, y: Int) in
+                let newX = height - 1 - point.y
+                let newY = point.x
+                return (newX, newY)
+            }
+            
+            let minX = transformed.map { $0.x }.min() ?? 0
+            let maxX = transformed.map { $0.x }.max() ?? 0
+            let minY = transformed.map { $0.y }.min() ?? 0
+            let maxY = transformed.map { $0.y }.max() ?? 0
+            
+            currentRect = SpectrumROIRect(
+                minX: minX,
+                minY: minY,
+                width: maxX - minX + 1,
+                height: maxY - minY + 1
+            )
+            (width, height) = (height, width)
+        }
+        
+        let clampedMinX = max(0, min(currentRect.minX, max(width - 1, 0)))
+        let clampedMinY = max(0, min(currentRect.minY, max(height - 1, 0)))
+        let maxWidth = max(width - clampedMinX, 1)
+        let maxHeight = max(height - clampedMinY, 1)
+        let clampedWidth = max(1, min(currentRect.width, maxWidth))
+        let clampedHeight = max(1, min(currentRect.height, maxHeight))
+        
+        return SpectrumROIRect(
+            minX: clampedMinX,
+            minY: clampedMinY,
+            width: clampedWidth,
+            height: clampedHeight
+        )
     }
     
     private func rotatePoint(
@@ -1324,10 +1588,46 @@ final class AppState: ObservableObject {
         spectrumColorCounter = max(nextColorIndex, restored.count)
     }
     
+    private func restoreROISamples(from descriptors: [SpectrumROISampleDescriptor]) {
+        guard cube != nil else {
+            roiSamples.removeAll()
+            pendingROISample = nil
+            roiColorCounter = 0
+            return
+        }
+        
+        var restored: [SpectrumROISample] = []
+        var nextColorIndex = 0
+        
+        for descriptor in descriptors {
+            let rect = SpectrumROIRect(
+                minX: descriptor.minX,
+                minY: descriptor.minY,
+                width: descriptor.width,
+                height: descriptor.height
+            )
+            if let sample = makeROISample(
+                rect: rect,
+                colorIndex: descriptor.colorIndex,
+                id: descriptor.id
+            ) {
+                restored.append(sample)
+                nextColorIndex = max(nextColorIndex, descriptor.colorIndex + 1)
+            }
+        }
+        
+        roiSamples = restored
+        pendingROISample = nil
+        roiColorCounter = max(nextColorIndex, restored.count)
+    }
+    
     private func resetSpectrumSelections() {
         spectrumSamples.removeAll()
         pendingSpectrumSample = nil
         spectrumColorCounter = 0
+        roiSamples.removeAll()
+        pendingROISample = nil
+        roiColorCounter = 0
     }
 }
 
@@ -1352,6 +1652,7 @@ struct LibraryExportProgressState: Equatable {
 enum AnalysisTool: String, CaseIterable, Identifiable {
     case none
     case spectrumGraph
+    case spectrumGraphROI
     
     var id: String { rawValue }
     
@@ -1359,6 +1660,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         switch self {
         case .none: return ""
         case .spectrumGraph: return "График спектра"
+        case .spectrumGraphROI: return "График спектра ROI"
         }
     }
     
@@ -1366,6 +1668,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         switch self {
         case .none: return ""
         case .spectrumGraph: return "chart.xyaxis.line"
+        case .spectrumGraphROI: return "square.dashed.inset.filled"
         }
     }
 }
@@ -1412,4 +1715,96 @@ enum SpectrumColorPalette {
         .systemTeal,
         .systemYellow
     ]
+}
+
+struct SpectrumROIRect: Equatable {
+    var minX: Int
+    var minY: Int
+    var width: Int
+    var height: Int
+    
+    var maxX: Int { minX + width - 1 }
+    var maxY: Int { minY + height - 1 }
+    var area: Int { max(width, 0) * max(height, 0) }
+    
+    func clamped(maxWidth: Int, maxHeight: Int) -> SpectrumROIRect? {
+        guard maxWidth > 0, maxHeight > 0 else { return nil }
+        let lowerX = max(0, min(minX, maxWidth - 1))
+        let lowerY = max(0, min(minY, maxHeight - 1))
+        let upperX = max(0, min(maxX, maxWidth - 1))
+        let upperY = max(0, min(maxY, maxHeight - 1))
+        guard upperX >= lowerX, upperY >= lowerY else { return nil }
+        return SpectrumROIRect(
+            minX: lowerX,
+            minY: lowerY,
+            width: upperX - lowerX + 1,
+            height: upperY - lowerY + 1
+        )
+    }
+}
+
+struct SpectrumROISample: Identifiable, Equatable {
+    let id: UUID
+    let rect: SpectrumROIRect
+    let values: [Double]
+    let wavelengths: [Double]?
+    let colorIndex: Int
+    
+    init(
+        id: UUID = UUID(),
+        rect: SpectrumROIRect,
+        values: [Double],
+        wavelengths: [Double]?,
+        colorIndex: Int
+    ) {
+        self.id = id
+        self.rect = rect
+        self.values = values
+        self.wavelengths = wavelengths
+        self.colorIndex = colorIndex
+    }
+    
+    var nsColor: NSColor {
+        let palette = SpectrumColorPalette.colors
+        guard !palette.isEmpty else { return .systemPink }
+        return palette[colorIndex % palette.count]
+    }
+    
+    func trimmed(to range: ClosedRange<Int>) -> SpectrumROISample? {
+        guard !values.isEmpty else { return nil }
+        let maxIndex = values.count - 1
+        guard range.lowerBound <= maxIndex else { return nil }
+        let lower = max(0, min(range.lowerBound, maxIndex))
+        let upper = max(lower, min(range.upperBound, maxIndex))
+        guard lower <= upper else { return nil }
+        
+        let trimmedValues = Array(values[lower...upper])
+        let trimmedWavelengths: [Double]? = {
+            guard let wavelengths else { return nil }
+            guard wavelengths.count > upper else { return nil }
+            return Array(wavelengths[lower...upper])
+        }()
+        
+        return SpectrumROISample(
+            id: id,
+            rect: rect,
+            values: trimmedValues,
+            wavelengths: trimmedWavelengths,
+            colorIndex: colorIndex
+        )
+    }
+}
+
+enum SpectrumROIAggregationMode: String, CaseIterable, Identifiable {
+    case mean
+    case median
+    
+    var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .mean: return "Среднее"
+        case .median: return "Медиана"
+        }
+    }
 }

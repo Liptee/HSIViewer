@@ -30,3 +30,9 @@ extension SpectrumSample {
         )
     }
 }
+
+extension SpectrumROISample {
+    var displayColor: Color {
+        Color(nsColor)
+    }
+}
