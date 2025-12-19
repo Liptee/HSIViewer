@@ -337,6 +337,13 @@ final class AppState: ObservableObject {
         spectrumSamples.removeAll { $0.id == id }
     }
     
+    func renameSpectrumSample(id: UUID, to name: String?) {
+        guard let idx = spectrumSamples.firstIndex(where: { $0.id == id }) else { return }
+        var sample = spectrumSamples[idx]
+        sample.displayName = name?.isEmpty == true ? nil : name
+        spectrumSamples[idx] = sample
+    }
+    
     func savePendingROISample() {
         guard let pending = pendingROISample else { return }
         roiSamples.append(pending)
@@ -346,6 +353,13 @@ final class AppState: ObservableObject {
     
     func removeROISample(with id: UUID) {
         roiSamples.removeAll { $0.id == id }
+    }
+    
+    func renameROISample(id: UUID, to name: String?) {
+        guard let idx = roiSamples.firstIndex(where: { $0.id == id }) else { return }
+        var sample = roiSamples[idx]
+        sample.displayName = name?.isEmpty == true ? nil : name
+        roiSamples[idx] = sample
     }
     
     func toggleGraphPanel() {
@@ -1089,7 +1103,8 @@ final class AppState: ObservableObject {
                 id: $0.id,
                 pixelX: $0.pixelX,
                 pixelY: $0.pixelY,
-                colorIndex: $0.colorIndex
+                colorIndex: $0.colorIndex,
+                displayName: $0.displayName
             )
         }
         let roiDescriptors = roiSamples.map {
@@ -1099,7 +1114,8 @@ final class AppState: ObservableObject {
                 minY: $0.rect.minY,
                 width: $0.rect.width,
                 height: $0.rect.height,
-                colorIndex: $0.colorIndex
+                colorIndex: $0.colorIndex,
+                displayName: $0.displayName
             )
         }
         
@@ -1188,7 +1204,8 @@ final class AppState: ObservableObject {
         pixelX: Int,
         pixelY: Int,
         colorIndex: Int,
-        id: UUID = UUID()
+        id: UUID = UUID(),
+        displayName: String? = nil
     ) -> SpectrumSample? {
         guard let spectrumValues = buildSpectrumValues(pixelX: pixelX, pixelY: pixelY) else { return nil }
         return SpectrumSample(
@@ -1197,7 +1214,8 @@ final class AppState: ObservableObject {
             pixelY: pixelY,
             values: spectrumValues,
             wavelengths: wavelengths,
-            colorIndex: colorIndex
+            colorIndex: colorIndex,
+            displayName: displayName
         )
     }
     
@@ -1232,7 +1250,8 @@ final class AppState: ObservableObject {
     private func makeROISample(
         rect: SpectrumROIRect,
         colorIndex: Int,
-        id: UUID = UUID()
+        id: UUID = UUID(),
+        displayName: String? = nil
     ) -> SpectrumROISample? {
         guard let normalizedRect = normalizedROIRect(rect) else { return nil }
         guard let spectrumValues = buildROISpectrumValues(rect: normalizedRect) else { return nil }
@@ -1241,7 +1260,8 @@ final class AppState: ObservableObject {
             rect: normalizedRect,
             values: spectrumValues,
             wavelengths: wavelengths,
-            colorIndex: colorIndex
+            colorIndex: colorIndex,
+            displayName: displayName
         )
     }
     
@@ -1323,7 +1343,8 @@ final class AppState: ObservableObject {
                 pixelX: sample.pixelX,
                 pixelY: sample.pixelY,
                 colorIndex: sample.colorIndex,
-                id: sample.id
+                id: sample.id,
+                displayName: sample.displayName
             ) {
                 updated.append(refreshed)
             }
@@ -1335,7 +1356,8 @@ final class AppState: ObservableObject {
                 pixelX: pending.pixelX,
                 pixelY: pending.pixelY,
                 colorIndex: pending.colorIndex,
-                id: pending.id
+                id: pending.id,
+                displayName: pending.displayName
             )
         }
     }
@@ -1356,7 +1378,8 @@ final class AppState: ObservableObject {
             if let refreshed = makeROISample(
                 rect: sample.rect,
                 colorIndex: sample.colorIndex,
-                id: sample.id
+                id: sample.id,
+                displayName: sample.displayName
             ) {
                 updated.append(refreshed)
             }
@@ -1367,7 +1390,8 @@ final class AppState: ObservableObject {
             pendingROISample = makeROISample(
                 rect: pending.rect,
                 colorIndex: pending.colorIndex,
-                id: pending.id
+                id: pending.id,
+                displayName: pending.displayName
             )
         }
     }
@@ -1416,7 +1440,8 @@ final class AppState: ObservableObject {
                 pixelY: rotated.y,
                 values: sample.values,
                 wavelengths: sample.wavelengths,
-                colorIndex: sample.colorIndex
+                colorIndex: sample.colorIndex,
+                displayName: sample.displayName
             )
         }
         
@@ -1428,7 +1453,8 @@ final class AppState: ObservableObject {
                 pixelY: rotated.y,
                 values: pending.values,
                 wavelengths: pending.wavelengths,
-                colorIndex: pending.colorIndex
+                colorIndex: pending.colorIndex,
+                displayName: pending.displayName
             )
         }
     }
@@ -1576,7 +1602,8 @@ final class AppState: ObservableObject {
                 pixelX: descriptor.pixelX,
                 pixelY: descriptor.pixelY,
                 colorIndex: descriptor.colorIndex,
-                id: descriptor.id
+                id: descriptor.id,
+                displayName: descriptor.displayName
             ) {
                 restored.append(sample)
                 nextColorIndex = max(nextColorIndex, descriptor.colorIndex + 1)
@@ -1609,7 +1636,8 @@ final class AppState: ObservableObject {
             if let sample = makeROISample(
                 rect: rect,
                 colorIndex: descriptor.colorIndex,
-                id: descriptor.id
+                id: descriptor.id,
+                displayName: descriptor.displayName
             ) {
                 restored.append(sample)
                 nextColorIndex = max(nextColorIndex, descriptor.colorIndex + 1)
@@ -1680,6 +1708,7 @@ struct SpectrumSample: Identifiable, Equatable {
     let values: [Double]
     let wavelengths: [Double]?
     let colorIndex: Int
+    var displayName: String?
     
     init(
         id: UUID = UUID(),
@@ -1687,7 +1716,8 @@ struct SpectrumSample: Identifiable, Equatable {
         pixelY: Int,
         values: [Double],
         wavelengths: [Double]?,
-        colorIndex: Int
+        colorIndex: Int,
+        displayName: String? = nil
     ) {
         self.id = id
         self.pixelX = pixelX
@@ -1695,6 +1725,7 @@ struct SpectrumSample: Identifiable, Equatable {
         self.values = values
         self.wavelengths = wavelengths
         self.colorIndex = colorIndex
+        self.displayName = displayName
     }
     
     var nsColor: NSColor {
@@ -1749,19 +1780,22 @@ struct SpectrumROISample: Identifiable, Equatable {
     let values: [Double]
     let wavelengths: [Double]?
     let colorIndex: Int
+    var displayName: String?
     
     init(
         id: UUID = UUID(),
         rect: SpectrumROIRect,
         values: [Double],
         wavelengths: [Double]?,
-        colorIndex: Int
+        colorIndex: Int,
+        displayName: String? = nil
     ) {
         self.id = id
         self.rect = rect
         self.values = values
         self.wavelengths = wavelengths
         self.colorIndex = colorIndex
+        self.displayName = displayName
     }
     
     var nsColor: NSColor {

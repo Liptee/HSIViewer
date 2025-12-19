@@ -181,10 +181,13 @@ struct GraphPanel: View {
                 SampleRow(
                     sample: sample,
                     isSelected: selectedSampleID == sample.id,
-                    title: "\(cubeName): (\(sample.pixelX), \(sample.pixelY))",
+                    title: sample.displayName ?? "\(cubeName): (\(sample.pixelX), \(sample.pixelY))",
                     onSelect: {
                         selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
                         hasFocus = true
+                    },
+                    onRename: { newName in
+                        state.renameSpectrumSample(id: sample.id, to: newName)
                     }
                 )
             }
@@ -200,10 +203,13 @@ struct GraphPanel: View {
                 ROISampleRow(
                     sample: sample,
                     isSelected: selectedSampleID == sample.id,
-                    title: "\(cubeName): (\(sample.rect.minX), \(sample.rect.minY)) – (\(sample.rect.maxX), \(sample.rect.maxY))",
+                    title: sample.displayName ?? "\(cubeName): (\(sample.rect.minX), \(sample.rect.minY)) – (\(sample.rect.maxX), \(sample.rect.maxY))",
                     onSelect: {
                         selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
                         hasFocus = true
+                    },
+                    onRename: { newName in
+                        state.renameROISample(id: sample.id, to: newName)
                     }
                 )
             }
@@ -292,6 +298,10 @@ private struct SampleRow: View {
     let isSelected: Bool
     let title: String
     let onSelect: () -> Void
+    let onRename: (String?) -> Void
+    
+    @State private var isEditing: Bool = false
+    @State private var nameText: String = ""
     
     var body: some View {
         HStack(spacing: 8) {
@@ -302,8 +312,15 @@ private struct SampleRow: View {
                     Circle()
                         .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
                 )
-            Text(title)
-                .font(.system(size: 10))
+            if isEditing {
+                TextField("Имя", text: $nameText, onCommit: commitName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                    .frame(maxWidth: 180)
+            } else {
+                Text(title)
+                    .font(.system(size: 10))
+            }
             Spacer()
         }
         .padding(6)
@@ -319,6 +336,22 @@ private struct SampleRow: View {
         .onTapGesture {
             onSelect()
         }
+        .onLongPressGesture {
+            startEditing()
+        }
+        .onAppear {
+            nameText = sample.displayName ?? ""
+        }
+    }
+    
+    private func startEditing() {
+        nameText = sample.displayName ?? ""
+        isEditing = true
+    }
+    
+    private func commitName() {
+        isEditing = false
+        onRename(nameText.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
@@ -327,6 +360,10 @@ private struct ROISampleRow: View {
     let isSelected: Bool
     let title: String
     let onSelect: () -> Void
+    let onRename: (String?) -> Void
+    
+    @State private var isEditing: Bool = false
+    @State private var nameText: String = ""
     
     var body: some View {
         HStack(spacing: 8) {
@@ -337,8 +374,15 @@ private struct ROISampleRow: View {
                     RoundedRectangle(cornerRadius: 2)
                         .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
                 )
-            Text(title)
-                .font(.system(size: 10))
+            if isEditing {
+                TextField("Имя", text: $nameText, onCommit: commitName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                    .frame(maxWidth: 180)
+            } else {
+                Text(title)
+                    .font(.system(size: 10))
+            }
             Spacer()
         }
         .padding(6)
@@ -354,6 +398,22 @@ private struct ROISampleRow: View {
         .onTapGesture {
             onSelect()
         }
+        .onLongPressGesture {
+            startEditing()
+        }
+        .onAppear {
+            nameText = sample.displayName ?? ""
+        }
+    }
+    
+    private func startEditing() {
+        nameText = sample.displayName ?? ""
+        isEditing = true
+    }
+    
+    private func commitName() {
+        isEditing = false
+        onRename(nameText.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 

@@ -52,6 +52,7 @@ struct SpectrumSampleDescriptor: Equatable {
     var pixelX: Int
     var pixelY: Int
     var colorIndex: Int
+    var displayName: String?
 }
 
 struct SpectrumROISampleDescriptor: Equatable {
@@ -61,6 +62,7 @@ struct SpectrumROISampleDescriptor: Equatable {
     var width: Int
     var height: Int
     var colorIndex: Int
+    var displayName: String?
     
     var rect: SpectrumROIRect {
         SpectrumROIRect(minX: minX, minY: minY, width: width, height: height)
