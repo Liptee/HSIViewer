@@ -171,6 +171,11 @@ struct PipelineOperation: Identifiable, Equatable {
                     return prefix + String(format: "[%.2f, %.2f]", params.minValue, params.maxValue)
                 }
                 return prefix + "Custom"
+            case .manualRange:
+                if let params = normalizationParams {
+                    return prefix + String(format: "[%.2f, %.2f] → [%.2f, %.2f]", params.sourceMin, params.sourceMax, params.targetMin, params.targetMax)
+                }
+                return prefix + "Диапазон"
             case .percentile:
                 if let params = normalizationParams {
                     return prefix + String(format: "%.0f%%-%.0f%%", params.lowerPercentile, params.upperPercentile)

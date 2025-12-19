@@ -478,6 +478,34 @@ struct OperationEditorView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
                     }
+                } else if localNormalizationType == .manualRange {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Исходный диапазон:")
+                            .font(.system(size: 11, weight: .medium))
+                        
+                        HStack {
+                            TextField("Min", value: $localNormalizationParams.sourceMin, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                            
+                            Text("→")
+                            
+                            TextField("Max", value: $localNormalizationParams.sourceMax, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        
+                        Text("Новый диапазон:")
+                            .font(.system(size: 11, weight: .medium))
+                        
+                        HStack {
+                            TextField("Min", value: $localNormalizationParams.targetMin, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                            
+                            Text("→")
+                            
+                            TextField("Max", value: $localNormalizationParams.targetMax, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
                 } else if localNormalizationType == .percentile {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Процентили:")

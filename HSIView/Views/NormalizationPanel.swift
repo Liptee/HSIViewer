@@ -106,6 +106,60 @@ struct NormalizationPanel: View {
                         .font(.system(size: 10, design: .monospaced))
                 }
             }
+        case .manualRange:
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Исходный диапазон:")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                
+                HStack {
+                    Text("Min:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 35, alignment: .leading)
+                    
+                    TextField("0.0", value: $state.normalizationParams.sourceMin, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 10, design: .monospaced))
+                }
+                
+                HStack {
+                    Text("Max:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 35, alignment: .leading)
+                    
+                    TextField("1.0", value: $state.normalizationParams.sourceMax, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 10, design: .monospaced))
+                }
+                
+                Text("Новый диапазон:")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                
+                HStack {
+                    Text("Min:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 35, alignment: .leading)
+                    
+                    TextField("0.0", value: $state.normalizationParams.targetMin, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 10, design: .monospaced))
+                }
+                
+                HStack {
+                    Text("Max:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 35, alignment: .leading)
+                    
+                    TextField("1.0", value: $state.normalizationParams.targetMax, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 10, design: .monospaced))
+                }
+            }
             
         case .percentile:
             VStack(alignment: .leading, spacing: 8) {
@@ -141,4 +195,3 @@ struct NormalizationPanel: View {
         }
     }
 }
-

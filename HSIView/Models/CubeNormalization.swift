@@ -4,6 +4,7 @@ enum CubeNormalizationType: String, CaseIterable, Identifiable {
     case none = "Без нормализации"
     case minMax = "Min-Max (0-1)"
     case minMaxCustom = "Min-Max (custom)"
+    case manualRange = "Диапазон (ручной)"
     case percentile = "Percentile"
     case zScore = "Z-Score"
     case log = "Log"
@@ -15,7 +16,7 @@ enum CubeNormalizationType: String, CaseIterable, Identifiable {
         switch self {
         case .none, .minMax, .zScore, .log, .sqrt:
             return false
-        case .minMaxCustom, .percentile:
+        case .minMaxCustom, .percentile, .manualRange:
             return true
         }
     }
@@ -28,6 +29,8 @@ enum CubeNormalizationType: String, CaseIterable, Identifiable {
             return "Линейная нормализация в диапазон [0, 1]"
         case .minMaxCustom:
             return "Линейная нормализация в заданный диапазон [min, max]"
+        case .manualRange:
+            return "Линейное преобразование из указанного диапазона в новый диапазон"
         case .percentile:
             return "Обрезка выбросов по процентилям"
         case .zScore:
@@ -45,6 +48,10 @@ struct CubeNormalizationParameters {
     var maxValue: Double = 1.0
     var lowerPercentile: Double = 2.0
     var upperPercentile: Double = 98.0
+    var sourceMin: Double = 0.0
+    var sourceMax: Double = 1.0
+    var targetMin: Double = 0.0
+    var targetMax: Double = 1.0
     
     static let `default` = CubeNormalizationParameters()
 }
@@ -69,6 +76,16 @@ class CubeNormalizer {
             
         case .minMaxCustom:
             return applyMinMax(cube, targetMin: parameters.minValue, targetMax: parameters.maxValue, preserveDataType: preserveDataType)
+            
+        case .manualRange:
+            return applyManualRange(
+                cube,
+                sourceMin: parameters.sourceMin,
+                sourceMax: parameters.sourceMax,
+                targetMin: parameters.targetMin,
+                targetMax: parameters.targetMax,
+                preserveDataType: preserveDataType
+            )
             
         case .percentile:
             return applyPercentile(cube, lower: parameters.lowerPercentile, upper: parameters.upperPercentile)
@@ -107,6 +124,38 @@ class CubeNormalizer {
             dims: cube.dims,
             storage: storage,
             sourceFormat: cube.sourceFormat + " [MinMax]",
+            isFortranOrder: cube.isFortranOrder,
+            wavelengths: cube.wavelengths
+        )
+    }
+    
+    private static func applyManualRange(
+        _ cube: HyperCube,
+        sourceMin: Double,
+        sourceMax: Double,
+        targetMin: Double,
+        targetMax: Double,
+        preserveDataType: Bool = false
+    ) -> HyperCube? {
+        guard sourceMax > sourceMin else { return cube }
+        
+        let sourceRange = sourceMax - sourceMin
+        let targetRange = targetMax - targetMin
+        
+        let normalizedData = (0..<cube.totalElements).map { idx -> Double in
+            let value = cube.storage.getValue(at: idx)
+            let clamped = max(sourceMin, min(sourceMax, value))
+            let normalized = (clamped - sourceMin) / sourceRange
+            return targetMin + normalized * targetRange
+        }
+        
+        let preserveType = preserveDataType ? shouldPreserveType(cube: cube, normalizedData: normalizedData, targetMin: targetMin, targetMax: targetMax) : nil
+        guard let storage = wrapInStorage(normalizedData, preserveType: preserveType) else { return nil }
+        
+        return HyperCube(
+            dims: cube.dims,
+            storage: storage,
+            sourceFormat: cube.sourceFormat + " [ManualRange]",
             isFortranOrder: cube.isFortranOrder,
             wavelengths: cube.wavelengths
         )
@@ -323,6 +372,15 @@ class CubeNormalizer {
                 
             case .sqrt:
                 normalizedChannel = normalizeChannelSqrt(channelData)
+                
+            case .manualRange:
+                normalizedChannel = normalizeChannelManualRange(
+                    channelData,
+                    sourceMin: parameters.sourceMin,
+                    sourceMax: parameters.sourceMax,
+                    targetMin: parameters.targetMin,
+                    targetMax: parameters.targetMax
+                )
             }
             
             for h in 0..<height {
@@ -390,6 +448,24 @@ class CubeNormalizer {
         }
     }
     
+    private static func normalizeChannelManualRange(
+        _ data: [Double],
+        sourceMin: Double,
+        sourceMax: Double,
+        targetMin: Double,
+        targetMax: Double
+    ) -> [Double] {
+        guard sourceMax > sourceMin else { return data }
+        let sourceRange = sourceMax - sourceMin
+        let targetRange = targetMax - targetMin
+        
+        return data.map { value in
+            let clamped = max(sourceMin, min(sourceMax, value))
+            let normalized = (clamped - sourceMin) / sourceRange
+            return targetMin + normalized * targetRange
+        }
+    }
+    
     private static func normalizeChannelZScore(_ data: [Double]) -> [Double] {
         guard !data.isEmpty else { return data }
         
@@ -448,5 +524,3 @@ class CubeNormalizer {
         return nil
     }
 }
-
-
