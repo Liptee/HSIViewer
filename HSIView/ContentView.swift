@@ -274,15 +274,56 @@ struct ContentView: View {
         
         guard let cube = state.cube else { return }
         
+        let defaultBaseName = state.defaultExportBaseName
+        
+        // PNG Channels требует выбора директории, так как создаётся много файлов
+        if format == .tiff {
+            let openPanel = NSOpenPanel()
+            openPanel.canChooseDirectories = true
+            openPanel.canChooseFiles = false
+            openPanel.canCreateDirectories = true
+            openPanel.allowsMultipleSelection = false
+            openPanel.prompt = "Выбрать папку"
+            openPanel.message = "Выберите папку для сохранения PNG каналов (\(defaultBaseName)_channel_XXX.png)"
+            
+            openPanel.begin { response in
+                print("ContentView: Open panel response: \(response == .OK ? "OK" : "Cancel")")
+                guard response == .OK, let folderURL = openPanel.url else {
+                    print("ContentView: Export cancelled or no URL")
+                    return
+                }
+                
+                print("ContentView: Exporting PNG Channels to folder: \(folderURL.path)")
+                
+                let wavelengthsToExport = wavelengths ? self.state.wavelengths : nil
+                let currentLayout = self.state.activeLayout
+                // Создаём URL с базовым именем внутри выбранной папки
+                let baseURL = folderURL.appendingPathComponent(defaultBaseName)
+                
+                DispatchQueue.global(qos: .userInitiated).async {
+                    print("ContentView: Calling TiffExporter with layout: \(currentLayout)")
+                    let result = TiffExporter.export(cube: cube, to: baseURL, wavelengths: wavelengthsToExport, layout: currentLayout)
+                    
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success:
+                            print("ContentView: PNG Channels export successful")
+                        case .failure(let error):
+                            print("ContentView: PNG Channels export error: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            return
+        }
+        
+        // Для остальных форматов используем NSSavePanel
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        let defaultBaseName = state.defaultExportBaseName
         
         switch format {
         case .tiff:
-            panel.nameFieldStringValue = defaultBaseName
-            panel.allowedContentTypes = []
-            panel.message = "Выберите базовое имя файла (будет создано много PNG)"
+            break // Обработано выше
         case .quickPNG:
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType.png]
@@ -298,9 +339,14 @@ struct ContentView: View {
         }
         
         panel.begin { response in
+            print("ContentView: Save panel response: \(response == .OK ? "OK" : "Cancel")")
             guard response == .OK, let saveURL = panel.url else {
+                print("ContentView: Export cancelled or no URL")
                 return
             }
+            
+            print("ContentView: Exporting to: \(saveURL.path)")
+            print("ContentView: Format: \(format.rawValue)")
             
             let wavelengthsToExport = wavelengths ? self.state.wavelengths : nil
             let currentLayout = self.state.activeLayout
@@ -321,7 +367,7 @@ struct ContentView: View {
                         wavelengthsAsVariable: matWavelengthsAsVariable
                     )
                 case .tiff:
-                    result = TiffExporter.export(cube: cube, to: saveURL, wavelengths: wavelengthsToExport)
+                    result = .failure(ExportError.writeError("Unexpected tiff format"))
                 case .quickPNG:
                     result = QuickPNGExporter.export(
                         cube: cube,
@@ -335,9 +381,9 @@ struct ContentView: View {
                 DispatchQueue.main.async {
                     switch result {
                     case .success:
-                        print("Export successful")
+                        print("ContentView: Export successful")
                     case .failure(let error):
-                        print("Export error: \(error.localizedDescription)")
+                        print("ContentView: Export error: \(error.localizedDescription)")
                     }
                 }
             }
@@ -384,7 +430,7 @@ struct ContentView: View {
                         )
                     case .tiff:
                         let target = destinationFolder.appendingPathComponent(baseName)
-                        result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport)
+                        result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)
                     case .quickPNG:
                         if let mode = colorSynthesisMode {
                             let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")

@@ -3,13 +3,20 @@ import CoreGraphics
 import ImageIO
 
 class TiffExporter {
-    static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?) -> Result<Void, Error> {
-        if cube.originalDataType != .uint8 && cube.originalDataType != .uint16 {
+    static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?, layout: CubeLayout = .auto) -> Result<Void, Error> {
+        print("TiffExporter: Starting export to \(url.path)")
+        print("TiffExporter: Cube dims: \(cube.dims), dataType: \(cube.originalDataType), layout: \(layout)")
+        
+        guard let preparedCube = ensureExportableCube(cube) else {
+            print("TiffExporter: Failed to prepare cube for export")
             return .failure(ExportError.unsupportedDataType)
         }
         
+        print("TiffExporter: Cube prepared, storage type: \(type(of: preparedCube.storage))")
+        
         do {
-            try exportAsPNG(cube: cube, to: url)
+            try exportAsPNG(cube: preparedCube, to: url, layout: layout)
+            print("TiffExporter: Export completed successfully")
             
             if let wavelengths = wavelengths, !wavelengths.isEmpty {
                 let baseName = url.deletingPathExtension().lastPathComponent
@@ -25,8 +32,70 @@ class TiffExporter {
         }
     }
     
-    private static func exportAsPNG(cube: HyperCube, to url: URL) throws {
-        let (height, width, channels) = cube.dims
+    /// Подготавливает куб к экспорту: если тип данных не UInt8/UInt16, выполняет масштабирование в UInt16.
+    private static func ensureExportableCube(_ cube: HyperCube) -> HyperCube? {
+        switch cube.originalDataType {
+        case .uint8, .uint16:
+            return cube
+        default:
+            return convertToUInt16(cube: cube)
+        }
+    }
+    
+    private static func convertToUInt16(cube: HyperCube) -> HyperCube? {
+        let total = cube.totalElements
+        guard total > 0 else { return nil }
+        
+        var minVal = Double.greatestFiniteMagnitude
+        var maxVal = -Double.greatestFiniteMagnitude
+        for idx in 0..<total {
+            let value = cube.storage.getValue(at: idx)
+            minVal = min(minVal, value)
+            maxVal = max(maxVal, value)
+        }
+        
+        guard maxVal > minVal else {
+            let zeros = [UInt16](repeating: 0, count: total)
+            return HyperCube(
+                dims: cube.dims,
+                storage: .uint16(zeros),
+                sourceFormat: cube.sourceFormat + " [UInt16 PNG]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
+        let range = maxVal - minVal
+        var scaled = [UInt16](repeating: 0, count: total)
+        for idx in 0..<total {
+            let value = cube.storage.getValue(at: idx)
+            let normalized = (value - minVal) / range
+            let scaledValue = UInt16(clamping: Int((normalized * 65535.0).rounded()))
+            scaled[idx] = scaledValue
+        }
+        
+        return HyperCube(
+            dims: cube.dims,
+            storage: .uint16(scaled),
+            sourceFormat: cube.sourceFormat + " [UInt16 PNG]",
+            isFortranOrder: cube.isFortranOrder,
+            wavelengths: cube.wavelengths
+        )
+    }
+    
+    private static func exportAsPNG(cube: HyperCube, to url: URL, layout: CubeLayout) throws {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: layout) else {
+            print("TiffExporter: Failed to get axes for layout \(layout)")
+            throw ExportError.invalidData
+        }
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        
+        print("TiffExporter: Exporting \(channels) channels, size: \(width)x\(height)")
+        print("TiffExporter: Axes - width: \(axes.width), height: \(axes.height), channel: \(axes.channel)")
         
         var allImages: [Data] = []
         
@@ -36,21 +105,22 @@ class TiffExporter {
             
             for row in 0..<height {
                 for col in 0..<width {
-                    let idx: Int
-                    if cube.isFortranOrder {
-                        idx = row + height * (col + width * channel)
-                    } else {
-                        idx = channel + channels * (col + width * row)
-                    }
+                    var indices = [0, 0, 0]
+                    indices[axes.channel] = channel
+                    indices[axes.height] = row
+                    indices[axes.width] = col
                     
                     let value: UInt8
                     switch cube.storage {
                     case .uint8(let arr):
+                        let idx = cube.linearIndex(i0: indices[0], i1: indices[1], i2: indices[2])
                         value = arr[idx]
                     case .uint16(let arr):
+                        let idx = cube.linearIndex(i0: indices[0], i1: indices[1], i2: indices[2])
                         value = UInt8(clamping: arr[idx] / 256)
                     default:
-                        value = 0
+                        let val = cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+                        value = UInt8(clamping: Int(val.rounded()))
                     }
                     
                     channelData.append(value)
@@ -71,10 +141,14 @@ class TiffExporter {
         let baseName = url.deletingPathExtension().lastPathComponent
         let directory = url.deletingLastPathComponent()
         
+        print("TiffExporter: Writing \(allImages.count) PNG files to \(directory.path)")
+        print("TiffExporter: Base name: \(baseName)")
+        
         for (index, imageData) in allImages.enumerated() {
             let channelName = String(format: "%@_channel_%03d.png", baseName, index)
             let channelURL = directory.appendingPathComponent(channelName)
             try imageData.write(to: channelURL)
+            print("TiffExporter: Written channel \(index) to \(channelURL.lastPathComponent)")
         }
     }
     
@@ -82,23 +156,29 @@ class TiffExporter {
         let colorSpace = CGColorSpaceCreateDeviceGray()
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
         
-        return data.withUnsafeBytes { ptr in
-            guard let baseAddress = ptr.baseAddress else { return nil }
-            
-            guard let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width,
-                space: colorSpace,
-                bitmapInfo: bitmapInfo.rawValue
-            ) else { return nil }
-            
-            context.data?.copyMemory(from: baseAddress, byteCount: data.count)
-            
-            return context.makeImage()
+        guard let provider = CGDataProvider(data: Data(data) as CFData) else {
+            print("TiffExporter: Failed to create CGDataProvider")
+            return nil
         }
+        
+        guard let cgImage = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 8,
+            bytesPerRow: width,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ) else {
+            print("TiffExporter: Failed to create CGImage")
+            return nil
+        }
+        
+        return cgImage
     }
     
     private static func cgImageToPNG(_ cgImage: CGImage) -> Data? {
@@ -116,4 +196,3 @@ class TiffExporter {
         return data as Data
     }
 }
-

@@ -170,7 +170,7 @@ struct ExportView: View {
         case .tiff:
             infoBox(
                 icon: "photo.stack",
-                text: "Экспорт каналов как отдельные PNG изображения. Поддержка только UInt8/UInt16."
+                text: "Экспорт каналов как отдельные PNG изображения в выбранную папку. Все типы данных автоматически масштабируются."
             )
         case .quickPNG:
             infoBox(
