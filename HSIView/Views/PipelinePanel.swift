@@ -7,6 +7,7 @@ struct PipelinePanel: View {
     @State private var showingAddMenu: Bool = false
     @State private var editingOperation: PipelineOperation?
     @State private var draggingItem: PipelineOperation?
+    @FocusState private var hasListFocus: Bool
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -103,6 +104,15 @@ struct PipelinePanel: View {
                 state.removeOperation(at: index)
                 selectedOperation = nil
             }
+        }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($hasListFocus)
+        .onTapGesture {
+            hasListFocus = true
+        }
+        .onAppear {
+            hasListFocus = true
         }
     }
     
@@ -248,15 +258,13 @@ struct OperationRow: View {
                 Spacer()
                 
                 if isHovered || isSelected {
-                    HStack(spacing: 4) {
-                        Button(action: onDelete) {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.red)
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.mini)
+                    Button(action: onDelete) {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.red)
                     }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
                 }
             }
         }
@@ -271,12 +279,16 @@ struct OperationRow: View {
                 .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
         )
         .contentShape(Rectangle())
-        .onTapGesture {
-            onSelect()
-        }
         .onTapGesture(count: 2) {
             onSelect()
             onEdit()
+        }
+        .onTapGesture {
+            onSelect()
+        }
+        .onAppear {
+            // ensure selection focus is set when rows render
+            NSApp.keyWindow?.makeFirstResponder(nil)
         }
         .onHover { hovering in
             isHovered = hovering
