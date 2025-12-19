@@ -6,6 +6,7 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case dataTypeConversion = "Тип данных"
     case rotation = "Поворот"
     case spatialCrop = "Обрезка области"
+    case calibration = "Калибровка"
     
     var id: String { rawValue }
     
@@ -21,6 +22,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "rotate.right"
         case .spatialCrop:
             return "crop"
+        case .calibration:
+            return "slider.horizontal.below.sun.max"
         }
     }
     
@@ -36,6 +39,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "Повернуть изображение на 90°, 180° или 270°"
         case .spatialCrop:
             return "Обрезать изображение по пространственным границам"
+        case .calibration:
+            return "Калибровка по белой и/или чёрной точке"
         }
     }
 }
@@ -90,6 +95,83 @@ enum RotationAngle: String, CaseIterable, Identifiable {
     }
 }
 
+struct CalibrationSpectrum: Equatable, Identifiable {
+    let id: UUID
+    let values: [Double]
+    let sourceName: String
+    
+    init(id: UUID = UUID(), values: [Double], sourceName: String) {
+        self.id = id
+        self.values = values
+        self.sourceName = sourceName
+    }
+    
+    static func from(sample: SpectrumSampleSnapshot) -> CalibrationSpectrum {
+        CalibrationSpectrum(
+            id: sample.id,
+            values: sample.values,
+            sourceName: sample.effectiveName
+        )
+    }
+    
+    static func from(roiSample: SpectrumROISampleSnapshot) -> CalibrationSpectrum {
+        CalibrationSpectrum(
+            id: roiSample.id,
+            values: roiSample.values,
+            sourceName: roiSample.effectiveName
+        )
+    }
+}
+
+struct SpectrumSampleSnapshot: Equatable, Identifiable {
+    let id: UUID
+    let pixelX: Int
+    let pixelY: Int
+    let values: [Double]
+    let colorIndex: Int
+    let displayName: String?
+    
+    var effectiveName: String {
+        displayName ?? "Точка (\(pixelX), \(pixelY))"
+    }
+}
+
+struct SpectrumROISampleSnapshot: Equatable, Identifiable {
+    let id: UUID
+    let minX: Int
+    let minY: Int
+    let width: Int
+    let height: Int
+    let values: [Double]
+    let colorIndex: Int
+    let displayName: String?
+    
+    var effectiveName: String {
+        displayName ?? "ROI (\(minX),\(minY))–(\(minX + width),\(minY + height))"
+    }
+}
+
+struct CalibrationParameters: Equatable {
+    var whiteSpectrum: CalibrationSpectrum?
+    var blackSpectrum: CalibrationSpectrum?
+    var targetMin: Double = 0.0
+    var targetMax: Double = 1.0
+    
+    var isConfigured: Bool {
+        whiteSpectrum != nil || blackSpectrum != nil
+    }
+    
+    var summaryText: String {
+        var parts: [String] = []
+        if whiteSpectrum != nil { parts.append("белая") }
+        if blackSpectrum != nil { parts.append("чёрная") }
+        if parts.isEmpty { return "Не настроено" }
+        return parts.joined(separator: " + ")
+    }
+    
+    static let `default` = CalibrationParameters()
+}
+
 struct PipelineOperation: Identifiable, Equatable {
     let id: UUID
     let type: PipelineOperationType
@@ -97,10 +179,11 @@ struct PipelineOperation: Identifiable, Equatable {
     var normalizationParams: CubeNormalizationParameters?
     var preserveDataType: Bool?
     var targetDataType: DataType?
-   var autoScale: Bool?
-   var rotationAngle: RotationAngle?
-   var layout: CubeLayout = .auto
+    var autoScale: Bool?
+    var rotationAngle: RotationAngle?
+    var layout: CubeLayout = .auto
     var cropParameters: SpatialCropParameters?
+    var calibrationParams: CalibrationParameters?
     
     init(id: UUID = UUID(), type: PipelineOperationType) {
         self.id = id
@@ -118,6 +201,8 @@ struct PipelineOperation: Identifiable, Equatable {
             self.rotationAngle = .degree90
         case .spatialCrop:
             self.cropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
+        case .calibration:
+            self.calibrationParams = .default
         }
     }
     
@@ -153,6 +238,8 @@ struct PipelineOperation: Identifiable, Equatable {
             return "Поворот \(rotationAngle?.rawValue ?? "")"
         case .spatialCrop:
             return "Обрезка области"
+        case .calibration:
+            return "Калибровка"
         }
     }
     
@@ -203,6 +290,8 @@ struct PipelineOperation: Identifiable, Equatable {
                 return "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
             }
             return "Настройте границы"
+        case .calibration:
+            return calibrationParams?.summaryText ?? "Не настроено"
         }
     }
     
@@ -235,6 +324,9 @@ struct PipelineOperation: Identifiable, Equatable {
         case .spatialCrop:
             guard let params = cropParameters else { return cube }
             return CubeSpatialCropper.crop(cube: cube, parameters: params, layout: layout)
+        case .calibration:
+            guard let params = calibrationParams, params.isConfigured else { return cube }
+            return CubeCalibrator.calibrate(cube: cube, parameters: params, layout: layout)
         }
     }
 }
@@ -556,6 +648,92 @@ class CubeSpatialCropper {
                 }
             }
         }
+    }
+    
+    private static func linearIndex(
+        i0: Int,
+        i1: Int,
+        i2: Int,
+        dims: (Int, Int, Int),
+        fortran: Bool
+    ) -> Int {
+        if fortran {
+            return i0 + dims.0 * (i1 + dims.1 * i2)
+        } else {
+            return i2 + dims.2 * (i1 + dims.1 * i0)
+        }
+    }
+}
+
+class CubeCalibrator {
+    static func calibrate(cube: HyperCube, parameters: CalibrationParameters, layout: CubeLayout) -> HyperCube? {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        
+        guard let axes = cube.axes(for: layout) else { return cube }
+        
+        let channels = dimsArray[axes.channel]
+        let height = dimsArray[axes.height]
+        let width = dimsArray[axes.width]
+        
+        guard channels > 0, height > 0, width > 0 else { return cube }
+        
+        let whiteSpectrum = parameters.whiteSpectrum?.values
+        let blackSpectrum = parameters.blackSpectrum?.values
+        
+        guard whiteSpectrum != nil || blackSpectrum != nil else { return cube }
+        
+        if let white = whiteSpectrum, white.count != channels { return cube }
+        if let black = blackSpectrum, black.count != channels { return cube }
+        
+        let targetMin = parameters.targetMin
+        let targetMax = parameters.targetMax
+        
+        let totalElements = dims.0 * dims.1 * dims.2
+        var resultData = [Double](repeating: 0, count: totalElements)
+        
+        for ch in 0..<channels {
+            let whiteVal = whiteSpectrum?[ch] ?? 1.0
+            let blackVal = blackSpectrum?[ch] ?? 0.0
+            let range = whiteVal - blackVal
+            let scale = range != 0 ? (targetMax - targetMin) / range : 1.0
+            
+            for h in 0..<height {
+                for w in 0..<width {
+                    var indices = [0, 0, 0]
+                    indices[axes.channel] = ch
+                    indices[axes.height] = h
+                    indices[axes.width] = w
+                    
+                    let srcIndex = cube.linearIndex(i0: indices[0], i1: indices[1], i2: indices[2])
+                    let value = cube.getValue(at: srcIndex)
+                    
+                    let calibrated: Double
+                    if range != 0 {
+                        calibrated = targetMin + (value - blackVal) * scale
+                    } else {
+                        calibrated = value
+                    }
+                    
+                    let dstIndex = linearIndex(
+                        i0: indices[0],
+                        i1: indices[1],
+                        i2: indices[2],
+                        dims: dims,
+                        fortran: cube.isFortranOrder
+                    )
+                    resultData[dstIndex] = calibrated
+                }
+            }
+        }
+        
+        return HyperCube(
+            dims: dims,
+            storage: .float64(resultData),
+            sourceFormat: cube.sourceFormat,
+            isFortranOrder: cube.isFortranOrder,
+            wavelengths: cube.wavelengths
+        )
     }
     
     private static func linearIndex(

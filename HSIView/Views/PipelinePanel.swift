@@ -249,13 +249,6 @@ struct OperationRow: View {
                 
                 if isHovered || isSelected {
                     HStack(spacing: 4) {
-                        Button(action: onEdit) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 10))
-                        }
-                        .buttonStyle(.borderless)
-                        .controlSize(.mini)
-                        
                         Button(action: onDelete) {
                             Image(systemName: "minus.circle.fill")
                                 .font(.system(size: 12))
@@ -280,6 +273,10 @@ struct OperationRow: View {
         .contentShape(Rectangle())
         .onTapGesture {
             onSelect()
+        }
+        .onTapGesture(count: 2) {
+            onSelect()
+            onEdit()
         }
         .onHover { hovering in
             isHovered = hovering
@@ -345,6 +342,7 @@ struct OperationEditorView: View {
     @State private var localAutoScale: Bool = true
     @State private var localRotationAngle: RotationAngle = .degree90
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
+    @State private var localCalibrationParams: CalibrationParameters = .default
     
     var body: some View {
         VStack(spacing: 0) {
@@ -375,10 +373,17 @@ struct OperationEditorView: View {
     }
 
     private var editorSize: CGSize {
-        guard let op = operation, op.type == .spatialCrop else {
+        guard let op = operation else {
             return CGSize(width: 420, height: 540)
         }
-        return CGSize(width: 960, height: 620)
+        switch op.type {
+        case .spatialCrop:
+            return CGSize(width: 960, height: 620)
+        case .calibration:
+            return CGSize(width: 500, height: 600)
+        default:
+            return CGSize(width: 420, height: 540)
+        }
     }
     
     private func loadLocalState() {
@@ -398,6 +403,8 @@ struct OperationEditorView: View {
             if let params = op.cropParameters {
                 localCropParameters = params
             }
+        case .calibration:
+            localCalibrationParams = op.calibrationParams ?? .default
         }
     }
     
@@ -419,6 +426,8 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].rotationAngle = localRotationAngle
         case .spatialCrop:
             state.pipelineOperations[index].cropParameters = localCropParameters
+        case .calibration:
+            state.pipelineOperations[index].calibrationParams = localCalibrationParams
         }
     }
     
@@ -445,6 +454,8 @@ struct OperationEditorView: View {
             rotationEditor(for: op)
         case .spatialCrop:
             cropEditor(for: op)
+        case .calibration:
+            calibrationEditor(for: op)
         }
     }
     
@@ -723,6 +734,192 @@ struct OperationEditorView: View {
                     )
             }
         }
+    }
+    
+    private func calibrationEditor(for op: PipelineOperation) -> some View {
+        let pointSamples = state.spectrumSamples.map { sample in
+            SpectrumSampleSnapshot(
+                id: sample.id,
+                pixelX: sample.pixelX,
+                pixelY: sample.pixelY,
+                values: sample.values,
+                colorIndex: sample.colorIndex,
+                displayName: sample.displayName
+            )
+        }
+        let roiSamples = state.roiSamples.map { sample in
+            SpectrumROISampleSnapshot(
+                id: sample.id,
+                minX: sample.rect.minX,
+                minY: sample.rect.minY,
+                width: sample.rect.width,
+                height: sample.rect.height,
+                values: sample.values,
+                colorIndex: sample.colorIndex,
+                displayName: sample.displayName
+            )
+        }
+        
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("Калибровка изображения")
+                .font(.system(size: 11, weight: .medium))
+            
+            Text("Выберите спектры для белой и/или чёрной точки калибровки из сохранённых в \"Графике спектра\" или \"Графике спектра ROI\".")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "sun.max.fill")
+                        .foregroundColor(.yellow)
+                    Text("Белая точка (эталон белого)")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                
+                if let white = localCalibrationParams.whiteSpectrum {
+                    HStack {
+                        Text(white.sourceName)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Убрать") {
+                            localCalibrationParams.whiteSpectrum = nil
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                    }
+                    .padding(8)
+                    .background(Color.yellow.opacity(0.1))
+                    .cornerRadius(6)
+                } else {
+                    spectrumPickerMenu(
+                        label: "Выбрать белую точку",
+                        pointSamples: pointSamples,
+                        roiSamples: roiSamples
+                    ) { spectrum in
+                        localCalibrationParams.whiteSpectrum = spectrum
+                    }
+                }
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "moon.fill")
+                        .foregroundColor(.gray)
+                    Text("Чёрная точка (эталон чёрного)")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                
+                if let black = localCalibrationParams.blackSpectrum {
+                    HStack {
+                        Text(black.sourceName)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Убрать") {
+                            localCalibrationParams.blackSpectrum = nil
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                    }
+                    .padding(8)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(6)
+                } else {
+                    spectrumPickerMenu(
+                        label: "Выбрать чёрную точку",
+                        pointSamples: pointSamples,
+                        roiSamples: roiSamples
+                    ) { spectrum in
+                        localCalibrationParams.blackSpectrum = spectrum
+                    }
+                }
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Целевой диапазон:")
+                    .font(.system(size: 11, weight: .medium))
+                
+                HStack {
+                    Text("Min:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("0", value: $localCalibrationParams.targetMin, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                    
+                    Text("Max:")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("1", value: $localCalibrationParams.targetMax, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                }
+            }
+            
+            if !localCalibrationParams.isConfigured {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                    Text("Выберите хотя бы одну точку калибровки")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .padding(8)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(6)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func spectrumPickerMenu(
+        label: String,
+        pointSamples: [SpectrumSampleSnapshot],
+        roiSamples: [SpectrumROISampleSnapshot],
+        onSelect: @escaping (CalibrationSpectrum) -> Void
+    ) -> some View {
+        Menu {
+            if pointSamples.isEmpty && roiSamples.isEmpty {
+                Text("Нет сохранённых спектров")
+                    .foregroundColor(.secondary)
+            }
+            
+            if !pointSamples.isEmpty {
+                Section("Точки") {
+                    ForEach(pointSamples) { sample in
+                        Button(sample.effectiveName) {
+                            onSelect(CalibrationSpectrum.from(sample: sample))
+                        }
+                    }
+                }
+            }
+            
+            if !roiSamples.isEmpty {
+                Section("Области ROI") {
+                    ForEach(roiSamples) { sample in
+                        Button(sample.effectiveName) {
+                            onSelect(CalibrationSpectrum.from(roiSample: sample))
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack {
+                Image(systemName: "plus.circle")
+                Text(label)
+            }
+            .font(.system(size: 11))
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(pointSamples.isEmpty && roiSamples.isEmpty)
     }
     
     private func currentPreviewImage() -> NSImage? {
