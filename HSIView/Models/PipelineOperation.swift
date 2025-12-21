@@ -5,6 +5,7 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case channelwiseNormalization = "Поканальная нормализация"
     case dataTypeConversion = "Тип данных"
     case rotation = "Поворот"
+    case resize = "Изменение размера"
     case spatialCrop = "Обрезка области"
     case calibration = "Калибровка"
     
@@ -20,6 +21,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "arrow.triangle.2.circlepath"
         case .rotation:
             return "rotate.right"
+        case .resize:
+            return "arrow.up.left.and.down.right.magnifyingglass"
         case .spatialCrop:
             return "crop"
         case .calibration:
@@ -37,12 +40,40 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "Изменить тип данных"
         case .rotation:
             return "Повернуть изображение на 90°, 180° или 270°"
+        case .resize:
+            return "Изменить размер пространственных измерений"
         case .spatialCrop:
             return "Обрезать изображение по пространственным границам"
         case .calibration:
             return "Калибровка по белой и/или чёрной точке"
         }
     }
+}
+
+struct ResizeParameters: Equatable {
+    var targetWidth: Int
+    var targetHeight: Int
+    var algorithm: ResizeAlgorithm
+    var bicubicA: Double
+    var lanczosA: Int
+    
+    static let `default` = ResizeParameters(
+        targetWidth: 0,
+        targetHeight: 0,
+        algorithm: .bilinear,
+        bicubicA: -0.5,
+        lanczosA: 3
+    )
+}
+
+enum ResizeAlgorithm: String, CaseIterable, Identifiable {
+    case nearest = "По ближайшему соседу"
+    case bilinear = "Билинейная"
+    case bicubic = "Бикубическая"
+    case bspline = "Сплайн"
+    case lanczos = "Ланцош"
+    
+    var id: String { rawValue }
 }
 
 struct SpatialCropParameters: Equatable {
@@ -184,6 +215,7 @@ struct PipelineOperation: Identifiable, Equatable {
     var layout: CubeLayout = .auto
     var cropParameters: SpatialCropParameters?
     var calibrationParams: CalibrationParameters?
+    var resizeParameters: ResizeParameters?
     
     init(id: UUID = UUID(), type: PipelineOperationType) {
         self.id = id
@@ -199,6 +231,8 @@ struct PipelineOperation: Identifiable, Equatable {
             self.autoScale = true
         case .rotation:
             self.rotationAngle = .degree90
+        case .resize:
+            self.resizeParameters = .default
         case .spatialCrop:
             self.cropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
         case .calibration:
@@ -223,6 +257,20 @@ struct PipelineOperation: Identifiable, Equatable {
                     bottom: max(height - 1, 0)
                 )
             }
+        case .resize:
+            let dims = cube.dims
+            let dimsArray = [dims.0, dims.1, dims.2]
+            if let axes = cube.axes(for: layout) {
+                let width = dimsArray[axes.width]
+                let height = dimsArray[axes.height]
+                resizeParameters = ResizeParameters(
+                    targetWidth: width,
+                    targetHeight: height,
+                    algorithm: .bilinear,
+                    bicubicA: -0.5,
+                    lanczosA: 3
+                )
+            }
         default:
             break
         }
@@ -236,6 +284,11 @@ struct PipelineOperation: Identifiable, Equatable {
             return targetDataType?.rawValue ?? "Тип данных"
         case .rotation:
             return "Поворот \(rotationAngle?.rawValue ?? "")"
+        case .resize:
+            if let params = resizeParameters {
+                return "Ресайз до \(params.targetWidth)×\(params.targetHeight) (\(params.algorithm.rawValue))"
+            }
+            return "Изменение размера"
         case .spatialCrop:
             return "Обрезка области"
         case .calibration:
@@ -285,6 +338,11 @@ struct PipelineOperation: Identifiable, Equatable {
             return text
         case .rotation:
             return "По часовой стрелке"
+        case .resize:
+            if let params = resizeParameters {
+                return "До \(params.targetWidth)×\(params.targetHeight), \(params.algorithm.rawValue)"
+            }
+            return "Изменение размера"
         case .spatialCrop:
             if let params = cropParameters {
                 return "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
@@ -321,12 +379,212 @@ struct PipelineOperation: Identifiable, Equatable {
         case .rotation:
             guard let angle = rotationAngle else { return cube }
             return CubeRotator.rotate(cube, angle: angle, layout: layout)
+        case .resize:
+            guard let params = resizeParameters else { return cube }
+            return CubeResizer.resize(cube: cube, parameters: params, layout: layout)
         case .spatialCrop:
             guard let params = cropParameters else { return cube }
             return CubeSpatialCropper.crop(cube: cube, parameters: params, layout: layout)
         case .calibration:
             guard let params = calibrationParams, params.isConfigured else { return cube }
             return CubeCalibrator.calibrate(cube: cube, parameters: params, layout: layout)
+        }
+    }
+}
+
+// MARK: - CubeResizer
+
+class CubeResizer {
+    static func resize(cube: HyperCube, parameters: ResizeParameters, layout: CubeLayout = .auto) -> HyperCube? {
+        guard parameters.targetWidth > 0, parameters.targetHeight > 0 else { return cube }
+        
+        let dims = cube.dims
+        var dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: layout) else { return cube }
+        let srcWidth = dimsArray[axes.width]
+        let srcHeight = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        
+        guard srcWidth > 0, srcHeight > 0, channels > 0 else { return cube }
+        
+        let dstWidth = parameters.targetWidth
+        let dstHeight = parameters.targetHeight
+        dimsArray[axes.width] = dstWidth
+        dimsArray[axes.height] = dstHeight
+        
+        let total = dstWidth * dstHeight * channels
+        var output = [Double](repeating: 0.0, count: total)
+        
+        let scaleX = Double(srcWidth) / Double(dstWidth)
+        let scaleY = Double(srcHeight) / Double(dstHeight)
+        
+        for ch in 0..<channels {
+            for y in 0..<dstHeight {
+                for x in 0..<dstWidth {
+                    let srcX = (Double(x) + 0.5) * scaleX - 0.5
+                    let srcY = (Double(y) + 0.5) * scaleY - 0.5
+                    let value = sample(
+                        cube: cube,
+                        axes: axes,
+                        channel: ch,
+                        x: srcX,
+                        y: srcY,
+                        algorithm: parameters.algorithm,
+                        bicubicA: parameters.bicubicA,
+                        lanczosA: parameters.lanczosA
+                    )
+                    
+                    var outIndices = [0, 0, 0]
+                    outIndices[axes.width] = x
+                    outIndices[axes.height] = y
+                    outIndices[axes.channel] = ch
+                    
+                    let idx = linearIndex(
+                        dims: dimsArray,
+                        isFortran: cube.isFortranOrder,
+                        i0: outIndices[0],
+                        i1: outIndices[1],
+                        i2: outIndices[2]
+                    )
+                    output[idx] = value
+                }
+            }
+        }
+        
+        let storage = DataStorage.float64(output)
+        return HyperCube(
+            dims: (dimsArray[0], dimsArray[1], dimsArray[2]),
+            storage: storage,
+            sourceFormat: cube.sourceFormat + " [Resize]",
+            isFortranOrder: cube.isFortranOrder,
+            wavelengths: cube.wavelengths
+        )
+    }
+    
+    private static func sample(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        channel: Int,
+        x: Double,
+        y: Double,
+        algorithm: ResizeAlgorithm,
+        bicubicA: Double,
+        lanczosA: Int
+    ) -> Double {
+        switch algorithm {
+        case .nearest:
+            let nx = Int(round(x))
+            let ny = Int(round(y))
+            return value(atX: nx, y: ny, channel: channel, cube: cube, axes: axes)
+        case .bilinear:
+            return bilinearSample(cube: cube, axes: axes, channel: channel, x: x, y: y)
+        case .bicubic:
+            return bicubicSample(cube: cube, axes: axes, channel: channel, x: x, y: y, a: bicubicA)
+        case .bspline:
+            return bicubicSample(cube: cube, axes: axes, channel: channel, x: x, y: y, a: -1.0)
+        case .lanczos:
+            return lanczosSample(cube: cube, axes: axes, channel: channel, x: x, y: y, a: max(1, lanczosA))
+        }
+    }
+    
+    private static func value(atX x: Int, y: Int, channel: Int, cube: HyperCube, axes: (channel: Int, height: Int, width: Int)) -> Double {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard x >= 0, y >= 0,
+              x < dimsArray[axes.width],
+              y < dimsArray[axes.height] else { return 0 }
+        var indices = [0, 0, 0]
+        indices[axes.channel] = channel
+        indices[axes.height] = y
+        indices[axes.width] = x
+        return cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+    }
+    
+    private static func bilinearSample(cube: HyperCube, axes: (channel: Int, height: Int, width: Int), channel: Int, x: Double, y: Double) -> Double {
+        let x0 = Int(floor(x))
+        let x1 = x0 + 1
+        let y0 = Int(floor(y))
+        let y1 = y0 + 1
+        let fx = x - Double(x0)
+        let fy = y - Double(y0)
+        
+        let v00 = value(atX: x0, y: y0, channel: channel, cube: cube, axes: axes)
+        let v10 = value(atX: x1, y: y0, channel: channel, cube: cube, axes: axes)
+        let v01 = value(atX: x0, y: y1, channel: channel, cube: cube, axes: axes)
+        let v11 = value(atX: x1, y: y1, channel: channel, cube: cube, axes: axes)
+        
+        let vx0 = v00 * (1 - fx) + v10 * fx
+        let vx1 = v01 * (1 - fx) + v11 * fx
+        return vx0 * (1 - fy) + vx1 * fy
+    }
+    
+    private static func cubicWeight(_ t: Double, a: Double) -> Double {
+        let at = abs(t)
+        if at <= 1 {
+            return (a + 2) * pow(at, 3) - (a + 3) * pow(at, 2) + 1
+        } else if at < 2 {
+            return a * pow(at, 3) - 5 * a * pow(at, 2) + 8 * a * at - 4 * a
+        } else {
+            return 0
+        }
+    }
+    
+    private static func bicubicSample(cube: HyperCube, axes: (channel: Int, height: Int, width: Int), channel: Int, x: Double, y: Double, a: Double) -> Double {
+        let x0 = Int(floor(x))
+        let y0 = Int(floor(y))
+        
+        var result = 0.0
+        for m in -1...2 {
+            let wy = cubicWeight(Double(m) - (y - Double(y0)), a: a)
+            let sampleY = y0 + m
+            for n in -1...2 {
+                let wx = cubicWeight(Double(n) - (x - Double(x0)), a: a)
+                let sampleX = x0 + n
+                let v = value(atX: sampleX, y: sampleY, channel: channel, cube: cube, axes: axes)
+                result += v * wx * wy
+            }
+        }
+        return result
+    }
+    
+    private static func sinc(_ x: Double) -> Double {
+        if abs(x) < 1e-7 { return 1.0 }
+        return sin(Double.pi * x) / (Double.pi * x)
+    }
+    
+    private static func lanczosWeight(_ x: Double, a: Int) -> Double {
+        let ax = abs(x)
+        if ax >= Double(a) { return 0 }
+        return sinc(ax) * sinc(ax / Double(a))
+    }
+    
+    private static func lanczosSample(cube: HyperCube, axes: (channel: Int, height: Int, width: Int), channel: Int, x: Double, y: Double, a: Int) -> Double {
+        let xInt = Int(floor(x))
+        let yInt = Int(floor(y))
+        var sum = 0.0
+        var weightSum = 0.0
+        
+        for j in (yInt - a + 1)...(yInt + a) {
+            let wy = lanczosWeight(Double(j) - y, a: a)
+            if wy == 0 { continue }
+            for i in (xInt - a + 1)...(xInt + a) {
+                let wx = lanczosWeight(Double(i) - x, a: a)
+                let w = wx * wy
+                if w == 0 { continue }
+                let v = value(atX: i, y: j, channel: channel, cube: cube, axes: axes)
+                sum += v * w
+                weightSum += w
+            }
+        }
+        if weightSum == 0 { return 0 }
+        return sum / weightSum
+    }
+    
+    private static func linearIndex(dims: [Int], isFortran: Bool, i0: Int, i1: Int, i2: Int) -> Int {
+        if isFortran {
+            return i0 + dims[0] * (i1 + dims[1] * i2)
+        } else {
+            return i2 + dims[2] * (i1 + dims[1] * i0)
         }
     }
 }

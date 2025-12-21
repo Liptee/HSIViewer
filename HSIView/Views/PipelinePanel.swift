@@ -355,6 +355,7 @@ struct OperationEditorView: View {
     @State private var localRotationAngle: RotationAngle = .degree90
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
     @State private var localCalibrationParams: CalibrationParameters = .default
+    @State private var localResizeParams: ResizeParameters = .default
     
     var body: some View {
         VStack(spacing: 0) {
@@ -393,6 +394,8 @@ struct OperationEditorView: View {
             return CGSize(width: 960, height: 620)
         case .calibration:
             return CGSize(width: 500, height: 600)
+        case .resize:
+            return CGSize(width: 500, height: 520)
         default:
             return CGSize(width: 420, height: 540)
         }
@@ -417,6 +420,8 @@ struct OperationEditorView: View {
             }
         case .calibration:
             localCalibrationParams = op.calibrationParams ?? .default
+        case .resize:
+            localResizeParams = op.resizeParameters ?? .default
         }
     }
     
@@ -436,6 +441,8 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].autoScale = localAutoScale
         case .rotation:
             state.pipelineOperations[index].rotationAngle = localRotationAngle
+        case .resize:
+            state.pipelineOperations[index].resizeParameters = localResizeParams
         case .spatialCrop:
             state.pipelineOperations[index].cropParameters = localCropParameters
         case .calibration:
@@ -464,6 +471,8 @@ struct OperationEditorView: View {
             dataTypeEditor(for: op)
         case .rotation:
             rotationEditor(for: op)
+        case .resize:
+            resizeEditor(for: op)
         case .spatialCrop:
             cropEditor(for: op)
         case .calibration:
@@ -568,6 +577,75 @@ struct OperationEditorView: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func resizeEditor(for op: PipelineOperation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Размер:")
+                .font(.system(size: 11, weight: .medium))
+            
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ширина")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("Width", value: $localResizeParams.targetWidth, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 100)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Высота")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("Height", value: $localResizeParams.targetHeight, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 100)
+                }
+            }
+            
+            Divider()
+            
+            Text("Алгоритм интерполяции:")
+                .font(.system(size: 11, weight: .medium))
+            
+            Picker("", selection: $localResizeParams.algorithm) {
+                ForEach(ResizeAlgorithm.allCases) { algo in
+                    Text(algo.rawValue).tag(algo)
+                }
+            }
+            .pickerStyle(.menu)
+            
+            switch localResizeParams.algorithm {
+            case .bicubic:
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Параметр a (Catmull-Rom = -0.5):")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("-0.5", value: $localResizeParams.bicubicA, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                }
+            case .lanczos:
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Число лепестков (a):")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Stepper(value: $localResizeParams.lanczosA, in: 1...8) {
+                        Text("\(localResizeParams.lanczosA)")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .frame(width: 160, alignment: .leading)
+                }
+            default:
+                EmptyView()
+            }
+            
+            Divider()
+            
+            Text("Каждый канал будет ресайзнут отдельно в выбранном алгоритме.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
         }
     }
     
