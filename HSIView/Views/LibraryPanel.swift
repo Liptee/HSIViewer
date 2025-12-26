@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -5,7 +6,7 @@ struct LibraryPanel: View {
     @EnvironmentObject var state: AppState
     @State private var isExpanded: Bool = true
     @State private var isTargeted: Bool = false
-    @State private var selectedEntryID: CubeLibraryEntry.ID?
+    @State private var selectedEntryIDs: Set<CubeLibraryEntry.ID> = []
     @FocusState private var isFocused: Bool
     
     var body: some View {
@@ -26,12 +27,10 @@ struct LibraryPanel: View {
         .focusable(true)
         .focusEffectDisabled(true)
         .focused($isFocused)
-        .onDeleteCommand(perform: deleteSelectedEntry)
+        .onDeleteCommand(perform: deleteSelectedEntries)
         .onChange(of: state.libraryEntries) { entries in
-            guard let currentID = selectedEntryID else { return }
-            if !entries.contains(where: { $0.id == currentID }) {
-                selectedEntryID = nil
-            }
+            let existingIDs = Set(entries.map(\.id))
+            selectedEntryIDs = selectedEntryIDs.intersection(existingIDs)
         }
     }
     
@@ -84,18 +83,21 @@ struct LibraryPanel: View {
     @ViewBuilder
     private func libraryRow(for entry: CubeLibraryEntry) -> some View {
         let isActive = isEntryActive(entry)
-        let isSelected = selectedEntryID == entry.id && !isActive
+        let isSelected = selectedEntryIDs.contains(entry.id) && !isActive
         let singleTap = TapGesture()
             .onEnded {
-                selectedEntryID = entry.id
+                handleSelection(for: entry, isCommandPressed: isCommandPressed())
                 isFocused = true
             }
         
         let doubleTap = TapGesture(count: 2)
             .onEnded {
-                selectedEntryID = entry.id
+                selectSingleEntry(entry)
                 state.open(url: entry.url)
             }
+        
+        let contextTargets = contextMenuTargets(for: entry)
+        let canCopyFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyProcessing(from: $0) } == true
         
         return VStack(alignment: .leading, spacing: 4) {
             Text(entry.fileName)
@@ -121,20 +123,24 @@ struct LibraryPanel: View {
         .simultaneousGesture(singleTap)
         .contextMenu {
             Button("Копировать обработку") {
-                state.copyProcessing(from: entry)
+                if let target = contextTargets.first {
+                    state.copyProcessing(from: target)
+                }
             }
-            .disabled(!state.canCopyProcessing(from: entry))
+            .disabled(!canCopyFromSingle)
             
             if state.hasProcessingClipboard {
                 Button("Вставить обработку") {
-                    state.pasteProcessing(to: entry)
+                    for target in contextTargets {
+                        state.pasteProcessing(to: target)
+                    }
                 }
             }
             
             Divider()
             
             Button(role: .destructive) {
-                removeEntry(entry)
+                removeEntries(contextTargets)
             } label: {
                 Text("Удалить из библиотеки")
             }
@@ -181,15 +187,50 @@ struct LibraryPanel: View {
         }
     }
     
-    private func deleteSelectedEntry() {
-        guard let entry = state.libraryEntries.first(where: { $0.id == selectedEntryID }) else { return }
-        removeEntry(entry)
+    private func deleteSelectedEntries() {
+        let entriesToDelete = state.libraryEntries.filter { selectedEntryIDs.contains($0.id) }
+        removeEntries(entriesToDelete)
     }
     
     private func removeEntry(_ entry: CubeLibraryEntry) {
-        state.removeLibraryEntry(entry)
-        if selectedEntryID == entry.id {
-            selectedEntryID = nil
+        removeEntries([entry])
+    }
+    
+    private func removeEntries(_ entries: [CubeLibraryEntry]) {
+        guard !entries.isEmpty else { return }
+        for entry in entries {
+            state.removeLibraryEntry(entry)
+            selectedEntryIDs.remove(entry.id)
         }
+    }
+    
+    private func contextMenuTargets(for entry: CubeLibraryEntry) -> [CubeLibraryEntry] {
+        if selectedEntryIDs.contains(entry.id) {
+            let selected = state.libraryEntries.filter { selectedEntryIDs.contains($0.id) }
+            return selected.isEmpty ? [entry] : selected
+        } else {
+            return [entry]
+        }
+    }
+    
+    private func selectSingleEntry(_ entry: CubeLibraryEntry) {
+        selectedEntryIDs = [entry.id]
+    }
+    
+    private func handleSelection(for entry: CubeLibraryEntry, isCommandPressed: Bool) {
+        if isCommandPressed {
+            if selectedEntryIDs.contains(entry.id) {
+                selectedEntryIDs.remove(entry.id)
+            } else {
+                selectedEntryIDs.insert(entry.id)
+            }
+        } else {
+            selectSingleEntry(entry)
+        }
+    }
+    
+    private func isCommandPressed() -> Bool {
+        guard let event = NSApp.currentEvent else { return false }
+        return event.modifierFlags.contains(.command)
     }
 }
