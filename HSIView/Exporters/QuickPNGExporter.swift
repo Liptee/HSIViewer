@@ -9,9 +9,9 @@ class QuickPNGExporter {
         to url: URL,
         layout: CubeLayout,
         wavelengths: [Double]?,
-        mode: ColorSynthesisMode
+        config: ColorSynthesisConfig
     ) -> Result<Void, Error> {
-        guard let image = renderImage(cube: cube, layout: layout, wavelengths: wavelengths, mode: mode) else {
+        guard let image = renderImage(cube: cube, layout: layout, wavelengths: wavelengths, config: config) else {
             return .failure(ExportError.invalidData)
         }
         
@@ -33,45 +33,40 @@ class QuickPNGExporter {
         cube: HyperCube,
         layout: CubeLayout,
         wavelengths: [Double]?,
-        mode: ColorSynthesisMode
+        config: ColorSynthesisConfig
     ) -> NSImage? {
-        switch mode {
+        switch config.mode {
         case .trueColorRGB:
-            return renderTrueColorRGB(cube: cube, layout: layout, wavelengths: wavelengths)
+            return renderTrueColorRGB(
+                cube: cube,
+                layout: layout,
+                wavelengths: wavelengths,
+                mapping: config.mapping
+            )
         }
     }
     
     private static func renderTrueColorRGB(
         cube: HyperCube,
         layout: CubeLayout,
-        wavelengths: [Double]?
+        wavelengths: [Double]?,
+        mapping: RGBChannelMapping
     ) -> NSImage? {
+        _ = wavelengths
         guard let axes = cube.axes(for: layout) else { return nil }
         
         let (d0, d1, d2) = cube.dims
         let dimsArr = [d0, d1, d2]
         
         let channels = dimsArr[axes.channel]
+        guard channels > 0 else { return nil }
         let height = dimsArr[axes.height]
         let width = dimsArr[axes.width]
         
-        let targetR = 630.0
-        let targetG = 530.0
-        let targetB = 450.0
-        
-        let idxR: Int
-        let idxG: Int
-        let idxB: Int
-        
-        if let wl = wavelengths, wl.count >= channels {
-            idxR = closestIndex(in: wl, to: targetR, count: channels)
-            idxG = closestIndex(in: wl, to: targetG, count: channels)
-            idxB = closestIndex(in: wl, to: targetB, count: channels)
-        } else {
-            idxR = min(channels - 1, channels * 2 / 3)
-            idxG = channels / 2
-            idxB = min(channels - 1, channels / 3)
-        }
+        let clamped = mapping.clamped(maxChannelCount: channels)
+        let idxR = clamped.red
+        let idxG = clamped.green
+        let idxB = clamped.blue
         
         let sliceR = extractChannel(cube: cube, axes: axes, channelIndex: idxR, h: height, w: width)
         let sliceG = extractChannel(cube: cube, axes: axes, channelIndex: idxG, h: height, w: width)
@@ -110,21 +105,6 @@ class QuickPNGExporter {
         }
         
         return slice
-    }
-    
-    private static func closestIndex(in wavelengths: [Double], to target: Double, count: Int) -> Int {
-        var bestIdx = 0
-        var bestDist = Double.greatestFiniteMagnitude
-        
-        for i in 0..<count {
-            let d = abs(wavelengths[i] - target)
-            if d < bestDist {
-                bestDist = d
-                bestIdx = i
-            }
-        }
-        
-        return bestIdx
     }
     
     private static func normalize(_ data: [Double]) -> [Double] {
@@ -200,10 +180,6 @@ class QuickPNGExporter {
         return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
     }
 }
-
-
-
-
 
 
 

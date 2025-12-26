@@ -5,4 +5,5 @@ struct CubeExportPayload {
     let wavelengths: [Double]?
     let layout: CubeLayout
     let baseName: String
+    let colorSynthesisConfig: ColorSynthesisConfig
 }

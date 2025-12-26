@@ -217,7 +217,7 @@ struct ContentView: View {
                     wavelengths: exportInfo.wavelengths,
                     matVariableName: exportInfo.matVariableName,
                     matWavelengthsAsVariable: exportInfo.matWavelengthsAsVariable,
-                    colorSynthesisMode: exportInfo.colorSynthesisMode
+                    colorSynthesisConfig: exportInfo.colorSynthesisConfig
                 )
                 state.pendingExport = nil
             }
@@ -245,7 +245,7 @@ struct ContentView: View {
         }
     }
     
-    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisMode: ColorSynthesisMode?) {
+    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?) {
         if state.exportEntireLibrary {
             guard !state.libraryEntries.isEmpty else { return }
             
@@ -267,7 +267,7 @@ struct ContentView: View {
                 wavelengths: wavelengths,
                 matVariableName: matVariableName,
                 matWavelengthsAsVariable: matWavelengthsAsVariable,
-                colorSynthesisMode: colorSynthesisMode
+                colorSynthesisConfig: colorSynthesisConfig
             )
             return
         }
@@ -374,7 +374,7 @@ struct ContentView: View {
                         to: saveURL,
                         layout: currentLayout,
                         wavelengths: currentWavelengths,
-                        mode: colorSynthesisMode ?? .trueColorRGB
+                        config: colorSynthesisConfig ?? state.colorSynthesisConfig
                     )
                 }
                 
@@ -390,7 +390,7 @@ struct ContentView: View {
         }
     }
     
-    private func exportLibraryEntries(to destinationFolder: URL, format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisMode: ColorSynthesisMode?) {
+    private func exportLibraryEntries(to destinationFolder: URL, format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?) {
         let entries = state.libraryEntries
         guard !entries.isEmpty else { return }
         let includeWavelengths = wavelengths
@@ -432,18 +432,15 @@ struct ContentView: View {
                         let target = destinationFolder.appendingPathComponent(baseName)
                         result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)
                     case .quickPNG:
-                        if let mode = colorSynthesisMode {
-                            let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")
-                            result = QuickPNGExporter.export(
-                                cube: payload.cube,
-                                to: target,
-                                layout: payload.layout,
-                                wavelengths: payload.wavelengths,
-                                mode: mode
-                            )
-                        } else {
-                            result = .failure(ExportError.writeError("Не выбран режим цветосинтеза"))
-                        }
+                        let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")
+                        let config = colorSynthesisConfig ?? payload.colorSynthesisConfig
+                        result = QuickPNGExporter.export(
+                            cube: payload.cube,
+                            to: target,
+                            layout: payload.layout,
+                            wavelengths: payload.wavelengths,
+                            config: config
+                        )
                     }
                     
                     switch result {
@@ -537,16 +534,16 @@ struct ContentView: View {
                 }
                 
             case .rgb:
-                if let lambda = state.wavelengths,
-                   lambda.count >= state.channelCount,
-                   let nsImage = ImageRenderer.renderRGB(
+                let config = state.colorSynthesisConfig
+                if let nsImage = ImageRenderer.renderRGB(
                     cube: cube,
                     layout: state.activeLayout,
-                    wavelengths: lambda
-                   ) {
+                    wavelengths: state.wavelengths,
+                    mapping: config.mapping
+                ) {
                     spectrumImageView(nsImage: nsImage, geoSize: geoSize)
                 } else {
-                    Text("Для RGB нужен список λ длиной ≥ \(state.channelCount)")
+                    Text("Не удалось построить RGB изображение")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -625,6 +622,26 @@ struct ContentView: View {
                     }
                     .pickerStyle(SegmentedPickerStyle())
                     .frame(width: 160)
+                    
+                    if state.viewMode == .rgb {
+                        Divider()
+                            .frame(height: 18)
+                        
+                        Text("Цветосинтез:")
+                            .font(.system(size: 11))
+                        
+                        Picker("", selection: Binding(
+                            get: { state.colorSynthesisConfig.mode },
+                            set: { state.setColorSynthesisMode($0) }
+                        )) {
+                            ForEach(ColorSynthesisMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(MenuPickerStyle())
+                        .frame(width: 170)
+                    }
                 }
                 
                 Spacer()
@@ -662,46 +679,13 @@ struct ContentView: View {
                 }
             }
             
-            if !cube.is2D && state.viewMode == .gray {
-                VStack(alignment: .leading, spacing: 8) {
-                    let channelIdx = Int(state.currentChannel)
-                    let wavelengthText: String = {
-                        if let wavelengths = state.wavelengths,
-                           channelIdx < wavelengths.count {
-                            return String(format: " (%.2f нм)", wavelengths[channelIdx])
-                        }
-                        return ""
-                    }()
-                    
-                    HStack {
-                        Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
-                            .font(.system(size: 11))
-                            .monospacedDigit()
-                        
-                        Spacer()
-                        
-                        if state.isTrimMode {
-                            trimInfoView
-                        }
-                    }
-                    
-                    HStack(spacing: 8) {
-                        ChannelSliderView(
-                            currentChannel: $state.currentChannel,
-                            channelCount: state.channelCount,
-                            cube: cube,
-                            layout: state.activeLayout,
-                            isTrimMode: state.isTrimMode,
-                            trimStart: $state.trimStart,
-                            trimEnd: $state.trimEnd
-                        )
-                        
-                        trimControlButtons
-                    }
-                }
-            }
-            
             if !cube.is2D {
+                if state.viewMode == .gray {
+                    grayscaleChannelControls(cube: cube)
+                } else {
+                    colorSynthesisControls(cube: cube)
+                }
+                
                 HStack(spacing: 12) {
                     Button {
                         showWavelengthPopover.toggle()
@@ -740,6 +724,85 @@ struct ContentView: View {
         .onChange(of: state.cube?.dims.0) { _ in
             state.updateChannelCount()
         }
+    }
+    
+    private func grayscaleChannelControls(cube: HyperCube) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            let channelIdx = Int(state.currentChannel)
+            let wavelengthText: String = {
+                if let wavelengths = state.wavelengths,
+                   channelIdx < wavelengths.count {
+                    return String(format: " (%.2f нм)", wavelengths[channelIdx])
+                }
+                return ""
+            }()
+            
+            HStack {
+                Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                
+                Spacer()
+                
+                if state.isTrimMode {
+                    trimInfoView
+                }
+            }
+            
+            HStack(spacing: 8) {
+                ChannelSliderView(
+                    currentChannel: $state.currentChannel,
+                    channelCount: state.channelCount,
+                    cube: cube,
+                    layout: state.activeLayout,
+                    isTrimMode: state.isTrimMode,
+                    trimStart: $state.trimStart,
+                    trimEnd: $state.trimEnd
+                )
+                
+                trimControlButtons
+            }
+        }
+    }
+    
+    private func colorSynthesisControls(cube: HyperCube) -> some View {
+        let mapping = state.colorSynthesisConfig.mapping.clamped(maxChannelCount: max(state.channelCount, 0))
+        
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Каналы цветосинтеза")
+                        .font(.system(size: 11, weight: .medium))
+                    Text(colorMappingDescription(mapping: mapping))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            
+            ColorSynthesisSliderView(
+                channelCount: state.channelCount,
+                cube: cube,
+                layout: state.activeLayout,
+                mapping: mapping
+            ) { newMapping in
+                state.updateColorSynthesisMapping(newMapping, userInitiated: true)
+            }
+        }
+    }
+    
+    private func colorMappingDescription(mapping: RGBChannelMapping) -> String {
+        func channelInfo(label: String, index: Int) -> String {
+            if let wavelengths = state.wavelengths, index < wavelengths.count {
+                return "\(label): ch \(index) (\(String(format: "%.1f", wavelengths[index])) нм)"
+            }
+            return "\(label): ch \(index)"
+        }
+        
+        let red = channelInfo(label: "R", index: mapping.red)
+        let green = channelInfo(label: "G", index: mapping.green)
+        let blue = channelInfo(label: "B", index: mapping.blue)
+        return "\(red) • \(green) • \(blue)"
     }
     
     private var trimControlButtons: some View {

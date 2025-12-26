@@ -7,7 +7,7 @@ struct PendingExportInfo: Equatable {
     let wavelengths: Bool
     let matVariableName: String?
     let matWavelengthsAsVariable: Bool
-    let colorSynthesisMode: ColorSynthesisMode?
+    let colorSynthesisConfig: ColorSynthesisConfig?
 }
 
 enum ExportFormat: String, CaseIterable, Identifiable {
@@ -24,26 +24,6 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         case .mat: return "mat"
         case .tiff: return "png"
         case .quickPNG: return "png"
-        }
-    }
-}
-
-enum ColorSynthesisMode: String, CaseIterable, Identifiable {
-    case trueColorRGB = "True Color RGB"
-    
-    var id: String { rawValue }
-    
-    var description: String {
-        switch self {
-        case .trueColorRGB:
-            return "R=630нм, G=530нм, B=450нм"
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .trueColorRGB:
-            return "paintpalette"
         }
     }
 }
@@ -97,6 +77,9 @@ struct ExportView: View {
             footerView
         }
         .frame(width: 500, height: 450)
+        .onAppear {
+            colorSynthesisMode = state.colorSynthesisConfig.mode
+        }
     }
     
     private var headerView: some View {
@@ -186,10 +169,11 @@ struct ExportView: View {
                 .font(.system(size: 11, weight: .semibold))
             
             VStack(spacing: 8) {
-                ForEach(ColorSynthesisMode.allCases) { mode in
-                    Button(action: {
-                        colorSynthesisMode = mode
-                    }) {
+                    ForEach(ColorSynthesisMode.allCases) { mode in
+                        Button(action: {
+                            colorSynthesisMode = mode
+                            state.setColorSynthesisMode(mode)
+                        }) {
                         HStack(spacing: 12) {
                             Image(systemName: mode.iconName)
                                 .font(.system(size: 16))
@@ -460,7 +444,9 @@ struct ExportView: View {
             wavelengths: exportWavelengths,
             matVariableName: selectedFormat == .mat ? matVariableName : nil,
             matWavelengthsAsVariable: matWavelengthsAsVariable,
-            colorSynthesisMode: selectedFormat == .quickPNG ? colorSynthesisMode : nil
+            colorSynthesisConfig: selectedFormat == .quickPNG
+            ? ColorSynthesisConfig(mode: colorSynthesisMode, mapping: state.colorSynthesisConfig.mapping)
+            : nil
         )
         dismiss()
     }

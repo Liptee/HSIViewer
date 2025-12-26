@@ -1026,19 +1026,13 @@ struct OperationEditorView: View {
                 channelIndex: clampedChannel
             )
         case .rgb:
-            if let wavelengths = state.wavelengths, wavelengths.count >= totalChannels {
-                return ImageRenderer.renderRGB(
-                    cube: cube,
-                    layout: layout,
-                    wavelengths: wavelengths
-                )
-            } else {
-                return ImageRenderer.renderGrayscale(
-                    cube: cube,
-                    layout: layout,
-                    channelIndex: clampedChannel
-                )
-            }
+            guard totalChannels > 0 else { return nil }
+            return ImageRenderer.renderRGB(
+                cube: cube,
+                layout: layout,
+                wavelengths: state.wavelengths,
+                mapping: state.colorSynthesisConfig.mapping
+            )
         }
     }
     

@@ -17,6 +17,7 @@ class ImageRenderer {
         let dimsArr = [d0, d1, d2]
         
         let cCount = dimsArr[axes.channel]
+        guard cCount > 0 else { return nil }
         guard channelIndex >= 0 && channelIndex < cCount else { return nil }
         
         let h = dimsArr[axes.height]
@@ -45,8 +46,10 @@ class ImageRenderer {
     static func renderRGB(
         cube: HyperCube,
         layout: CubeLayout,
-        wavelengths: [Double]
+        wavelengths: [Double]?,
+        mapping: RGBChannelMapping
     ) -> NSImage? {
+        _ = wavelengths
         if cube.is2D {
             return render2DImage(cube: cube)
         }
@@ -57,18 +60,14 @@ class ImageRenderer {
         let dimsArr = [d0, d1, d2]
         
         let cCount = dimsArr[axes.channel]
-        guard wavelengths.count >= cCount else { return nil }
         
         let h = dimsArr[axes.height]
         let w = dimsArr[axes.width]
         
-        let targetR = 630.0
-        let targetG = 530.0
-        let targetB = 450.0
-        
-        let idxR = closestIndex(in: wavelengths, to: targetR, count: cCount)
-        let idxG = closestIndex(in: wavelengths, to: targetG, count: cCount)
-        let idxB = closestIndex(in: wavelengths, to: targetB, count: cCount)
+        let mapped = mapping.clamped(maxChannelCount: cCount)
+        let idxR = mapped.red
+        let idxG = mapped.green
+        let idxB = mapped.blue
         
         let sliceR = extractChannel(cube: cube, axes: axes, channelIndex: idxR, h: h, w: w)
         let sliceG = extractChannel(cube: cube, axes: axes, channelIndex: idxG, h: h, w: w)
@@ -107,21 +106,6 @@ class ImageRenderer {
         }
         
         return slice
-    }
-    
-    private static func closestIndex(in wavelengths: [Double], to target: Double, count: Int) -> Int {
-        var bestIdx = 0
-        var bestDist = Double.greatestFiniteMagnitude
-        
-        for i in 0..<count {
-            let d = abs(wavelengths[i] - target)
-            if d < bestDist {
-                bestDist = d
-                bestIdx = i
-            }
-        }
-        
-        return bestIdx
     }
     
     private static func createGrayscaleImage(pixels: [UInt8], width: Int, height: Int) -> NSImage? {
@@ -240,5 +224,3 @@ class ImageRenderer {
         return createGrayscaleImage(pixels: pixels, width: width, height: height)
     }
 }
-
-

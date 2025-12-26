@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published var loadError: String?
     
     @Published var viewMode: ViewMode = .gray
+    @Published var colorSynthesisConfig: ColorSynthesisConfig = .default(channelCount: 0, wavelengths: nil)
     
     @Published var wavelengths: [Double]? = nil {
         didSet {
@@ -27,6 +28,7 @@ final class AppState: ObservableObject {
             if oldValue == nil && wavelengths == nil { return }
             refreshSpectrumSamples()
             refreshROISamples()
+            refreshColorSynthesisDefaultsIfNeeded()
         }
     }
     @Published var lambdaStart: String = "400"
@@ -85,6 +87,7 @@ final class AppState: ObservableObject {
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
+    private var hasCustomColorSynthesisMapping: Bool = false
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -183,6 +186,7 @@ final class AppState: ObservableObject {
         guard let cube = cube else {
             channelCount = 0
             currentChannel = 0
+            clampColorSynthesisMapping()
             return
         }
         
@@ -193,6 +197,33 @@ final class AppState: ObservableObject {
         } else if Int(currentChannel) >= channelCount {
             currentChannel = Double(channelCount - 1)
         }
+        
+        clampColorSynthesisMapping()
+        refreshColorSynthesisDefaultsIfNeeded()
+    }
+    
+    func setColorSynthesisMode(_ mode: ColorSynthesisMode) {
+        colorSynthesisConfig.mode = mode
+        hasCustomColorSynthesisMapping = true
+    }
+    
+    func updateColorSynthesisMapping(_ mapping: RGBChannelMapping, userInitiated: Bool) {
+        colorSynthesisConfig.mapping = mapping.clamped(maxChannelCount: channelCount)
+        if userInitiated {
+            hasCustomColorSynthesisMapping = true
+        }
+    }
+    
+    private func refreshColorSynthesisDefaultsIfNeeded() {
+        guard !hasCustomColorSynthesisMapping else { return }
+        colorSynthesisConfig.mapping = RGBChannelMapping.defaultMapping(
+            channelCount: channelCount,
+            wavelengths: wavelengths
+        )
+    }
+    
+    private func clampColorSynthesisMapping() {
+        colorSynthesisConfig.mapping = colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount)
     }
     
     func setWavelengths(_ lambda: [Double]) {
@@ -839,7 +870,8 @@ final class AppState: ObservableObject {
             cube: prepared.cube,
             wavelengths: prepared.wavelengths,
             layout: prepared.layout,
-            baseName: baseName
+            baseName: baseName,
+            colorSynthesisConfig: entrySnapshot.colorSynthesisConfig
         )
     }
     
@@ -1046,6 +1078,8 @@ final class AppState: ObservableObject {
         imageOffset = snapshot.imageOffset
         spectralTrimRange = snapshot.spectralTrimRange
         roiAggregationMode = snapshot.roiAggregationMode
+        colorSynthesisConfig = snapshot.colorSynthesisConfig
+        hasCustomColorSynthesisMapping = true
         restoreSpectrumSamples(from: snapshot.spectrumSamples)
         restoreROISamples(from: snapshot.roiSamples)
         
@@ -1061,6 +1095,7 @@ final class AppState: ObservableObject {
         trimEnd = max(trimStart, min(snapshot.trimEnd, maxTrim))
         
         updateResolvedLayout()
+        clampColorSynthesisMapping()
         
         if pipelineAutoApply && !pipelineOperations.isEmpty {
             applyPipeline()
@@ -1097,6 +1132,8 @@ final class AppState: ObservableObject {
         isTrimMode = false
         spectralTrimRange = nil
         viewMode = .gray
+        colorSynthesisConfig = .default(channelCount: channelCount, wavelengths: wavelengths)
+        hasCustomColorSynthesisMapping = false
         layout = .auto
         resetSpectrumSelections()
         spectrumSpatialSize = nil
@@ -1138,6 +1175,11 @@ final class AppState: ObservableObject {
             )
         }
         
+        let clampedConfig = ColorSynthesisConfig(
+            mode: colorSynthesisConfig.mode,
+            mapping: colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount)
+        )
+        
         return CubeSessionSnapshot(
             pipelineOperations: pipelineOperations,
             pipelineAutoApply: pipelineAutoApply,
@@ -1158,7 +1200,8 @@ final class AppState: ObservableObject {
             imageOffset: imageOffset,
             spectrumSamples: descriptors,
             roiSamples: roiDescriptors,
-            roiAggregationMode: roiAggregationMode
+            roiAggregationMode: roiAggregationMode,
+            colorSynthesisConfig: clampedConfig
         )
     }
     

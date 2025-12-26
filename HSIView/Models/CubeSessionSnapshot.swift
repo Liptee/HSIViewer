@@ -22,6 +22,7 @@ struct CubeSessionSnapshot {
     var spectrumSamples: [SpectrumSampleDescriptor]
     var roiSamples: [SpectrumROISampleDescriptor]
     var roiAggregationMode: SpectrumROIAggregationMode
+    var colorSynthesisConfig: ColorSynthesisConfig
     
     static let empty = CubeSessionSnapshot(
         pipelineOperations: [],
@@ -43,7 +44,8 @@ struct CubeSessionSnapshot {
         imageOffset: .zero,
         spectrumSamples: [],
         roiSamples: [],
-        roiAggregationMode: .mean
+        roiAggregationMode: .mean,
+        colorSynthesisConfig: .default(channelCount: 0, wavelengths: nil)
     )
 }
 
