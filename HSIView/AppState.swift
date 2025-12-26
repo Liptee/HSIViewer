@@ -877,6 +877,25 @@ final class AppState: ObservableObject {
             }
         }
     }
+    
+    var canPropagateProcessing: Bool {
+        cube != nil && !libraryEntries.isEmpty
+    }
+    
+    func propagateProcessingToLibrary() {
+        guard let snapshot = makeSnapshot() else { return }
+        let clipboard = ProcessingClipboard(
+            pipelineOperations: snapshot.pipelineOperations,
+            spectralTrimRange: snapshot.spectralTrimRange,
+            trimStart: snapshot.trimStart,
+            trimEnd: snapshot.trimEnd
+        )
+        processingClipboard = clipboard
+        let entries = libraryEntries
+        for entry in entries {
+            pasteProcessing(to: entry)
+        }
+    }
 
     func beginLibraryExportProgress(total: Int) {
         DispatchQueue.main.async {

@@ -80,6 +80,15 @@ struct HSIViewApp: App {
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(appState.cube == nil)
             }
+            
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                
+                Button("Распространить обработку") {
+                    appState.propagateProcessingToLibrary()
+                }
+                .disabled(!appState.canPropagateProcessing)
+            }
         }
     }
     
