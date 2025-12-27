@@ -160,14 +160,14 @@ class TiffExporter {
             print("TiffExporter: Failed to create CGDataProvider")
             return nil
         }
-        
+            
         guard let cgImage = CGImage(
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
             bitsPerPixel: 8,
-            bytesPerRow: width,
-            space: colorSpace,
+                bytesPerRow: width,
+                space: colorSpace,
             bitmapInfo: bitmapInfo,
             provider: provider,
             decode: nil,

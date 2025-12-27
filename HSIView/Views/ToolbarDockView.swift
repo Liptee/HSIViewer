@@ -4,23 +4,20 @@ struct ToolbarDockView: View {
     @EnvironmentObject var state: AppState
     
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(AnalysisTool.allCases.filter { $0 != .none }) { tool in
-                ToolButton(
-                    tool: tool,
-                    isActive: state.activeAnalysisTool == tool
-                ) {
-                    state.toggleAnalysisTool(tool)
+        GlassCapsule(padding: 0) {
+            HStack(spacing: 6) {
+                ForEach(AnalysisTool.allCases.filter { $0 != .none }) { tool in
+                    ToolButton(
+                        tool: tool,
+                        isActive: state.activeAnalysisTool == tool
+                    ) {
+                        state.toggleAnalysisTool(tool)
+                    }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
-                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 1)
-        )
     }
 }
 

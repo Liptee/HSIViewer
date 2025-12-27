@@ -27,35 +27,35 @@ struct ImageInfoPanel: View {
                     isExpanded.toggle()
                 }
             }
-            
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    infoRow(title: "Формат", value: cube.sourceFormat)
-                    infoRow(title: "Тип данных", value: cube.originalDataType.rawValue)
-                    
-                    if cube.is2D {
-                        infoRow(title: "Тип", value: "2D изображение")
-                        if let dims2D = cube.dims2D {
-                            infoRow(title: "Размер", value: "\(dims2D.width) × \(dims2D.height)")
+                
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        infoRow(title: "Формат", value: cube.sourceFormat)
+                        infoRow(title: "Тип данных", value: cube.originalDataType.rawValue)
+                        
+                        if cube.is2D {
+                            infoRow(title: "Тип", value: "2D изображение")
+                            if let dims2D = cube.dims2D {
+                                infoRow(title: "Размер", value: "\(dims2D.width) × \(dims2D.height)")
+                            }
+                        } else {
+                            infoRow(title: "Разрешение", value: cube.resolution)
+                            infoRow(title: "Каналы", value: "\(cube.channelCount(for: layout))")
                         }
-                    } else {
-                        infoRow(title: "Разрешение", value: cube.resolution)
-                        infoRow(title: "Каналы", value: "\(cube.channelCount(for: layout))")
-                    }
-                    
-                    Divider()
-                        .padding(.vertical, 4)
-                    
-                    if let stats = cachedStats {
-                        infoRow(title: "Мин. значение", value: String(format: "%.4g", stats.min))
-                        infoRow(title: "Макс. значение", value: String(format: "%.4g", stats.max))
-                        infoRow(title: "Среднее", value: String(format: "%.4g", stats.mean))
-                        infoRow(title: "Станд. откл.", value: String(format: "%.4g", stats.stdDev))
-                    }
-                    
-                    Divider()
-                        .padding(.vertical, 4)
-                    
+                        
+                        Divider()
+                            .padding(.vertical, 4)
+                        
+                        if let stats = cachedStats {
+                            infoRow(title: "Мин. значение", value: String(format: "%.4g", stats.min))
+                            infoRow(title: "Макс. значение", value: String(format: "%.4g", stats.max))
+                            infoRow(title: "Среднее", value: String(format: "%.4g", stats.mean))
+                            infoRow(title: "Станд. откл.", value: String(format: "%.4g", stats.stdDev))
+                        }
+                        
+                        Divider()
+                            .padding(.vertical, 4)
+                        
                     infoRow(title: "Размер в памяти", value: formatMemorySize(bytes: cube.storage.sizeInBytes))
                 }
                 .padding(8)

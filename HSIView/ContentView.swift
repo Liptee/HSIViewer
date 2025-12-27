@@ -17,30 +17,32 @@ struct ContentView: View {
     
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                mainContent
-                    .disabled(state.isBusy)
-                
-                if state.isBusy {
-                    ZStack {
-                        Color.black.opacity(0.25)
-                            .ignoresSafeArea()
-                        BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
-                    }
-                    .transition(.opacity)
-                }
-                
-                if let exportInfo = state.libraryExportProgressState {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            LibraryExportToastView(state: exportInfo)
-                                .frame(maxWidth: 280)
+            GlassEffectContainerWrapper {
+                ZStack {
+                    mainContent
+                        .disabled(state.isBusy)
+                    
+                    if state.isBusy {
+                        ZStack {
+                            Color.black.opacity(0.25)
+                                .ignoresSafeArea()
+                            BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
                         }
-                        Spacer()
+                        .transition(.opacity)
                     }
-                    .padding(16)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    
+                    if let exportInfo = state.libraryExportProgressState {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                LibraryExportToastView(state: exportInfo)
+                                    .frame(maxWidth: 280)
+                            }
+                            Spacer()
+                        }
+                        .padding(16)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -61,9 +63,9 @@ struct ContentView: View {
                 }
                 
                 GeometryReader { geo in
-                    ZStack {
-                        if let cube = state.cube {
-                            cubeView(cube: cube, geoSize: geo.size)
+                        ZStack {
+                            if let cube = state.cube {
+                                cubeView(cube: cube, geoSize: geo.size)
                                 .scaleEffect(state.zoomScale * tempZoomScale)
                                 .offset(
                                     x: state.imageOffset.width + dragOffset.width,
@@ -85,23 +87,23 @@ struct ContentView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .contentShape(Rectangle())
-                    .gesture(
-                        MagnificationGesture()
-                            .onChanged { value in
-                                tempZoomScale = value
-                            }
-                            .onEnded { value in
-                                state.zoomScale *= value
-                                state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
-                                tempZoomScale = 1.0
-                            }
-                    )
+                                    .gesture(
+                                        MagnificationGesture()
+                                            .onChanged { value in
+                                                tempZoomScale = value
+                                            }
+                                            .onEnded { value in
+                                                state.zoomScale *= value
+                                                state.zoomScale = max(0.5, min(state.zoomScale, 10.0))
+                                                tempZoomScale = 1.0
+                                            }
+                                    )
                     .highPriorityGesture(
                         DragGesture(minimumDistance: 1)
                             .onChanged { value in
                                 if state.activeAnalysisTool == .spectrumGraphROI {
                                     handleROIDrag(value: value, geoSize: geo.size)
-                                } else {
+                        } else {
                                     dragOffset = value.translation
                                 }
                             }
@@ -185,7 +187,6 @@ struct ContentView: View {
                             .padding(12)
                         }
                         .frame(width: 260)
-                        .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
                         
                         GraphPanel()
                             .environmentObject(state)
@@ -196,9 +197,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             
             if let cube = state.cube {
+                GlassPanel(cornerRadius: 0, padding: 8) {
                 bottomControls(cube: cube)
-                    .padding(8)
-                    .border(Color(NSColor.separatorColor), width: 0.5)
+                }
             }
         }
         .frame(minWidth: 960, minHeight: 500)
@@ -432,15 +433,15 @@ struct ContentView: View {
                         let target = destinationFolder.appendingPathComponent(baseName)
                         result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)
                     case .quickPNG:
-                        let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")
+                            let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")
                         let config = colorSynthesisConfig ?? payload.colorSynthesisConfig
-                        result = QuickPNGExporter.export(
-                            cube: payload.cube,
-                            to: target,
-                            layout: payload.layout,
-                            wavelengths: payload.wavelengths,
+                            result = QuickPNGExporter.export(
+                                cube: payload.cube,
+                                to: target,
+                                layout: payload.layout,
+                                wavelengths: payload.wavelengths,
                             config: config
-                        )
+                            )
                     }
                     
                     switch result {
@@ -472,23 +473,23 @@ struct ContentView: View {
     private var topBar: some View {
         HStack(alignment: .center) {
             HStack(spacing: 8) {
-                if let url = state.cubeURL {
-                    Text(url.lastPathComponent)
+            if let url = state.cubeURL {
+                Text(url.lastPathComponent)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } else {
-                    Text("Файл не выбран")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text("Файл не выбран")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                
-                if let error = state.loadError {
+                    .foregroundColor(.secondary)
+            }
+            
+            if let error = state.loadError {
                     Text("•")
                         .foregroundColor(.secondary)
-                    Text(error)
+                Text(error)
                         .font(.system(size: 10))
-                        .foregroundColor(.red)
+                    .foregroundColor(.red)
                         .lineLimit(1)
                 }
             }
@@ -552,16 +553,16 @@ struct ContentView: View {
     }
     
     private func spectrumImageView(nsImage: NSImage, geoSize: CGSize) -> some View {
-        let fittedSize = fittingSize(imageSize: nsImage.size, in: geoSize)
-        
+                    let fittedSize = fittingSize(imageSize: nsImage.size, in: geoSize)
+                    
         return ZStack(alignment: .topLeading) {
-            Image(nsImage: nsImage)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: fittedSize.width,
-                       height: fittedSize.height,
-                       alignment: .center)
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: fittedSize.width,
+                               height: fittedSize.height,
+                               alignment: .center)
             
             if state.activeAnalysisTool == .spectrumGraph {
                 SpectrumPointsOverlay(
@@ -727,44 +728,44 @@ struct ContentView: View {
     }
     
     private func grayscaleChannelControls(cube: HyperCube) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            let channelIdx = Int(state.currentChannel)
-            let wavelengthText: String = {
-                if let wavelengths = state.wavelengths,
-                   channelIdx < wavelengths.count {
-                    return String(format: " (%.2f нм)", wavelengths[channelIdx])
-                }
-                return ""
-            }()
-            
-            HStack {
-                Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
-                    .font(.system(size: 11))
-                    .monospacedDigit()
-                
-                Spacer()
-                
-                if state.isTrimMode {
-                    trimInfoView
+                VStack(alignment: .leading, spacing: 8) {
+                    let channelIdx = Int(state.currentChannel)
+                    let wavelengthText: String = {
+                        if let wavelengths = state.wavelengths,
+                           channelIdx < wavelengths.count {
+                            return String(format: " (%.2f нм)", wavelengths[channelIdx])
+                        }
+                        return ""
+                    }()
+                    
+                    HStack {
+                        Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
+                            .font(.system(size: 11))
+                            .monospacedDigit()
+                        
+                        Spacer()
+                        
+                        if state.isTrimMode {
+                            trimInfoView
+                        }
+                    }
+                    
+                    HStack(spacing: 8) {
+                        ChannelSliderView(
+                            currentChannel: $state.currentChannel,
+                            channelCount: state.channelCount,
+                            cube: cube,
+                            layout: state.activeLayout,
+                            isTrimMode: state.isTrimMode,
+                            trimStart: $state.trimStart,
+                            trimEnd: $state.trimEnd
+                        )
+                        
+                        trimControlButtons
+                    }
                 }
             }
             
-            HStack(spacing: 8) {
-                ChannelSliderView(
-                    currentChannel: $state.currentChannel,
-                    channelCount: state.channelCount,
-                    cube: cube,
-                    layout: state.activeLayout,
-                    isTrimMode: state.isTrimMode,
-                    trimStart: $state.trimStart,
-                    trimEnd: $state.trimEnd
-                )
-                
-                trimControlButtons
-            }
-        }
-    }
-    
     private func colorSynthesisControls(cube: HyperCube) -> some View {
         let mapping = state.colorSynthesisConfig.mapping.clamped(maxChannelCount: max(state.channelCount, 0))
         
@@ -775,8 +776,8 @@ struct ContentView: View {
                         .font(.system(size: 11, weight: .medium))
                     Text(colorMappingDescription(mapping: mapping))
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
+                                .foregroundColor(.secondary)
+                        }
                 Spacer()
             }
             

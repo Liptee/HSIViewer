@@ -10,24 +10,23 @@ struct PipelinePanel: View {
     @FocusState private var hasListFocus: Bool
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            
-            Divider()
-            
-            if state.pipelineOperations.isEmpty {
-                emptyState
-            } else {
-                operationsList
+        GlassPanel(cornerRadius: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                
+                Divider()
+                
+                if state.pipelineOperations.isEmpty {
+                    emptyState
+                } else {
+                    operationsList
+                }
+                
+                Divider()
+                
+                footer
             }
-            
-            Divider()
-            
-            footer
         }
-        .background(Color(NSColor.windowBackgroundColor))
-        .cornerRadius(8)
-        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 2, y: 2)
         .frame(width: 280)
         .sheet(item: $editingOperation) { operation in
             OperationEditorView(operation: $editingOperation)
@@ -45,7 +44,6 @@ struct PipelinePanel: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(NSColor.controlBackgroundColor))
     }
     
     private var emptyState: some View {

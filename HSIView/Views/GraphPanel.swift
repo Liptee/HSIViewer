@@ -4,6 +4,7 @@ import Charts
 struct GraphPanel: View {
     @EnvironmentObject var state: AppState
     @State private var selectedSampleID: UUID?
+    @State private var editingSampleID: UUID?
     @FocusState private var hasFocus: Bool
     let panelWidth: CGFloat = 400
     
@@ -58,13 +59,13 @@ struct GraphPanel: View {
     }
     
     var body: some View {
-        ZStack(alignment: .leading) {
+        HStack(spacing: 0) {
+            toggleButton
+            
             if state.isGraphPanelExpanded {
                 expandedPanel
                     .transition(.move(edge: .trailing))
             }
-            
-            toggleButton
         }
         .animation(.easeInOut(duration: 0.25), value: state.isGraphPanelExpanded)
     }
@@ -101,8 +102,11 @@ struct GraphPanel: View {
             }
         }
         .frame(width: panelWidth)
-        .background(Color(NSColor.windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
         .shadow(color: Color.black.opacity(0.2), radius: 12, x: -4, y: 0)
         .focusable()
         .focusEffectDisabled()
@@ -143,7 +147,6 @@ struct GraphPanel: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(Color(NSColor.controlBackgroundColor))
     }
     
     private func emptyState(icon: String, title: String, subtitle: String) -> some View {
@@ -188,7 +191,8 @@ struct GraphPanel: View {
                     },
                     onRename: { newName in
                         state.renameSpectrumSample(id: sample.id, to: newName)
-                    }
+                    },
+                    editingSampleID: $editingSampleID
                 )
             }
             .padding(.top, 4)
@@ -210,7 +214,8 @@ struct GraphPanel: View {
                     },
                     onRename: { newName in
                         state.renameROISample(id: sample.id, to: newName)
-                    }
+                    },
+                    editingSampleID: $editingSampleID
                 )
             }
             .padding(.top, 4)
@@ -221,19 +226,18 @@ struct GraphPanel: View {
         Button(action: {
             state.toggleGraphPanel()
         }) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(Color(NSColor.controlBackgroundColor))
-                    .frame(width: 16, height: 48)
-                    .shadow(color: Color.black.opacity(0.15), radius: 4, x: -2, y: 0)
-                
-                Image(systemName: state.isGraphPanelExpanded ? "chevron.right" : "chevron.left")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.secondary)
-            }
+            Image(systemName: state.isGraphPanelExpanded ? "chevron.right" : "chevron.left")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .frame(width: 20, height: 56)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .offset(x: state.isGraphPanelExpanded ? -8 : 0)
         .help(state.isGraphPanelExpanded ? "Свернуть панель" : "Развернуть панель")
     }
 }
@@ -299,6 +303,7 @@ private struct SampleRow: View {
     let title: String
     let onSelect: () -> Void
     let onRename: (String?) -> Void
+    @Binding var editingSampleID: UUID?
     
     @State private var isEditing: Bool = false
     @State private var nameText: String = ""
@@ -342,6 +347,11 @@ private struct SampleRow: View {
         .onAppear {
             nameText = sample.displayName ?? ""
         }
+        .onChange(of: editingSampleID) { newValue in
+            guard newValue == sample.id else { return }
+            startEditing()
+            editingSampleID = nil
+        }
     }
     
     private func startEditing() {
@@ -361,6 +371,7 @@ private struct ROISampleRow: View {
     let title: String
     let onSelect: () -> Void
     let onRename: (String?) -> Void
+    @Binding var editingSampleID: UUID?
     
     @State private var isEditing: Bool = false
     @State private var nameText: String = ""
@@ -403,6 +414,11 @@ private struct ROISampleRow: View {
         }
         .onAppear {
             nameText = sample.displayName ?? ""
+        }
+        .onChange(of: editingSampleID) { newValue in
+            guard newValue == sample.id else { return }
+            startEditing()
+            editingSampleID = nil
         }
     }
     
@@ -464,16 +480,29 @@ extension GraphPanel {
                 
                 if let selectedID = selectedSampleID,
                    let sample = samples.first(where: { $0.id == selectedID }) {
-                    Button(role: .destructive) {
-                        deletePointSamples([sample])
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "trash")
-                            Text("Удалить точку")
+                    HStack(spacing: 8) {
+                        Button {
+                            editingSampleID = sample.id
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "pencil")
+                                Text("Переименовать")
+                            }
                         }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        Button(role: .destructive) {
+                            deletePointSamples([sample])
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                Text("Удалить точку")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
         }
@@ -529,16 +558,29 @@ extension GraphPanel {
                 
                 if let selectedID = selectedSampleID,
                    let sample = samples.first(where: { $0.id == selectedID }) {
-                    Button(role: .destructive) {
-                        deleteROISamples([sample])
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "trash")
-                            Text("Удалить область")
+                    HStack(spacing: 8) {
+                        Button {
+                            editingSampleID = sample.id
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "pencil")
+                                Text("Переименовать")
+                            }
                         }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        
+                        Button(role: .destructive) {
+                            deleteROISamples([sample])
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                Text("Удалить область")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
         }
