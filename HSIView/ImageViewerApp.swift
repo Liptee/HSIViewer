@@ -89,6 +89,14 @@ struct HSIViewApp: App {
                 }
                 .disabled(!appState.canPropagateProcessing)
             }
+            
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Button("График") {
+                    GraphWindowManager.shared.show(appState: appState)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+            }
         }
     }
     

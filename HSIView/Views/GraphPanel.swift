@@ -171,7 +171,7 @@ struct GraphPanel: View {
         emptyState(
             icon: "slider.horizontal.3",
             title: "Выберите инструмент",
-            subtitle: "Активируйте анализ в доке справа"
+            subtitle: "Активируйте анализ в доке сверху"
         )
     }
     
