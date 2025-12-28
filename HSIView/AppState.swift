@@ -240,6 +240,15 @@ final class AppState: ObservableObject {
         guard let cube = cube else { return }
         let layout = activeLayout
         var configToApply = pcaPendingConfig ?? colorSynthesisConfig.pcaConfig
+        var roiRect: SpectrumROIRect?
+        if configToApply.computeScope == .roi {
+            guard let roiID = configToApply.selectedROI,
+                  let roi = displayedROISamples.first(where: { $0.id == roiID })?.rect else {
+                pcaProgressMessage = "Выберите ROI для PCA"
+                return
+            }
+            roiRect = roi
+        }
         pcaRenderedImage = nil
         isPCAApplying = true
         pcaProgressMessage = "Подготовка…"
@@ -250,6 +259,7 @@ final class AppState: ObservableObject {
                 cube: cube,
                 layout: layout,
                 config: configToApply,
+                roi: roiRect,
                 progress: { message in
                     DispatchQueue.main.async {
                         self.pcaProgressMessage = message
@@ -286,6 +296,10 @@ final class AppState: ObservableObject {
             colorSynthesisConfig.pcaConfig.clipUpper = nil
             colorSynthesisConfig.pcaConfig.explainedVariance = nil
             colorSynthesisConfig.pcaConfig.sourceCubeID = nil
+        }
+        if let roiID = colorSynthesisConfig.pcaConfig.selectedROI,
+           !displayedROISamples.contains(where: { $0.id == roiID }) {
+            colorSynthesisConfig.pcaConfig.selectedROI = displayedROISamples.first?.id
         }
     }
     

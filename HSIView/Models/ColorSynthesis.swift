@@ -64,6 +64,7 @@ struct PCAVisualizationConfig: Equatable {
     var mapping: PCAComponentMapping
     var lockBasis: Bool
     var clipTopPercent: Double
+    var selectedROI: UUID?
     
     // Кэш вычисленной базы
     var basis: [[Double]]?  // каждая компонента размера C
@@ -80,6 +81,7 @@ struct PCAVisualizationConfig: Equatable {
             mapping: PCAComponentMapping(red: 0, green: 1, blue: 2),
             lockBasis: false,
             clipTopPercent: 0.5,
+            selectedROI: nil,
             basis: nil,
             mean: nil,
             std: nil,

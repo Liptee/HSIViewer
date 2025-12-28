@@ -17,6 +17,7 @@ final class PCARenderer {
         cube: HyperCube,
         layout: CubeLayout,
         config: PCAVisualizationConfig,
+        roi: SpectrumROIRect? = nil,
         progress: ((String) -> Void)? = nil
     ) -> PCAImageResult {
         progress?("Сбор статистики…")
@@ -27,19 +28,32 @@ final class PCARenderer {
         let dims = cube.dims
         let dimsArr = [dims.0, dims.1, dims.2]
         let channels = dimsArr[axes.channel]
-        let height = dimsArr[axes.height]
-        let width = dimsArr[axes.width]
+        let fullHeight = dimsArr[axes.height]
+        let fullWidth = dimsArr[axes.width]
         guard channels >= 1 else {
             return PCAImageResult(image: nil, updatedConfig: config)
         }
         
-        let totalPixels = height * width
+        let region: SpectrumROIRect = {
+            if let roi {
+                return roi
+            }
+            return SpectrumROIRect(minX: 0, minY: 0, width: fullWidth, height: fullHeight)
+        }()
+        
+        let regionWidth = region.width
+        let regionHeight = region.height
+        guard regionWidth > 0, regionHeight > 0 else {
+            return PCAImageResult(image: nil, updatedConfig: config)
+        }
+        
+        let totalPixels = regionWidth * regionHeight
         if channels == 1 {
             // Одноканальный случай: просто нормализация в градации серого
-            let slice = extractChannel(cube: cube, axes: axes, channelIndex: 0, h: height, w: width)
+            let slice = extractChannel(cube: cube, axes: axes, channelIndex: 0, region: region)
             let normalized = normalize(slice)
             let pixels = toUInt8(normalized)
-            let image = createRGBImage(r: pixels, g: pixels, b: pixels, width: width, height: height)
+            let image = createRGBImage(r: pixels, g: pixels, b: pixels, width: region.width, height: region.height)
             return PCAImageResult(image: image, updatedConfig: config)
         }
         
@@ -54,13 +68,14 @@ final class PCARenderer {
             return projectWithExistingBasis(
                 cube: cube,
                 layoutAxes: axes,
-                width: width,
-                height: height,
+                width: regionWidth,
+                height: regionHeight,
                 channels: channels,
                 config: config,
                 mean: mean,
                 std: config.std ?? Array(repeating: 1.0, count: channels),
-                basis: basis
+                basis: basis,
+                region: region
             )
         }
         
@@ -79,13 +94,15 @@ final class PCARenderer {
         clipSamples = clipSamples.map { _ in [] }
         
         for linear in stride(from: 0, to: totalPixels, by: statsStride) {
-            let (hIdx, wIdx) = linearToHW(linear: linear, width: width)
+            let (hIdx, wIdx) = linearToHW(linear: linear, width: region.width)
+            let srcY = region.minY + hIdx
+            let srcX = region.minX + wIdx
             var vector = [Double](repeating: 0.0, count: channels)
             for c in 0..<channels {
                 var idx3 = [0, 0, 0]
                 idx3[axes.channel] = c
-                idx3[axes.height] = hIdx
-                idx3[axes.width] = wIdx
+                idx3[axes.height] = srcY
+                idx3[axes.width] = srcX
                 let idx = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
                 let raw = cube.getValue(at: idx)
                 vector[c] = preprocessValue(raw, mode: config.preprocess)
@@ -125,13 +142,15 @@ final class PCARenderer {
         var cov = Array(repeating: 0.0, count: channels * channels)
         var usedSamples = 0
         for linear in stride(from: 0, to: totalPixels, by: sampleStride) {
-            let (hIdx, wIdx) = linearToHW(linear: linear, width: width)
+            let (hIdx, wIdx) = linearToHW(linear: linear, width: region.width)
+            let srcY = region.minY + hIdx
+            let srcX = region.minX + wIdx
             var centered = [Double](repeating: 0.0, count: channels)
             for c in 0..<channels {
                 var idx3 = [0, 0, 0]
                 idx3[axes.channel] = c
-                idx3[axes.height] = hIdx
-                idx3[axes.width] = wIdx
+                idx3[axes.height] = srcY
+                idx3[axes.width] = srcX
                 let idx = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
                 let raw = cube.getValue(at: idx)
                 var val = preprocessValue(raw, mode: config.preprocess)
@@ -178,13 +197,14 @@ final class PCARenderer {
         return projectWithExistingBasis(
             cube: cube,
             layoutAxes: axes,
-            width: width,
-            height: height,
+            width: regionWidth,
+            height: regionHeight,
             channels: channels,
             config: updatedConfig,
             mean: mean,
             std: std,
-            basis: basis
+            basis: basis,
+            region: region
         )
     }
     
@@ -199,7 +219,8 @@ final class PCARenderer {
         config: PCAVisualizationConfig,
         mean: [Double],
         std: [Double],
-        basis: [[Double]]
+        basis: [[Double]],
+        region: SpectrumROIRect
     ) -> PCAImageResult {
         let totalPixels = width * height
         let mapping = config.mapping
@@ -211,13 +232,15 @@ final class PCARenderer {
         var projections: [[Double]] = Array(repeating: [Double](repeating: 0.0, count: totalPixels), count: components.count)
         
         for linear in 0..<totalPixels {
-            let (hIdx, wIdx) = linearToHW(linear: linear, width: width)
+            let (hIdx, wIdx) = linearToHW(linear: linear, width: region.width)
+            let srcY = region.minY + hIdx
+            let srcX = region.minX + wIdx
             var vector = [Double](repeating: 0.0, count: channels)
             for c in 0..<channels {
                 var idx3 = [0, 0, 0]
                 idx3[layoutAxes.channel] = c
-                idx3[layoutAxes.height] = hIdx
-                idx3[layoutAxes.width] = wIdx
+                idx3[layoutAxes.height] = srcY
+                idx3[layoutAxes.width] = srcX
                 let idx = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
                 var val = cube.getValue(at: idx)
                 val = preprocessValue(val, mode: config.preprocess)
@@ -244,7 +267,7 @@ final class PCARenderer {
         let pixelsG = toUInt8(normalize(projections[mapped.green], minVal: pcMin[mapped.green], maxVal: pcMax[mapped.green]))
         let pixelsB = toUInt8(normalize(projections[mapped.blue], minVal: pcMin[mapped.blue], maxVal: pcMax[mapped.blue]))
         
-        let image = createRGBImage(r: pixelsR, g: pixelsG, b: pixelsB, width: width, height: height)
+        let image = createRGBImage(r: pixelsR, g: pixelsG, b: pixelsB, width: region.width, height: region.height)
         return PCAImageResult(image: image, updatedConfig: config)
     }
     
@@ -337,20 +360,21 @@ final class PCARenderer {
         cube: HyperCube,
         axes: (channel: Int, height: Int, width: Int),
         channelIndex: Int,
-        h: Int,
-        w: Int
+        region: SpectrumROIRect
     ) -> [Double] {
-        var slice = [Double](repeating: 0.0, count: h * w)
+        var slice = [Double](repeating: 0.0, count: region.width * region.height)
         
-        for y in 0..<h {
-            for x in 0..<w {
+        for y in 0..<region.height {
+            for x in 0..<region.width {
+                let srcY = region.minY + y
+                let srcX = region.minX + x
                 var idx3 = [0, 0, 0]
                 idx3[axes.channel] = channelIndex
-                idx3[axes.height] = y
-                idx3[axes.width] = x
+                idx3[axes.height] = srcY
+                idx3[axes.width] = srcX
                 
                 let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
-                slice[y * w + x] = cube.getValue(at: lin)
+                slice[y * region.width + x] = cube.getValue(at: lin)
             }
         }
         

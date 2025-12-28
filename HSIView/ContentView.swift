@@ -882,6 +882,29 @@ struct ContentView: View {
                 .frame(width: 140, alignment: .leading)
             }
             
+            if config.computeScope == .roi {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Выбор ROI для PCA")
+                        .font(.system(size: 11, weight: .medium))
+                    Picker("ROI", selection: Binding(
+                        get: { config.selectedROI ?? state.displayedROISamples.first?.id },
+                        set: { newID in
+                            state.updatePCAConfig { $0.selectedROI = newID }
+                        })) {
+                        if state.displayedROISamples.isEmpty {
+                            Text("Нет сохранённых ROI").tag(Optional<UUID>.none)
+                        } else {
+                            ForEach(state.displayedROISamples) { sample in
+                                Text(sample.displayName ?? "ROI \(sample.id.uuidString.prefix(6))")
+                                    .tag(Optional(sample.id))
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 260)
+                }
+            }
+            
             VStack(alignment: .leading, spacing: 8) {
                 Text("Маппинг компонентов → RGB")
                     .font(.system(size: 11, weight: .medium))
@@ -964,19 +987,37 @@ struct ContentView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(state.isPCAApplying || state.cube == nil)
+                .disabled(
+                    state.isPCAApplying
+                    || state.cube == nil
+                    || (config.computeScope == .roi && (config.selectedROI == nil && state.displayedROISamples.isEmpty))
+                )
                 
-                if state.isPCAApplying {
-                    ProgressView(state.pcaProgressMessage ?? "Обработка…")
-                        .progressViewStyle(.linear)
-                        .frame(width: 180)
-                } else if state.pcaRenderedImage == nil {
-                    Text("Настройте параметры и нажмите «Применить»")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
+            if state.isPCAApplying {
+                ProgressView(state.pcaProgressMessage ?? "Обработка…")
+                    .progressViewStyle(.linear)
+                    .frame(width: 180)
+            } else if state.pcaRenderedImage == nil {
+                Text("Настройте параметры и нажмите «Применить»")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
             }
         }
+        .onAppear {
+            if config.computeScope == .roi,
+               config.selectedROI == nil,
+               let first = state.displayedROISamples.first?.id {
+                state.updatePCAConfig { $0.selectedROI = first }
+            }
+        }
+        .onChange(of: config.computeScope) { scope in
+            if scope == .roi,
+               config.selectedROI == nil,
+               let first = state.displayedROISamples.first?.id {
+                state.updatePCAConfig { $0.selectedROI = first }
+            }
+        }
+    }
     }
     
     private func pcaComponentPicker(label: String, value: Int, options: [Int], onChange: @escaping (Int) -> Void) -> some View {
