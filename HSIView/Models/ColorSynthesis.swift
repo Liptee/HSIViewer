@@ -2,6 +2,7 @@ import Foundation
 
 enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
     case trueColorRGB = "True Color RGB"
+    case pcaVisualization = "PCA visualization"
     
     var id: String { rawValue }
     
@@ -9,6 +10,8 @@ enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .trueColorRGB:
             return "R=630нм, G=530нм, B=450нм"
+        case .pcaVisualization:
+            return "Информативная псевдо-цветность через PCA"
         }
     }
     
@@ -16,7 +19,74 @@ enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .trueColorRGB:
             return "paintpalette"
+        case .pcaVisualization:
+            return "point.3.filled.trianglepath"
         }
+    }
+}
+
+enum PCAComputeScope: String, CaseIterable, Identifiable {
+    case fullImage = "Полный кадр"
+    case roi = "ROI"
+    case masked = "Маска"
+    
+    var id: String { rawValue }
+}
+
+enum PCAPreprocess: String, CaseIterable, Identifiable {
+    case none = "Без предобработки"
+    case meanCenter = "Mean-center"
+    case standardize = "Standardize"
+    case log = "Log(x+1)"
+    
+    var id: String { rawValue }
+}
+
+struct PCAComponentMapping: Equatable {
+    var red: Int
+    var green: Int
+    var blue: Int
+    
+    func clamped(maxComponents: Int) -> PCAComponentMapping {
+        guard maxComponents > 0 else { return self }
+        let maxIndex = maxComponents - 1
+        return PCAComponentMapping(
+            red: max(0, min(red, maxIndex)),
+            green: max(0, min(green, maxIndex)),
+            blue: max(0, min(blue, maxIndex))
+        )
+    }
+}
+
+struct PCAVisualizationConfig: Equatable {
+    var computeScope: PCAComputeScope
+    var preprocess: PCAPreprocess
+    var mapping: PCAComponentMapping
+    var lockBasis: Bool
+    var clipTopPercent: Double
+    
+    // Кэш вычисленной базы
+    var basis: [[Double]]?  // каждая компонента размера C
+    var mean: [Double]?
+    var std: [Double]?
+    var explainedVariance: [Double]?
+    var sourceCubeID: UUID?
+    var clipUpper: [Double]?
+    
+    static func `default`() -> PCAVisualizationConfig {
+        PCAVisualizationConfig(
+            computeScope: .fullImage,
+            preprocess: .meanCenter,
+            mapping: PCAComponentMapping(red: 0, green: 1, blue: 2),
+            lockBasis: false,
+            clipTopPercent: 0.5,
+            basis: nil,
+            mean: nil,
+            std: nil,
+            explainedVariance: nil,
+            sourceCubeID: nil,
+            clipUpper: nil
+        )
     }
 }
 
@@ -85,11 +155,13 @@ struct RGBChannelMapping: Equatable {
 struct ColorSynthesisConfig: Equatable {
     var mode: ColorSynthesisMode
     var mapping: RGBChannelMapping
+    var pcaConfig: PCAVisualizationConfig
     
     static func `default`(channelCount: Int, wavelengths: [Double]?) -> ColorSynthesisConfig {
         ColorSynthesisConfig(
             mode: .trueColorRGB,
-            mapping: .defaultMapping(channelCount: channelCount, wavelengths: wavelengths)
+            mapping: .defaultMapping(channelCount: channelCount, wavelengths: wavelengths),
+            pcaConfig: .default()
         )
     }
 }

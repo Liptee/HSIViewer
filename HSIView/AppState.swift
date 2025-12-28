@@ -87,6 +87,10 @@ final class AppState: ObservableObject {
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
+    @Published var pcaPendingConfig: PCAVisualizationConfig?
+    @Published var pcaRenderedImage: NSImage?
+    @Published var isPCAApplying: Bool = false
+    @Published var pcaProgressMessage: String?
     private var hasCustomColorSynthesisMapping: Bool = false
     private var processingClipboard: ProcessingClipboard? {
         didSet {
@@ -205,6 +209,9 @@ final class AppState: ObservableObject {
     func setColorSynthesisMode(_ mode: ColorSynthesisMode) {
         colorSynthesisConfig.mode = mode
         hasCustomColorSynthesisMapping = true
+        if mode == .pcaVisualization {
+            pcaPendingConfig = colorSynthesisConfig.pcaConfig
+        }
     }
     
     func updateColorSynthesisMapping(_ mapping: RGBChannelMapping, userInitiated: Bool) {
@@ -214,16 +221,84 @@ final class AppState: ObservableObject {
         }
     }
     
+    func updatePCAConfig(_ updater: (inout PCAVisualizationConfig) -> Void) {
+        if pcaPendingConfig == nil {
+            pcaPendingConfig = colorSynthesisConfig.pcaConfig
+        }
+        updater(&pcaPendingConfig!)
+        hasCustomColorSynthesisMapping = true
+        if let pending = pcaPendingConfig, !pending.lockBasis {
+            pcaPendingConfig?.basis = nil
+            pcaPendingConfig?.clipUpper = nil
+            pcaPendingConfig?.explainedVariance = nil
+            pcaPendingConfig?.sourceCubeID = nil
+        }
+    }
+
+    func applyPCAVisualization() {
+        guard !isPCAApplying else { return }
+        guard let cube = cube else { return }
+        let layout = activeLayout
+        var configToApply = pcaPendingConfig ?? colorSynthesisConfig.pcaConfig
+        pcaRenderedImage = nil
+        isPCAApplying = true
+        pcaProgressMessage = "Подготовка…"
+        
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = PCARenderer.render(
+                cube: cube,
+                layout: layout,
+                config: configToApply,
+                progress: { message in
+                    DispatchQueue.main.async {
+                        self.pcaProgressMessage = message
+                    }
+                }
+            )
+            
+            DispatchQueue.main.async {
+                self.colorSynthesisConfig.pcaConfig = result.updatedConfig
+                self.pcaPendingConfig = nil
+                self.pcaRenderedImage = result.image
+                self.isPCAApplying = false
+                self.pcaProgressMessage = nil
+            }
+        }
+    }
+    
     private func refreshColorSynthesisDefaultsIfNeeded() {
         guard !hasCustomColorSynthesisMapping else { return }
         colorSynthesisConfig.mapping = RGBChannelMapping.defaultMapping(
             channelCount: channelCount,
             wavelengths: wavelengths
         )
+        colorSynthesisConfig.pcaConfig.mapping = PCAComponentMapping(red: 0, green: 1, blue: 2).clamped(maxComponents: max(channelCount, 1))
     }
     
     private func clampColorSynthesisMapping() {
         colorSynthesisConfig.mapping = colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount)
+        colorSynthesisConfig.pcaConfig.mapping = colorSynthesisConfig.pcaConfig.mapping.clamped(maxComponents: max(channelCount, 1))
+        if let basis = colorSynthesisConfig.pcaConfig.basis,
+           let first = basis.first,
+           first.count != channelCount {
+            colorSynthesisConfig.pcaConfig.basis = nil
+            colorSynthesisConfig.pcaConfig.clipUpper = nil
+            colorSynthesisConfig.pcaConfig.explainedVariance = nil
+            colorSynthesisConfig.pcaConfig.sourceCubeID = nil
+        }
+    }
+    
+    private func clampedPCAConfig(_ config: PCAVisualizationConfig) -> PCAVisualizationConfig {
+        var cfg = config
+        cfg.mapping = cfg.mapping.clamped(maxComponents: max(channelCount, 1))
+        if let basis = cfg.basis, let first = basis.first, first.count != channelCount {
+            cfg.basis = nil
+            cfg.clipUpper = nil
+            cfg.explainedVariance = nil
+            cfg.sourceCubeID = nil
+        }
+        return cfg
     }
     
     func setWavelengths(_ lambda: [Double]) {
@@ -251,6 +326,8 @@ final class AppState: ObservableObject {
             loadError = "Сначала открой гиперкуб"
             return
         }
+        pcaRenderedImage = nil
+        pcaPendingConfig = nil
         
         let channels = channelCount
         guard channels > 0 else {
@@ -1004,6 +1081,8 @@ final class AppState: ObservableObject {
             endBusy()
             return
         }
+        pcaRenderedImage = nil
+        pcaPendingConfig = nil
         busyMessage = "Восстановление настроек…"
         restoreSession(from: snapshot)
     }
@@ -1078,7 +1157,13 @@ final class AppState: ObservableObject {
         imageOffset = snapshot.imageOffset
         spectralTrimRange = snapshot.spectralTrimRange
         roiAggregationMode = snapshot.roiAggregationMode
-        colorSynthesisConfig = snapshot.colorSynthesisConfig
+        colorSynthesisConfig = ColorSynthesisConfig(
+            mode: snapshot.colorSynthesisConfig.mode,
+            mapping: snapshot.colorSynthesisConfig.mapping,
+            pcaConfig: clampedPCAConfig(snapshot.colorSynthesisConfig.pcaConfig)
+        )
+        pcaPendingConfig = nil
+        pcaRenderedImage = nil
         hasCustomColorSynthesisMapping = true
         restoreSpectrumSamples(from: snapshot.spectrumSamples)
         restoreROISamples(from: snapshot.roiSamples)
@@ -1133,6 +1218,10 @@ final class AppState: ObservableObject {
         spectralTrimRange = nil
         viewMode = .gray
         colorSynthesisConfig = .default(channelCount: channelCount, wavelengths: wavelengths)
+        pcaPendingConfig = nil
+        pcaRenderedImage = nil
+        isPCAApplying = false
+        pcaProgressMessage = nil
         hasCustomColorSynthesisMapping = false
         layout = .auto
         resetSpectrumSelections()
@@ -1177,7 +1266,8 @@ final class AppState: ObservableObject {
         
         let clampedConfig = ColorSynthesisConfig(
             mode: colorSynthesisConfig.mode,
-            mapping: colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount)
+            mapping: colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount),
+            pcaConfig: clampedPCAConfig(colorSynthesisConfig.pcaConfig)
         )
         
         return CubeSessionSnapshot(

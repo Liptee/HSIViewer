@@ -11,21 +11,21 @@ struct PipelinePanel: View {
     
     var body: some View {
         GlassPanel(cornerRadius: 12) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                
-                Divider()
-                
-                if state.pipelineOperations.isEmpty {
-                    emptyState
-                } else {
-                    operationsList
-                }
-                
-                Divider()
-                
-                footer
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            
+            Divider()
+            
+            if state.pipelineOperations.isEmpty {
+                emptyState
+            } else {
+                operationsList
             }
+            
+            Divider()
+            
+            footer
+        }
         }
         .frame(width: 280)
         .sheet(item: $editingOperation) { operation in
@@ -256,13 +256,13 @@ struct OperationRow: View {
                 Spacer()
                 
                 if isHovered || isSelected {
-                    Button(action: onDelete) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.red)
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.mini)
+                        Button(action: onDelete) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.red)
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.mini)
                 }
             }
         }
@@ -354,6 +354,8 @@ struct OperationEditorView: View {
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
     @State private var localCalibrationParams: CalibrationParameters = .default
     @State private var localResizeParams: ResizeParameters = .default
+    @State private var resizeAspectRatio: Double = 1.0
+    @State private var isAdjustingResize: Bool = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -389,7 +391,7 @@ struct OperationEditorView: View {
         }
         switch op.type {
         case .spatialCrop:
-            return CGSize(width: 960, height: 620)
+        return CGSize(width: 960, height: 620)
         case .calibration:
             return CGSize(width: 500, height: 600)
         case .resize:
@@ -420,6 +422,7 @@ struct OperationEditorView: View {
             localCalibrationParams = op.calibrationParams ?? .default
         case .resize:
             localResizeParams = op.resizeParameters ?? .default
+            resizeAspectRatio = deriveAspectRatio(for: op, params: localResizeParams)
         }
     }
     
@@ -592,6 +595,32 @@ struct OperationEditorView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
                 }
+                
+                VStack(spacing: 4) {
+                    Button(action: {
+                        localResizeParams.lockAspectRatio.toggle()
+                        if localResizeParams.lockAspectRatio {
+                            resizeAspectRatio = deriveAspectRatio(for: op, params: localResizeParams)
+                        }
+                    }) {
+                        Image(systemName: localResizeParams.lockAspectRatio ? "link" : "link.slash")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(localResizeParams.lockAspectRatio ? .accentColor : .secondary)
+                            .frame(width: 34, height: 34)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(localResizeParams.lockAspectRatio ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 1)
+                            )
+                            .help("Фиксировать соотношение сторон")
+                    }
+                    
+                    Text("Соотношение")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Высота")
                         .font(.system(size: 10))
@@ -600,6 +629,12 @@ struct OperationEditorView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
                 }
+            }
+            
+            if localResizeParams.lockAspectRatio {
+                Text(String(format: "Будет сохранено соотношение: %.3f", resizeAspectRatio))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
             }
             
             Divider()
@@ -644,6 +679,16 @@ struct OperationEditorView: View {
             Text("Каждый канал будет ресайзнут отдельно в выбранном алгоритме.")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+        }
+        .onChange(of: localResizeParams.targetWidth) { newWidth in
+            adjustLinkedHeight(with: newWidth)
+        }
+        .onChange(of: localResizeParams.targetHeight) { newHeight in
+            adjustLinkedWidth(with: newHeight)
+        }
+        .onChange(of: localResizeParams.lockAspectRatio) { isLocked in
+            guard isLocked else { return }
+            resizeAspectRatio = deriveAspectRatio(for: op, params: localResizeParams)
         }
     }
     
@@ -1025,12 +1070,17 @@ struct OperationEditorView: View {
             )
         case .rgb:
             guard totalChannels > 0 else { return nil }
-            return ImageRenderer.renderRGB(
-                cube: cube,
-                layout: layout,
-                wavelengths: state.wavelengths,
-                mapping: state.colorSynthesisConfig.mapping
-            )
+            switch state.colorSynthesisConfig.mode {
+            case .trueColorRGB:
+                return ImageRenderer.renderRGB(
+                    cube: cube,
+                    layout: layout,
+                    wavelengths: state.wavelengths,
+                    mapping: state.colorSynthesisConfig.mapping
+                )
+            case .pcaVisualization:
+                return state.pcaRenderedImage
+            }
         }
     }
     
@@ -1096,6 +1146,45 @@ struct OperationEditorView: View {
         case .degree270:
             return "rotate.left"
         }
+    }
+    
+    private func deriveAspectRatio(for op: PipelineOperation, params: ResizeParameters) -> Double {
+        if params.targetWidth > 0 && params.targetHeight > 0 {
+            let safeHeight = max(params.targetHeight, 1)
+            return max(Double(params.targetWidth) / Double(safeHeight), 0.01)
+        }
+        if let size = spatialSize(for: op), size.width > 0, size.height > 0 {
+            return Double(size.width) / Double(size.height)
+        }
+        return resizeAspectRatio > 0 ? resizeAspectRatio : 1.0
+    }
+    
+    private func adjustLinkedHeight(with newWidth: Int) {
+        guard localResizeParams.lockAspectRatio,
+              resizeAspectRatio > 0,
+              !isAdjustingResize else { return }
+        guard newWidth > 0 else { return }
+        
+        isAdjustingResize = true
+        let newHeight = max(1, Int(round(Double(newWidth) / resizeAspectRatio)))
+        if localResizeParams.targetHeight != newHeight {
+            localResizeParams.targetHeight = newHeight
+        }
+        isAdjustingResize = false
+    }
+    
+    private func adjustLinkedWidth(with newHeight: Int) {
+        guard localResizeParams.lockAspectRatio,
+              resizeAspectRatio > 0,
+              !isAdjustingResize else { return }
+        guard newHeight > 0 else { return }
+        
+        isAdjustingResize = true
+        let newWidth = max(1, Int(round(Double(newHeight) * resizeAspectRatio)))
+        if localResizeParams.targetWidth != newWidth {
+            localResizeParams.targetWidth = newWidth
+        }
+        isAdjustingResize = false
     }
     
     private var footerView: some View {

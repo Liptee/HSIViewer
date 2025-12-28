@@ -43,6 +43,13 @@ class QuickPNGExporter {
                 wavelengths: wavelengths,
                 mapping: config.mapping
             )
+        case .pcaVisualization:
+            let result = PCARenderer.render(
+                cube: cube,
+                layout: layout,
+                config: config.pcaConfig
+            )
+            return result.image
         }
     }
     

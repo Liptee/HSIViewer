@@ -111,8 +111,11 @@ struct GraphWindowView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            settingsPanel
-                .frame(width: 240)
+            GlassEffectContainerWrapper {
+                settingsPanel
+                    .frame(width: 240)
+                    .glassBackground(cornerRadius: 0)
+            }
             
             Divider()
             
@@ -146,103 +149,104 @@ struct GraphWindowView: View {
     }
     
     private var settingsPanel: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                settingsSection("Данные") {
-                    Picker("Источник", selection: $dataset) {
-                ForEach(GraphWindowDataset.allCases) { item in
-                    Text(item.title).tag(item)
-                }
-            }
-            .pickerStyle(.segmented)
-                }
-            
-                settingsSection("Отображение") {
-                    Picker("Стиль линий", selection: $style) {
-                ForEach(GraphWindowStyle.allCases) { item in
-                    Text(item.title).tag(item)
-                }
-            }
-            
-            Picker("Палитра", selection: $palette) {
-                ForEach(GraphPalette.allCases) { item in
-                    Text(item.title).tag(item)
-                }
-            }
-                    
-                    HStack {
-                        Text("Толщина линии")
-                        Spacer()
-                        Text(String(format: "%.1f", lineWidth))
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 10, design: .monospaced))
+        GlassPanel(cornerRadius: 0, padding: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    settingsSection("Данные") {
+                        Picker("Источник", selection: $dataset) {
+                            ForEach(GraphWindowDataset.allCases) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
                     }
-                    Slider(value: $lineWidth, in: 0.5...4, step: 0.5)
                     
-                    if style == .linesAndPoints {
+                    settingsSection("Отображение") {
+                        Picker("Стиль линий", selection: $style) {
+                            ForEach(GraphWindowStyle.allCases) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        
+                        Picker("Палитра", selection: $palette) {
+                            ForEach(GraphPalette.allCases) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        
                         HStack {
-                            Text("Размер точек")
+                            Text("Толщина линии")
                             Spacer()
-                            Text(String(format: "%.0f", pointSize))
+                            Text(String(format: "%.1f", lineWidth))
                                 .foregroundColor(.secondary)
                                 .font(.system(size: 10, design: .monospaced))
                         }
-                        Slider(value: $pointSize, in: 8...48, step: 4)
-                    }
-                }
-                
-                settingsSection("Ось X") {
-                    Toggle("Авто масштаб", isOn: $autoScaleX)
-                        .onChange(of: autoScaleX) { auto in
-                            if auto { updateAxisBounds() }
+                        Slider(value: $lineWidth, in: 0.5...4, step: 0.5)
+                        
+                        if style == .linesAndPoints {
+                            HStack {
+                                Text("Размер точек")
+                                Spacer()
+                                Text(String(format: "%.0f", pointSize))
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 10, design: .monospaced))
+                            }
+                            Slider(value: $pointSize, in: 8...48, step: 4)
                         }
+                    }
                     
-                    if !autoScaleX {
-                        HStack {
-                            Text("Мин")
-                            TextField("", value: $xMin, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
-                            Text("Макс")
-                            TextField("", value: $xMax, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
+                    settingsSection("Ось X") {
+                        Toggle("Авто масштаб", isOn: $autoScaleX)
+                            .onChange(of: autoScaleX) { auto in
+                                if auto { updateAxisBounds() }
+                            }
+                        
+                        if !autoScaleX {
+                            HStack {
+                                Text("Мин")
+                                TextField("", value: $xMin, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 70)
+                                Text("Макс")
+                                TextField("", value: $xMax, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 70)
+                            }
+                            .font(.system(size: 11))
                         }
-                        .font(.system(size: 11))
                     }
-                }
-                
-                settingsSection("Ось Y") {
-                    Toggle("Авто масштаб", isOn: $autoScaleY)
-                        .onChange(of: autoScaleY) { auto in
-                            if auto { updateAxisBounds() }
-                        }
                     
-                    if !autoScaleY {
-                        HStack {
-                            Text("Мин")
-                            TextField("", value: $yMin, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
-                            Text("Макс")
-                            TextField("", value: $yMax, format: .number)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 70)
+                    settingsSection("Ось Y") {
+                        Toggle("Авто масштаб", isOn: $autoScaleY)
+                            .onChange(of: autoScaleY) { auto in
+                                if auto { updateAxisBounds() }
+                            }
+                        
+                        if !autoScaleY {
+                            HStack {
+                                Text("Мин")
+                                TextField("", value: $yMin, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 70)
+                                Text("Макс")
+                                TextField("", value: $yMax, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 70)
+                            }
+                            .font(.system(size: 11))
                         }
-                        .font(.system(size: 11))
                     }
+                    
+                    settingsSection("Элементы") {
+                        Toggle("Показать легенду", isOn: $showLegend)
+                        Toggle("Показать сетку", isOn: $showGrid)
+                    }
+                    
+                    Spacer()
                 }
-                
-                settingsSection("Элементы") {
-                    Toggle("Показать легенду", isOn: $showLegend)
-                    Toggle("Показать сетку", isOn: $showGrid)
-                }
-                
-                Spacer()
+                .padding(12)
             }
-            .padding(12)
         }
-        .background(.ultraThinMaterial)
     }
     
     @ViewBuilder
@@ -263,21 +267,25 @@ struct GraphWindowView: View {
     }
     
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "chart.xyaxis.line")
-                .font(.system(size: 14))
-                .foregroundColor(.accentColor)
-            
-            Text("График спектров")
-                .font(.system(size: 14, weight: .semibold))
-            
-            Spacer()
-            
-            Text("\(series.count) серий")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            
-            exportMenu
+        GlassEffectContainerWrapper {
+            GlassPanel(cornerRadius: 12, padding: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.xyaxis.line")
+                        .font(.system(size: 14))
+                        .foregroundColor(.accentColor)
+                    
+                    Text("График спектров")
+                        .font(.system(size: 14, weight: .semibold))
+                    
+                    Spacer()
+                    
+                    Text("\(series.count) серий")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    
+                    exportMenu
+                }
+            }
         }
     }
     
@@ -332,52 +340,49 @@ struct GraphWindowView: View {
     }
     
     private var legend: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Легенда")
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer()
-            }
-            
-            Divider()
-            
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(series) { item in
-                        let colorBinding = Binding<Color>(
-                            get: { color(for: item) },
-                            set: { newColor in
-                                customColors[item.id] = newColor
+        GlassEffectContainerWrapper {
+            GlassPanel(cornerRadius: 12, padding: 10) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Легенда")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                    }
+                    
+                    Divider()
+                    
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(series) { item in
+                                let colorBinding = Binding<Color>(
+                                    get: { color(for: item) },
+                                    set: { newColor in
+                                        customColors[item.id] = newColor
+                                    }
+                                )
+                                HStack(spacing: 8) {
+                                    ColorPicker("", selection: colorBinding, supportsOpacity: false)
+                                        .labelsHidden()
+                                        .frame(width: 28)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.title)
+                                            .font(.system(size: 11))
+                                            .lineLimit(1)
+                                        Text("\(item.values.count) точек")
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(6)
+                                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                                .cornerRadius(6)
                             }
-                        )
-                        HStack(spacing: 8) {
-                            ColorPicker("", selection: colorBinding, supportsOpacity: false)
-                                .labelsHidden()
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                    .font(.system(size: 11))
-                                    .lineLimit(1)
-                                Text("\(item.values.count) точек")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
                         }
-                        .padding(6)
-                        .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-                        .cornerRadius(6)
                     }
                 }
             }
         }
-        .padding(10)
-        .background(.ultraThinMaterial)
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-        )
     }
     
     private var chartView: some View {

@@ -56,13 +56,15 @@ struct ResizeParameters: Equatable {
     var algorithm: ResizeAlgorithm
     var bicubicA: Double
     var lanczosA: Int
+    var lockAspectRatio: Bool
     
     static let `default` = ResizeParameters(
         targetWidth: 0,
         targetHeight: 0,
         algorithm: .bilinear,
         bicubicA: -0.5,
-        lanczosA: 3
+        lanczosA: 3,
+        lockAspectRatio: true
     )
 }
 
@@ -268,7 +270,8 @@ struct PipelineOperation: Identifiable, Equatable {
                     targetHeight: height,
                     algorithm: .bilinear,
                     bicubicA: -0.5,
-                    lanczosA: 3
+                    lanczosA: 3,
+                    lockAspectRatio: true
                 )
             }
         default:

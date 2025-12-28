@@ -199,7 +199,7 @@ struct LibraryPanel: View {
     private func removeEntries(_ entries: [CubeLibraryEntry]) {
         guard !entries.isEmpty else { return }
         for entry in entries {
-            state.removeLibraryEntry(entry)
+        state.removeLibraryEntry(entry)
             selectedEntryIDs.remove(entry.id)
         }
     }

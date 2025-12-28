@@ -473,23 +473,23 @@ struct ContentView: View {
     private var topBar: some View {
         HStack(alignment: .center) {
             HStack(spacing: 8) {
-            if let url = state.cubeURL {
-                Text(url.lastPathComponent)
+                if let url = state.cubeURL {
+                    Text(url.lastPathComponent)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } else {
-                Text("Файл не выбран")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("Файл не выбран")
                         .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            
-            if let error = state.loadError {
+                        .foregroundColor(.secondary)
+                }
+                
+                if let error = state.loadError {
                     Text("•")
                         .foregroundColor(.secondary)
-                Text(error)
+                    Text(error)
                         .font(.system(size: 10))
-                    .foregroundColor(.red)
+                        .foregroundColor(.red)
                         .lineLimit(1)
                 }
             }
@@ -519,37 +519,50 @@ struct ContentView: View {
     }
     
     private func cubeView(cube: HyperCube, geoSize: CGSize) -> some View {
-        Group {
-            switch state.viewMode {
-            case .gray:
-                let chIdx = Int(state.currentChannel)
-                if let nsImage = ImageRenderer.renderGrayscale(
-                    cube: cube,
-                    layout: state.activeLayout,
-                    channelIndex: chIdx
-                ) {
-                    spectrumImageView(nsImage: nsImage, geoSize: geoSize)
-                } else {
+        let view: AnyView
+        switch state.viewMode {
+        case .gray:
+            let chIdx = Int(state.currentChannel)
+            if let nsImage = ImageRenderer.renderGrayscale(
+                cube: cube,
+                layout: state.activeLayout,
+                channelIndex: chIdx
+            ) {
+                view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
+            } else {
+                view = AnyView(
                     Text("Не удалось построить изображение")
                         .foregroundColor(.red)
-                }
-                
-            case .rgb:
-                let config = state.colorSynthesisConfig
-                if let nsImage = ImageRenderer.renderRGB(
+                )
+            }
+            
+        case .rgb:
+            let config = state.colorSynthesisConfig
+            let image: NSImage?
+            switch config.mode {
+            case .trueColorRGB:
+                image = ImageRenderer.renderRGB(
                     cube: cube,
                     layout: state.activeLayout,
                     wavelengths: state.wavelengths,
                     mapping: config.mapping
-                ) {
-                    spectrumImageView(nsImage: nsImage, geoSize: geoSize)
-                } else {
-                    Text("Не удалось построить RGB изображение")
+                )
+            case .pcaVisualization:
+                image = state.pcaRenderedImage
+            }
+            
+            if let nsImage = image {
+                view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
+            } else {
+                view = AnyView(
+                    Text(config.mode == .pcaVisualization ? "Нажмите «Применить PCA»" : "Не удалось построить RGB изображение")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                }
+                )
             }
         }
+        
+        return view
     }
     
     private func spectrumImageView(nsImage: NSImage, geoSize: CGSize) -> some View {
@@ -764,31 +777,38 @@ struct ContentView: View {
                         trimControlButtons
                     }
                 }
-            }
-            
+    }
+    
+    @ViewBuilder
     private func colorSynthesisControls(cube: HyperCube) -> some View {
-        let mapping = state.colorSynthesisConfig.mapping.clamped(maxChannelCount: max(state.channelCount, 0))
-        
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Каналы цветосинтеза")
-                        .font(.system(size: 11, weight: .medium))
-                    Text(colorMappingDescription(mapping: mapping))
-                        .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        }
-                Spacer()
+        switch state.colorSynthesisConfig.mode {
+        case .trueColorRGB:
+            let mapping = state.colorSynthesisConfig.mapping.clamped(maxChannelCount: max(state.channelCount, 0))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Каналы цветосинтеза")
+                            .font(.system(size: 11, weight: .medium))
+                        Text(colorMappingDescription(mapping: mapping))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+                
+                ColorSynthesisSliderView(
+                    channelCount: state.channelCount,
+                    cube: cube,
+                    layout: state.activeLayout,
+                    mapping: mapping
+                ) { newMapping in
+                    state.updateColorSynthesisMapping(newMapping, userInitiated: true)
+                }
             }
             
-            ColorSynthesisSliderView(
-                channelCount: state.channelCount,
-                cube: cube,
-                layout: state.activeLayout,
-                mapping: mapping
-            ) { newMapping in
-                state.updateColorSynthesisMapping(newMapping, userInitiated: true)
-            }
+        case .pcaVisualization:
+            pcaColorControls(cube: cube)
         }
     }
     
@@ -804,6 +824,176 @@ struct ContentView: View {
         let green = channelInfo(label: "G", index: mapping.green)
         let blue = channelInfo(label: "B", index: mapping.blue)
         return "\(red) • \(green) • \(blue)"
+    }
+    
+    @ViewBuilder
+    private func pcaColorControls(cube: HyperCube) -> some View {
+        let config = state.pcaPendingConfig ?? state.colorSynthesisConfig.pcaConfig
+        let maxComponents = max(1, min(state.channelCount, 3))
+        let componentOptions = Array(0..<maxComponents) // рассчитываем первые 3 компоненты
+        
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Область расчёта PCA")
+                        .font(.system(size: 11, weight: .medium))
+                    Picker("", selection: Binding(
+                        get: { config.computeScope },
+                        set: { newValue in
+                            state.updatePCAConfig { $0.computeScope = newValue }
+                        })) {
+                        ForEach(PCAComputeScope.allCases) { scope in
+                            Text(scope.rawValue).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Preprocess")
+                        .font(.system(size: 11, weight: .medium))
+                    Picker("", selection: Binding(
+                        get: { config.preprocess },
+                        set: { newValue in
+                            state.updatePCAConfig {
+                                $0.preprocess = newValue
+                                $0.basis = nil
+                                $0.clipUpper = nil
+                                $0.explainedVariance = nil
+                            }
+                        })) {
+                        ForEach(PCAPreprocess.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 170)
+                }
+                
+                Toggle("Lock basis", isOn: Binding(
+                    get: { config.lockBasis },
+                    set: { newValue in
+                        state.updatePCAConfig { $0.lockBasis = newValue }
+                    })
+                )
+                .font(.system(size: 11))
+                .toggleStyle(.switch)
+                .frame(width: 140, alignment: .leading)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Маппинг компонентов → RGB")
+                    .font(.system(size: 11, weight: .medium))
+                HStack(spacing: 12) {
+                    pcaComponentPicker(label: "R", value: config.mapping.red, options: componentOptions) { newVal in
+                        state.updatePCAConfig { $0.mapping.red = newVal }
+                    }
+                    pcaComponentPicker(label: "G", value: config.mapping.green, options: componentOptions) { newVal in
+                        state.updatePCAConfig { $0.mapping.green = newVal }
+                    }
+                    pcaComponentPicker(label: "B", value: config.mapping.blue, options: componentOptions) { newVal in
+                        state.updatePCAConfig { $0.mapping.blue = newVal }
+                    }
+                }
+            }
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Отрезать верхние выбросы")
+                        .font(.system(size: 11, weight: .medium))
+                    HStack {
+                        Slider(
+                            value: Binding(
+                                get: { config.clipTopPercent },
+                                set: { newValue in
+                                    state.updatePCAConfig {
+                                        $0.clipTopPercent = newValue
+                                        $0.basis = nil
+                                        $0.clipUpper = nil
+                                    }
+                                }
+                            ),
+                            in: 0...5,
+                            step: 0.1
+                        )
+                        Text(String(format: "%.1f %%", config.clipTopPercent))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(width: 70, alignment: .leading)
+                    }
+                }
+                
+                Spacer()
+            }
+            
+            if let ev = config.explainedVariance, !ev.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Explained variance (оценка)")
+                        .font(.system(size: 11, weight: .medium))
+                    HStack(alignment: .bottom, spacing: 8) {
+                        let total = ev.reduce(0, +)
+                        ForEach(Array(ev.enumerated()), id: \.0) { item in
+                            let value = total > 0 ? item.element / total : 0
+                            VStack {
+                                Rectangle()
+                                    .fill(Color.accentColor.opacity(item.offset == 0 ? 0.9 : 0.6))
+                                    .frame(width: 20, height: CGFloat(max(4.0, value * 80.0)))
+                                Text("PC\(item.offset + 1)")
+                                    .font(.system(size: 10))
+                                Text(String(format: "%.1f%%", value * 100))
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Text("PCA вычисляется по спектрам пикселей; при включённом lock basis базис сохраняется до смены куба или параметров.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            
+            HStack(spacing: 12) {
+                Button {
+                    state.applyPCAVisualization()
+                } label: {
+                    HStack {
+                        Image(systemName: "play.fill")
+                        Text("Применить PCA")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(state.isPCAApplying || state.cube == nil)
+                
+                if state.isPCAApplying {
+                    ProgressView(state.pcaProgressMessage ?? "Обработка…")
+                        .progressViewStyle(.linear)
+                        .frame(width: 180)
+                } else if state.pcaRenderedImage == nil {
+                    Text("Настройте параметры и нажмите «Применить»")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    private func pcaComponentPicker(label: String, value: Int, options: [Int], onChange: @escaping (Int) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+            Picker("", selection: Binding(
+                get: { value },
+                set: { onChange($0) }
+            )) {
+                ForEach(options, id: \.self) { idx in
+                    Text("PC\(idx + 1)").tag(idx)
+                }
+            }
+            .frame(width: 90)
+            .pickerStyle(.menu)
+        }
     }
     
     private var trimControlButtons: some View {

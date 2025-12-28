@@ -445,7 +445,11 @@ struct ExportView: View {
             matVariableName: selectedFormat == .mat ? matVariableName : nil,
             matWavelengthsAsVariable: matWavelengthsAsVariable,
             colorSynthesisConfig: selectedFormat == .quickPNG
-            ? ColorSynthesisConfig(mode: colorSynthesisMode, mapping: state.colorSynthesisConfig.mapping)
+            ? ColorSynthesisConfig(
+                mode: colorSynthesisMode,
+                mapping: state.colorSynthesisConfig.mapping,
+                pcaConfig: state.colorSynthesisConfig.pcaConfig
+            )
             : nil
         )
         dismiss()
