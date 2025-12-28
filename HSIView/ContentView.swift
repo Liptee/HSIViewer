@@ -832,11 +832,11 @@ struct ContentView: View {
         let maxComponents = max(1, min(state.channelCount, 3))
         let componentOptions = Array(0..<maxComponents) // рассчитываем первые 3 компоненты
         
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Область расчёта PCA")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                     Picker("", selection: Binding(
                         get: { config.computeScope },
                         set: { newValue in
@@ -847,12 +847,12 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 200)
+                    .frame(width: 160)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Preprocess")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                     Picker("", selection: Binding(
                         get: { config.preprocess },
                         set: { newValue in
@@ -868,7 +868,23 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 170)
+                    .frame(width: 150)
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Маппинг компонентов → RGB")
+                        .font(.system(size: 10, weight: .medium))
+                    HStack(spacing: 8) {
+                        pcaComponentPicker(label: "R", value: config.mapping.red, options: componentOptions) { newVal in
+                            state.updatePCAConfig { $0.mapping.red = newVal }
+                        }
+                        pcaComponentPicker(label: "G", value: config.mapping.green, options: componentOptions) { newVal in
+                            state.updatePCAConfig { $0.mapping.green = newVal }
+                        }
+                        pcaComponentPicker(label: "B", value: config.mapping.blue, options: componentOptions) { newVal in
+                            state.updatePCAConfig { $0.mapping.blue = newVal }
+                        }
+                    }
                 }
                 
                 Toggle("Lock basis", isOn: Binding(
@@ -877,15 +893,15 @@ struct ContentView: View {
                         state.updatePCAConfig { $0.lockBasis = newValue }
                     })
                 )
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .toggleStyle(.switch)
                 .frame(width: 140, alignment: .leading)
             }
             
             if config.computeScope == .roi {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Выбор ROI для PCA")
-                        .font(.system(size: 11, weight: .medium))
+                HStack(spacing: 10) {
+                    Text("ROI для PCA")
+                        .font(.system(size: 10, weight: .medium))
                     Picker("ROI", selection: Binding(
                         get: { config.selectedROI ?? state.displayedROISamples.first?.id },
                         set: { newID in
@@ -901,81 +917,51 @@ struct ContentView: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 260)
+                    .frame(width: 220)
                 }
             }
             
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Маппинг компонентов → RGB")
-                    .font(.system(size: 11, weight: .medium))
-                HStack(spacing: 12) {
-                    pcaComponentPicker(label: "R", value: config.mapping.red, options: componentOptions) { newVal in
-                        state.updatePCAConfig { $0.mapping.red = newVal }
-                    }
-                    pcaComponentPicker(label: "G", value: config.mapping.green, options: componentOptions) { newVal in
-                        state.updatePCAConfig { $0.mapping.green = newVal }
-                    }
-                    pcaComponentPicker(label: "B", value: config.mapping.blue, options: componentOptions) { newVal in
-                        state.updatePCAConfig { $0.mapping.blue = newVal }
-                    }
-                }
-            }
-            
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Отрезать верхние выбросы")
-                        .font(.system(size: 11, weight: .medium))
-                    HStack {
-                        Slider(
-                            value: Binding(
-                                get: { config.clipTopPercent },
-                                set: { newValue in
-                                    state.updatePCAConfig {
-                                        $0.clipTopPercent = newValue
-                                        $0.basis = nil
-                                        $0.clipUpper = nil
-                                    }
-                                }
-                            ),
-                            in: 0...5,
-                            step: 0.1
-                        )
-                        Text(String(format: "%.1f %%", config.clipTopPercent))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .frame(width: 70, alignment: .leading)
-                    }
-                }
-                
-                Spacer()
+            HStack(spacing: 10) {
+                Text("Отрезать верхние выбросы")
+                    .font(.system(size: 10, weight: .medium))
+                Slider(
+                    value: Binding(
+                        get: { config.clipTopPercent },
+                        set: { newValue in
+                            state.updatePCAConfig {
+                                $0.clipTopPercent = newValue
+                                $0.basis = nil
+                                $0.clipUpper = nil
+                            }
+                        }
+                    ),
+                    in: 0...5,
+                    step: 0.1
+                )
+                Text(String(format: "%.1f %%", config.clipTopPercent))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 60, alignment: .leading)
             }
             
             if let ev = config.explainedVariance, !ev.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Explained variance (оценка)")
-                        .font(.system(size: 11, weight: .medium))
-                    HStack(alignment: .bottom, spacing: 8) {
-                        let total = ev.reduce(0, +)
-                        ForEach(Array(ev.enumerated()), id: \.0) { item in
-                            let value = total > 0 ? item.element / total : 0
-                            VStack {
-                                Rectangle()
-                                    .fill(Color.accentColor.opacity(item.offset == 0 ? 0.9 : 0.6))
-                                    .frame(width: 20, height: CGFloat(max(4.0, value * 80.0)))
-                                Text("PC\(item.offset + 1)")
-                                    .font(.system(size: 10))
-                                Text(String(format: "%.1f%%", value * 100))
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
+                let total = ev.reduce(0, +)
+                HStack(alignment: .bottom, spacing: 10) {
+                    ForEach(Array(ev.enumerated()), id: \.0) { item in
+                        let value = total > 0 ? item.element / total : 0
+                        VStack(spacing: 2) {
+                            Rectangle()
+                                .fill(Color.accentColor.opacity(item.offset == 0 ? 0.9 : 0.6))
+                                .frame(width: 18, height: CGFloat(max(4.0, value * 70.0)))
+                            Text("PC\(item.offset + 1)")
+                                .font(.system(size: 9, weight: .medium))
+                            Text(String(format: "%.1f%%", value * 100))
+                                .font(.system(size: 8, design: .monospaced))
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
             }
-            
-            Text("PCA вычисляется по спектрам пикселей; при включённом lock basis базис сохраняется до смены куба или параметров.")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
             
             HStack(spacing: 12) {
                 Button {
@@ -987,19 +973,27 @@ struct ContentView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.small)
                 .disabled(
                     state.isPCAApplying
                     || state.cube == nil
                     || (config.computeScope == .roi && (config.selectedROI == nil && state.displayedROISamples.isEmpty))
                 )
                 
-            if state.isPCAApplying {
-                ProgressView(state.pcaProgressMessage ?? "Обработка…")
-                    .progressViewStyle(.linear)
-                    .frame(width: 180)
-            } else if state.pcaRenderedImage == nil {
-                Text("Настройте параметры и нажмите «Применить»")
-                    .font(.system(size: 10))
+                if state.isPCAApplying {
+                    ProgressView(state.pcaProgressMessage ?? "Обработка…")
+                        .progressViewStyle(.linear)
+                        .frame(width: 160)
+                } else if state.pcaRenderedImage == nil {
+                    Text("Настройте параметры и нажмите «Применить»")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Text("PCA: спектры пикселей; lock basis сохраняет базис до смены параметров.")
+                    .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
         }
@@ -1018,12 +1012,11 @@ struct ContentView: View {
             }
         }
     }
-    }
     
     private func pcaComponentPicker(label: String, value: Int, options: [Int], onChange: @escaping (Int) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
             Picker("", selection: Binding(
                 get: { value },
                 set: { onChange($0) }
@@ -1032,7 +1025,7 @@ struct ContentView: View {
                     Text("PC\(idx + 1)").tag(idx)
                 }
             }
-            .frame(width: 90)
+            .frame(width: 80)
             .pickerStyle(.menu)
         }
     }
@@ -1294,7 +1287,7 @@ struct ContentView: View {
                 handleROIDragEnd(value: value, geoSize: geoSize)
             }
     }
-}
+
 
 private struct LibraryExportToastView: View {
     let state: LibraryExportProgressState
@@ -1531,4 +1524,6 @@ struct BusyOverlayView: View {
                 .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
         )
     }
+}
+
 }
