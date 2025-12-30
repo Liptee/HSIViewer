@@ -560,6 +560,25 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 )
             }
+            
+        case .ndvi:
+            if let indices = state.ndviChannelIndices(),
+               let nsImage = ImageRenderer.renderNDVI(
+                cube: cube,
+                layout: state.activeLayout,
+                redIndex: indices.red,
+                nirIndex: indices.nir,
+                palette: state.ndviPalette,
+                threshold: state.ndviThreshold
+               ) {
+                view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
+            } else {
+                view = AnyView(
+                    Text("Не удалось построить NDVI")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                )
+            }
         }
         
         return view
@@ -696,8 +715,10 @@ struct ContentView: View {
             if !cube.is2D {
                 if state.viewMode == .gray {
                     grayscaleChannelControls(cube: cube)
-                } else {
+                } else if state.viewMode == .rgb {
                     colorSynthesisControls(cube: cube)
+                } else if state.viewMode == .ndvi {
+                    ndviControls()
                 }
                 
                 HStack(spacing: 12) {
@@ -824,6 +845,61 @@ struct ContentView: View {
         let green = channelInfo(label: "G", index: mapping.green)
         let blue = channelInfo(label: "B", index: mapping.blue)
         return "\(red) • \(green) • \(blue)"
+    }
+    
+    private func ndviControls() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NDVI настройки")
+                .font(.system(size: 11, weight: .medium))
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Red (нм)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("660", text: $state.ndviRedTarget)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("NIR (нм)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("840", text: $state.ndviNIRTarget)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 70)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Палитра")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $state.ndviPalette) {
+                        ForEach(NDVIPalette.allCases) { palette in
+                            Text(palette.rawValue).tag(palette)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
+                }
+                
+                if state.ndviPalette == .binaryVegetation {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Порог NDVI")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        HStack {
+                            Slider(value: $state.ndviThreshold, in: -1...1, step: 0.01)
+                                .frame(width: 180)
+                            Text(String(format: "%.2f", state.ndviThreshold))
+                                .font(.system(size: 10, design: .monospaced))
+                                .frame(width: 50, alignment: .leading)
+                        }
+                    }
+                }
+            }
+        }
     }
     
     @ViewBuilder

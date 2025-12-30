@@ -21,6 +21,10 @@ final class AppState: ObservableObject {
     
     @Published var viewMode: ViewMode = .gray
     @Published var colorSynthesisConfig: ColorSynthesisConfig = .default(channelCount: 0, wavelengths: nil)
+    @Published var ndviRedTarget: String = "660"
+    @Published var ndviNIRTarget: String = "840"
+    @Published var ndviPalette: NDVIPalette = .classic
+    @Published var ndviThreshold: Double = 0.3
     
     @Published var wavelengths: [Double]? = nil {
         didSet {
@@ -92,6 +96,7 @@ final class AppState: ObservableObject {
     @Published var isPCAApplying: Bool = false
     @Published var pcaProgressMessage: String?
     private var hasCustomColorSynthesisMapping: Bool = false
+    private var ndviFallbackIndices: (red: Int, nir: Int) = (0, 0)
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -301,6 +306,42 @@ final class AppState: ObservableObject {
            !displayedROISamples.contains(where: { $0.id == roiID }) {
             colorSynthesisConfig.pcaConfig.selectedROI = displayedROISamples.first?.id
         }
+    }
+    
+    func ndviChannelIndices() -> (red: Int, nir: Int)? {
+        guard channelCount > 1 else { return nil }
+        let count = channelCount
+        let fallbackRed = min(max(0, count / 3), count - 1)
+        let fallbackNIR = max(fallbackRed + 1, count - 1)
+        
+        let redTarget = Double(ndviRedTarget.replacingOccurrences(of: ",", with: ".")) ?? 660
+        let nirTarget = Double(ndviNIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 840
+        
+        if let wl = wavelengths, wl.count >= count {
+            let redIndex = closestIndex(in: wl, to: redTarget, limit: count) ?? fallbackRed
+            let nirIndex = closestIndex(in: wl, to: nirTarget, limit: count) ?? fallbackNIR
+            ndviFallbackIndices = (red: redIndex, nir: nirIndex)
+            return (redIndex, nirIndex)
+        } else {
+            if ndviFallbackIndices == (0, 0) {
+                ndviFallbackIndices = (red: fallbackRed, nir: fallbackNIR)
+            }
+            return ndviFallbackIndices
+        }
+    }
+    
+    private func closestIndex(in wavelengths: [Double], to target: Double, limit: Int) -> Int? {
+        guard !wavelengths.isEmpty else { return nil }
+        var bestIdx = 0
+        var bestDist = Double.greatestFiniteMagnitude
+        for i in 0..<min(limit, wavelengths.count) {
+            let d = abs(wavelengths[i] - target)
+            if d < bestDist {
+                bestDist = d
+                bestIdx = i
+            }
+        }
+        return bestIdx
     }
     
     private func clampedPCAConfig(_ config: PCAVisualizationConfig) -> PCAVisualizationConfig {
@@ -1176,6 +1217,10 @@ final class AppState: ObservableObject {
             mapping: snapshot.colorSynthesisConfig.mapping,
             pcaConfig: clampedPCAConfig(snapshot.colorSynthesisConfig.pcaConfig)
         )
+        ndviRedTarget = snapshot.ndviRedTarget
+        ndviNIRTarget = snapshot.ndviNIRTarget
+        ndviPalette = NDVIPalette(rawValue: snapshot.ndviPaletteRaw) ?? .classic
+        ndviThreshold = snapshot.ndviThreshold
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         hasCustomColorSynthesisMapping = true
@@ -1232,6 +1277,9 @@ final class AppState: ObservableObject {
         spectralTrimRange = nil
         viewMode = .gray
         colorSynthesisConfig = .default(channelCount: channelCount, wavelengths: wavelengths)
+        ndviRedTarget = "660"
+        ndviNIRTarget = "840"
+        ndviPalette = .classic
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         isPCAApplying = false
@@ -1305,7 +1353,11 @@ final class AppState: ObservableObject {
             spectrumSamples: descriptors,
             roiSamples: roiDescriptors,
             roiAggregationMode: roiAggregationMode,
-            colorSynthesisConfig: clampedConfig
+            colorSynthesisConfig: clampedConfig,
+            ndviRedTarget: ndviRedTarget,
+            ndviNIRTarget: ndviNIRTarget,
+            ndviPaletteRaw: ndviPalette.rawValue,
+            ndviThreshold: ndviThreshold
         )
     }
     

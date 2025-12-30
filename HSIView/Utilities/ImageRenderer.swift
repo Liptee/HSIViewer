@@ -107,6 +107,112 @@ class ImageRenderer {
         
         return slice
     }
+
+    static func renderNDVI(
+        cube: HyperCube,
+        layout: CubeLayout,
+        redIndex: Int,
+        nirIndex: Int,
+        palette: NDVIPalette,
+        threshold: Double
+    ) -> NSImage? {
+        guard let axes = cube.axes(for: layout) else { return nil }
+        
+        let (d0, d1, d2) = cube.dims
+        let dimsArr = [d0, d1, d2]
+        let channels = dimsArr[axes.channel]
+        let height = dimsArr[axes.height]
+        let width = dimsArr[axes.width]
+        
+        guard channels > max(redIndex, nirIndex), redIndex >= 0, nirIndex >= 0 else { return nil }
+        
+        let redSlice = extractChannel(cube: cube, axes: axes, channelIndex: redIndex, h: height, w: width)
+        let nirSlice = extractChannel(cube: cube, axes: axes, channelIndex: nirIndex, h: height, w: width)
+        
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let epsilon = 1e-9
+        
+        for i in 0..<(width * height) {
+            let red = redSlice[i]
+            let nir = nirSlice[i]
+            let denom = nir + red
+            let ndvi: Double = abs(denom) < epsilon ? 0.0 : (nir - red) / denom
+            let (r, g, b) = colorForNDVI(ndvi, palette: palette, threshold: threshold)
+            let base = i * 4
+            pixels[base] = r
+            pixels[base + 1] = g
+            pixels[base + 2] = b
+            pixels[base + 3] = 255
+        }
+        
+        return createRGBImage(r: pixelsAt(pixels, channel: 0),
+                              g: pixelsAt(pixels, channel: 1),
+                              b: pixelsAt(pixels, channel: 2),
+                              width: width,
+                              height: height)
+    }
+    
+    private static func pixelsAt(_ buffer: [UInt8], channel: Int) -> [UInt8] {
+        var result = [UInt8](repeating: 0, count: buffer.count / 4)
+        for i in 0..<result.count {
+            result[i] = buffer[i * 4 + channel]
+        }
+        return result
+    }
+    
+    private static func colorForNDVI(_ value: Double, palette: NDVIPalette, threshold: Double) -> (UInt8, UInt8, UInt8) {
+        let v = max(-1.0, min(1.0, value))
+        switch palette {
+        case .grayscale:
+            let t = (v + 1.0) / 2.0
+            let g = UInt8(clamping: Int(t * 255.0))
+            return (g, g, g)
+        case .binaryVegetation:
+            let isVeg = v > threshold
+            return isVeg ? (44, 160, 44) : (170, 85, 0)
+        case .classic:
+            return classicPaletteColor(v)
+        }
+    }
+    
+    private static func classicPaletteColor(_ v: Double) -> (UInt8, UInt8, UInt8) {
+        let t = (v + 1.0) / 2.0
+        // color stops (t, r, g, b)
+        let stops: [(Double, Double, Double, Double)] = [
+            (0.0, 0.5, 0.1, 0.1),
+            (0.25, 0.75, 0.5, 0.2),
+            (0.5, 0.95, 0.95, 0.4),
+            (0.7, 0.4, 0.8, 0.4),
+            (1.0, 0.0, 0.5, 0.0)
+        ]
+        
+        let clamped = max(0.0, min(1.0, t))
+        var lower = stops[0]
+        var upper = stops.last!
+        
+        for i in 0..<(stops.count - 1) {
+            if clamped >= stops[i].0 && clamped <= stops[i + 1].0 {
+                lower = stops[i]
+                upper = stops[i + 1]
+                break
+            }
+        }
+        
+        let span = upper.0 - lower.0
+        let localT = span > 0 ? (clamped - lower.0) / span : 0
+        let r = interpolate(lower.1, upper.1, t: localT)
+        let g = interpolate(lower.2, upper.2, t: localT)
+        let b = interpolate(lower.3, upper.3, t: localT)
+        return (toUInt8(r), toUInt8(g), toUInt8(b))
+    }
+    
+    private static func interpolate(_ a: Double, _ b: Double, t: Double) -> Double {
+        a + (b - a) * max(0, min(1, t))
+    }
+    
+    private static func toUInt8(_ value: Double) -> UInt8 {
+        UInt8(clamping: Int(max(0.0, min(1.0, value)) * 255.0))
+    }
     
     private static func createGrayscaleImage(pixels: [UInt8], width: Int, height: Int) -> NSImage? {
         let colorSpace = CGColorSpaceCreateDeviceGray()

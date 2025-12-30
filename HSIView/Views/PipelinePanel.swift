@@ -1081,6 +1081,16 @@ struct OperationEditorView: View {
             case .pcaVisualization:
                 return state.pcaRenderedImage
             }
+        case .ndvi:
+            guard let indices = state.ndviChannelIndices() else { return nil }
+            return ImageRenderer.renderNDVI(
+                cube: cube,
+                layout: layout,
+                redIndex: indices.red,
+                nirIndex: indices.nir,
+                palette: state.ndviPalette,
+                threshold: state.ndviThreshold
+            )
         }
     }
     
