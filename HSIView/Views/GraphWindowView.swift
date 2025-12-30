@@ -468,7 +468,8 @@ struct GraphWindowView: View {
         case .area:
             AreaMark(
                 x: .value("X", x),
-                y: .value("Y", y),
+                yStart: .value("YStart", 0),
+                yEnd: .value("YEnd", y),
                 series: .value("Series", seriesID)
             )
             .foregroundStyle(color.opacity(0.25))
@@ -729,7 +730,8 @@ private struct ExportableChartView: View {
         case .area:
             AreaMark(
                 x: .value("X", x),
-                y: .value("Y", y),
+                yStart: .value("YStart", 0),
+                yEnd: .value("YEnd", y),
                 series: .value("Series", seriesID)
             )
             .foregroundStyle(color.opacity(0.25))
