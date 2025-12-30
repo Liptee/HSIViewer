@@ -97,6 +97,9 @@ final class AppState: ObservableObject {
     @Published var pcaProgressMessage: String?
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndviFallbackIndices: (red: Int, nir: Int) = (0, 0)
+    private var lastPipelineAppliedOperations: [PipelineOperation] = []
+    private var lastPipelineResult: HyperCube?
+    private var lastPipelineBaseCubeID: UUID?
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -563,7 +566,10 @@ final class AppState: ObservableObject {
         operation.configureDefaults(with: cube, layout: activeLayout)
         pipelineOperations.append(operation)
         if pipelineAutoApply {
-            applyPipeline()
+            let isNoOp = operation.isNoOp(for: cube, layout: activeLayout)
+            if !isNoOp {
+                applyPipeline()
+            }
         }
     }
     
@@ -598,18 +604,47 @@ final class AppState: ObservableObject {
         
         if pipelineOperations.isEmpty {
             cube = original
+            lastPipelineAppliedOperations = []
+            lastPipelineResult = original
+            lastPipelineBaseCubeID = original.id
             return
         }
         
         let operations = pipelineOperations
-        beginBusy(message: "Применение пайплайна…")
         
-        processingQueue.async { [weak self] in
-            guard let self else { return }
-            let result = self.processPipeline(original: original, operations: operations)
-            DispatchQueue.main.async {
-                self.cube = result ?? original
-                self.endBusy()
+        if let baseID = lastPipelineBaseCubeID,
+           baseID == original.id,
+           operations.count == lastPipelineAppliedOperations.count + 1,
+           operations.dropLast() == lastPipelineAppliedOperations,
+           let cachedResult = lastPipelineResult {
+            
+            beginBusy(message: "Применение последней операции…")
+            let newOp = operations.last!
+            processingQueue.async { [weak self] in
+                guard let self else { return }
+                let result = newOp.apply(to: cachedResult)
+                DispatchQueue.main.async {
+                    self.cube = result ?? cachedResult
+                    self.lastPipelineResult = self.cube
+                    self.lastPipelineAppliedOperations = operations
+                    self.lastPipelineBaseCubeID = original.id
+                    self.endBusy()
+                }
+            }
+            
+        } else {
+            beginBusy(message: "Применение пайплайна…")
+            
+            processingQueue.async { [weak self] in
+                guard let self else { return }
+                let result = self.processPipeline(original: original, operations: operations)
+                DispatchQueue.main.async {
+                    self.cube = result ?? original
+                    self.lastPipelineResult = self.cube
+                    self.lastPipelineAppliedOperations = operations
+                    self.lastPipelineBaseCubeID = original.id
+                    self.endBusy()
+                }
             }
         }
     }
@@ -1285,6 +1320,9 @@ final class AppState: ObservableObject {
         isPCAApplying = false
         pcaProgressMessage = nil
         hasCustomColorSynthesisMapping = false
+        lastPipelineAppliedOperations = []
+        lastPipelineResult = nil
+        lastPipelineBaseCubeID = nil
         layout = .auto
         resetSpectrumSelections()
         spectrumSpatialSize = nil

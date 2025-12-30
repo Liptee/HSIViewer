@@ -57,6 +57,7 @@ struct ResizeParameters: Equatable {
     var bicubicA: Double
     var lanczosA: Int
     var lockAspectRatio: Bool
+    var computePrecision: ResizeComputationPrecision
     
     static let `default` = ResizeParameters(
         targetWidth: 0,
@@ -64,7 +65,8 @@ struct ResizeParameters: Equatable {
         algorithm: .bilinear,
         bicubicA: -0.5,
         lanczosA: 3,
-        lockAspectRatio: true
+        lockAspectRatio: true,
+        computePrecision: .float64
     )
 }
 
@@ -74,6 +76,13 @@ enum ResizeAlgorithm: String, CaseIterable, Identifiable {
     case bicubic = "Бикубическая"
     case bspline = "Сплайн"
     case lanczos = "Ланцош"
+    
+    var id: String { rawValue }
+}
+
+enum ResizeComputationPrecision: String, CaseIterable, Identifiable {
+    case float32 = "Float32"
+    case float64 = "Float64"
     
     var id: String { rawValue }
 }
@@ -229,7 +238,6 @@ struct PipelineOperation: Identifiable, Equatable {
             self.normalizationParams = .default
             self.preserveDataType = true
         case .dataTypeConversion:
-            self.targetDataType = .float64
             self.autoScale = true
         case .rotation:
             self.rotationAngle = .degree90
@@ -271,9 +279,12 @@ struct PipelineOperation: Identifiable, Equatable {
                     algorithm: .bilinear,
                     bicubicA: -0.5,
                     lanczosA: 3,
-                    lockAspectRatio: true
+                    lockAspectRatio: true,
+                    computePrecision: .float64
                 )
             }
+        case .dataTypeConversion:
+            targetDataType = cube.originalDataType
         default:
             break
         }
@@ -395,6 +406,30 @@ struct PipelineOperation: Identifiable, Equatable {
     }
 }
 
+extension PipelineOperation {
+    func isNoOp(for cube: HyperCube?, layout: CubeLayout) -> Bool {
+        guard let cube else { return false }
+        guard let axes = cube.axes(for: layout) ?? cube.axes(for: .auto) else { return false }
+        let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        let width = dims[axes.width]
+        let height = dims[axes.height]
+        
+        switch type {
+        case .resize:
+            guard let params = resizeParameters else { return true }
+            return params.targetWidth == width && params.targetHeight == height
+        case .spatialCrop:
+            guard let params = cropParameters else { return true }
+            return params.left == 0 && params.top == 0 && params.right == width - 1 && params.bottom == height - 1
+        case .dataTypeConversion:
+            guard let targetType = targetDataType else { return true }
+            return targetType == cube.originalDataType
+        default:
+            return false
+        }
+    }
+}
+
 // MARK: - CubeResizer
 
 class CubeResizer {
@@ -403,6 +438,7 @@ class CubeResizer {
         
         let dims = cube.dims
         var dimsArray = [dims.0, dims.1, dims.2]
+        let srcDims = dimsArray
         guard let axes = cube.axes(for: layout) else { return cube }
         let srcWidth = dimsArray[axes.width]
         let srcHeight = dimsArray[axes.height]
@@ -416,6 +452,92 @@ class CubeResizer {
         dimsArray[axes.height] = dstHeight
         
         let total = dstWidth * dstHeight * channels
+        
+        if parameters.algorithm == .nearest {
+            let scaleX = Double(srcWidth) / Double(dstWidth)
+            let scaleY = Double(srcHeight) / Double(dstHeight)
+            
+            switch cube.storage {
+            case .float64(let arr):
+                var output = [Double](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .float64(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            case .float32(let arr):
+                var output = [Float](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .float32(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            case .uint16(let arr):
+                var output = [UInt16](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .uint16(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            case .uint8(let arr):
+                var output = [UInt8](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .uint8(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            case .int16(let arr):
+                var output = [Int16](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int16(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            case .int32(let arr):
+                var output = [Int32](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int32(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            case .int8(let arr):
+                var output = [Int8](repeating: 0, count: total)
+                fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int8(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            }
+        }
+        
+        let useFloat32 = parameters.computePrecision == .float32
+        if useFloat32 {
+            var output = [Float](repeating: 0, count: total)
+            let scaleX = Float(srcWidth) / Float(dstWidth)
+            let scaleY = Float(srcHeight) / Float(dstHeight)
+            
+            for ch in 0..<channels {
+                for y in 0..<dstHeight {
+                    for x in 0..<dstWidth {
+                        let srcX = (Float(x) + 0.5) * scaleX - 0.5
+                        let srcY = (Float(y) + 0.5) * scaleY - 0.5
+                        let value = sampleFloat(
+                            cube: cube,
+                            axes: axes,
+                            channel: ch,
+                            x: srcX,
+                            y: srcY,
+                            algorithm: parameters.algorithm,
+                            bicubicA: Float(parameters.bicubicA),
+                            lanczosA: parameters.lanczosA
+                        )
+                        
+                        var outIndices = [0, 0, 0]
+                        outIndices[axes.width] = x
+                        outIndices[axes.height] = y
+                        outIndices[axes.channel] = ch
+                        
+                        let idx = linearIndex(
+                            dims: dimsArray,
+                            isFortran: cube.isFortranOrder,
+                            i0: outIndices[0],
+                            i1: outIndices[1],
+                            i2: outIndices[2]
+                        )
+                        output[idx] = value
+                    }
+                }
+            }
+            
+            let storage = DataStorage.float32(output)
+            return HyperCube(
+                dims: (dimsArray[0], dimsArray[1], dimsArray[2]),
+                storage: storage,
+                sourceFormat: cube.sourceFormat + " [Resize]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         var output = [Double](repeating: 0.0, count: total)
         
         let scaleX = Double(srcWidth) / Double(dstWidth)
@@ -487,6 +609,79 @@ class CubeResizer {
             return bicubicSample(cube: cube, axes: axes, channel: channel, x: x, y: y, a: -1.0)
         case .lanczos:
             return lanczosSample(cube: cube, axes: axes, channel: channel, x: x, y: y, a: max(1, lanczosA))
+        }
+    }
+    
+    private static func sampleFloat(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        channel: Int,
+        x: Float,
+        y: Float,
+        algorithm: ResizeAlgorithm,
+        bicubicA: Float,
+        lanczosA: Int
+    ) -> Float {
+        switch algorithm {
+        case .nearest:
+            let nx = Int(round(x))
+            let ny = Int(round(y))
+            return Float(value(atX: nx, y: ny, channel: channel, cube: cube, axes: axes))
+        case .bilinear:
+            return Float(bilinearSample(cube: cube, axes: axes, channel: channel, x: Double(x), y: Double(y)))
+        case .bicubic:
+            return Float(bicubicSample(cube: cube, axes: axes, channel: channel, x: Double(x), y: Double(y), a: Double(bicubicA)))
+        case .bspline:
+            return Float(bicubicSample(cube: cube, axes: axes, channel: channel, x: Double(x), y: Double(y), a: -1.0))
+        case .lanczos:
+            return Float(lanczosSample(cube: cube, axes: axes, channel: channel, x: Double(x), y: Double(y), a: max(1, lanczosA)))
+        }
+    }
+
+    private static func fillNearest<T>(
+        from source: [T],
+        into output: inout [T],
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        srcDims: [Int],
+        dstWidth: Int,
+        dstHeight: Int,
+        scaleX: Double,
+        scaleY: Double,
+        dstDims: [Int]
+    ) {
+        let dstDimsArray = dstDims
+        let channels = dstDimsArray[axes.channel]
+        
+        for ch in 0..<channels {
+            for y in 0..<dstHeight {
+                for x in 0..<dstWidth {
+                    let srcX = Int(round((Double(x) + 0.5) * scaleX - 0.5))
+                    let srcY = Int(round((Double(y) + 0.5) * scaleY - 0.5))
+                    
+                    var srcIndices = [0, 0, 0]
+                    srcIndices[axes.channel] = ch
+                    srcIndices[axes.height] = min(max(0, srcY), srcDims[axes.height] - 1)
+                    srcIndices[axes.width] = min(max(0, srcX), srcDims[axes.width] - 1)
+                    
+                    let srcIdx = cube.linearIndex(i0: srcIndices[0], i1: srcIndices[1], i2: srcIndices[2])
+                    
+                    var dstIndices = [0, 0, 0]
+                    dstIndices[axes.channel] = ch
+                    dstIndices[axes.height] = y
+                    dstIndices[axes.width] = x
+                    
+                    let dstIdx = linearIndex(
+                        dims: dstDimsArray,
+                        isFortran: cube.isFortranOrder,
+                        i0: dstIndices[0],
+                        i1: dstIndices[1],
+                        i2: dstIndices[2]
+                    )
+                    
+                    output[dstIdx] = source[srcIdx]
+                }
+            }
         }
     }
     

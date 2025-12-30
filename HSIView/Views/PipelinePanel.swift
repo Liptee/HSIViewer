@@ -410,7 +410,7 @@ struct OperationEditorView: View {
             localNormalizationParams = op.normalizationParams ?? .default
             localPreserveDataType = op.preserveDataType ?? true
         case .dataTypeConversion:
-            localTargetDataType = op.targetDataType ?? .float64
+            localTargetDataType = op.targetDataType ?? state.cube?.originalDataType ?? .float64
             localAutoScale = op.autoScale ?? true
         case .rotation:
             localRotationAngle = op.rotationAngle ?? .degree90
@@ -672,6 +672,22 @@ struct OperationEditorView: View {
                 }
             default:
                 EmptyView()
+            }
+            
+            if localResizeParams.algorithm != .nearest {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Точность вычислений")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $localResizeParams.computePrecision) {
+                        ForEach(ResizeComputationPrecision.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 240)
+                }
             }
             
             Divider()
