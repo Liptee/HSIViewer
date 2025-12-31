@@ -26,6 +26,8 @@ final class AppState: ObservableObject {
     @Published var ndviNIRTarget: String = "840"
     @Published var ndsiGreenTarget: String = "555"
     @Published var ndsiSWIRTarget: String = "1610"
+    @Published var wdviSlope: String = "1.0"
+    @Published var wdviIntercept: String = "0.0"
     @Published var ndPalette: NDPalette = .classic
     @Published var ndThreshold: Double = 0.3
     
@@ -101,7 +103,8 @@ final class AppState: ObservableObject {
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
         .ndvi: (0, 0),
-        .ndsi: (0, 0)
+        .ndsi: (0, 0),
+        .wdvi: (0, 0)
     ]
     private var lastPipelineAppliedOperations: [PipelineOperation] = []
     private var lastPipelineResult: HyperCube?
@@ -340,6 +343,14 @@ final class AppState: ObservableObject {
             )
             let fallbackPos = min(max(0, count / 3), count - 1)
             let fallbackNeg = max(fallbackPos + 1, count - 1)
+            fallback = (positive: fallbackPos, negative: fallbackNeg)
+        case .wdvi:
+            targets = (
+                positive: Double(ndviNIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 840,
+                negative: Double(ndviRedTarget.replacingOccurrences(of: ",", with: ".")) ?? 660
+            )
+            let fallbackNeg = min(max(0, count / 3), count - 1)
+            let fallbackPos = max(fallbackNeg + 1, count - 1)
             fallback = (positive: fallbackPos, negative: fallbackNeg)
         }
         
@@ -1282,6 +1293,8 @@ final class AppState: ObservableObject {
         ndviNIRTarget = snapshot.ndviNIRTarget
         ndsiGreenTarget = snapshot.ndsiGreenTarget
         ndsiSWIRTarget = snapshot.ndsiSWIRTarget
+        wdviSlope = snapshot.wdviSlope
+        wdviIntercept = snapshot.wdviIntercept
         ndPalette = NDPalette(rawValue: snapshot.ndPaletteRaw) ?? .classic
         ndThreshold = snapshot.ndThreshold
         pcaPendingConfig = nil
@@ -1345,9 +1358,11 @@ final class AppState: ObservableObject {
         ndviNIRTarget = "840"
         ndsiGreenTarget = "555"
         ndsiSWIRTarget = "1610"
+        wdviSlope = "1.0"
+        wdviIntercept = "0.0"
         ndPalette = .classic
         ndThreshold = 0.3
-        ndFallbackIndices = [.ndvi: (0, 0), .ndsi: (0, 0)]
+        ndFallbackIndices = [.ndvi: (0, 0), .ndsi: (0, 0), .wdvi: (0, 0)]
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         isPCAApplying = false
@@ -1430,6 +1445,8 @@ final class AppState: ObservableObject {
             ndviNIRTarget: ndviNIRTarget,
             ndsiGreenTarget: ndsiGreenTarget,
             ndsiSWIRTarget: ndsiSWIRTarget,
+            wdviSlope: wdviSlope,
+            wdviIntercept: wdviIntercept,
             ndPaletteRaw: ndPalette.rawValue,
             ndThreshold: ndThreshold
         )

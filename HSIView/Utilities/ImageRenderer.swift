@@ -114,7 +114,10 @@ class ImageRenderer {
         positiveIndex: Int,
         negativeIndex: Int,
         palette: NDPalette,
-        threshold: Double
+        threshold: Double,
+        preset: NDIndexPreset,
+        wdviSlope: Double,
+        wdviIntercept: Double
     ) -> NSImage? {
         guard let axes = cube.axes(for: layout) else { return nil }
         
@@ -130,14 +133,46 @@ class ImageRenderer {
         let negativeSlice = extractChannel(cube: cube, axes: axes, channelIndex: negativeIndex, h: height, w: width)
         
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        var values = [Double](repeating: 0, count: width * height)
         let epsilon = 1e-9
+        
+        var minValue = Double.greatestFiniteMagnitude
+        var maxValue = -Double.greatestFiniteMagnitude
         
         for i in 0..<(width * height) {
             let positive = positiveSlice[i]
             let negative = negativeSlice[i]
-            let denom = positive + negative
-            let nd: Double = abs(denom) < epsilon ? 0.0 : (positive - negative) / denom
-            let (r, g, b) = colorForND(nd, palette: palette, threshold: threshold)
+            let value: Double
+            switch preset {
+            case .ndvi, .ndsi:
+                let denom = positive + negative
+                value = abs(denom) < epsilon ? 0.0 : (positive - negative) / denom
+            case .wdvi:
+                value = positive - (wdviSlope * negative + wdviIntercept)
+            }
+            values[i] = value
+            minValue = min(minValue, value)
+            maxValue = max(maxValue, value)
+        }
+        
+        let span = maxValue - minValue
+        
+        for i in 0..<(width * height) {
+            let raw = values[i]
+            let normalized: Double
+            switch preset {
+            case .ndvi, .ndsi:
+                normalized = raw // already in [-1,1] ideally
+            case .wdvi:
+                if span <= epsilon {
+                    normalized = 0
+                } else {
+                    let t = (raw - minValue) / span // 0...1
+                    normalized = t * 2 - 1 // -1...1 for palette reuse
+                }
+            }
+            
+            let (r, g, b) = colorForND(normalized, palette: palette, threshold: threshold)
             let base = i * 4
             pixels[base] = r
             pixels[base + 1] = g

@@ -569,7 +569,10 @@ struct ContentView: View {
                 positiveIndex: indices.positive,
                 negativeIndex: indices.negative,
                 palette: state.ndPalette,
-                threshold: state.ndThreshold
+                threshold: state.ndThreshold,
+                preset: state.ndPreset,
+                wdviSlope: Double(state.wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0,
+                wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
                ) {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
@@ -866,7 +869,8 @@ struct ContentView: View {
                     .frame(width: 200)
                 }
                 
-                if state.ndPreset == .ndvi {
+                switch state.ndPreset {
+                case .ndvi:
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Red (нм)")
                             .font(.system(size: 10))
@@ -884,7 +888,7 @@ struct ContentView: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                     }
-                } else {
+                case .ndsi:
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Green (нм)")
                             .font(.system(size: 10))
@@ -901,6 +905,42 @@ struct ContentView: View {
                         TextField("1610", text: $state.ndsiSWIRTarget)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
+                    }
+                case .wdvi:
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Red (нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("660", text: $state.ndviRedTarget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NIR (нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("840", text: $state.ndviNIRTarget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("a (slope)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("1.0", text: $state.wdviSlope)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("b (intercept)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("0.0", text: $state.wdviIntercept)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
                     }
                 }
                 

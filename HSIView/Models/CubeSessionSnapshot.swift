@@ -28,6 +28,8 @@ struct CubeSessionSnapshot {
     var ndviNIRTarget: String
     var ndsiGreenTarget: String
     var ndsiSWIRTarget: String
+    var wdviSlope: String
+    var wdviIntercept: String
     var ndPaletteRaw: String
     var ndThreshold: Double
     
@@ -58,6 +60,8 @@ struct CubeSessionSnapshot {
         ndviNIRTarget: "840",
         ndsiGreenTarget: "555",
         ndsiSWIRTarget: "1610",
+        wdviSlope: "1.0",
+        wdviIntercept: "0.0",
         ndPaletteRaw: NDPalette.classic.rawValue,
         ndThreshold: 0.3
     )

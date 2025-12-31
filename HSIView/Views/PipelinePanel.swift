@@ -1105,7 +1105,10 @@ struct OperationEditorView: View {
                 positiveIndex: indices.positive,
                 negativeIndex: indices.negative,
                 palette: state.ndPalette,
-                threshold: state.ndThreshold
+                threshold: state.ndThreshold,
+                preset: state.ndPreset,
+                wdviSlope: Double(state.wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0,
+                wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
             )
         }
     }

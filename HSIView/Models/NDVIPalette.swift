@@ -3,6 +3,7 @@ import Foundation
 enum NDIndexPreset: String, CaseIterable, Identifiable {
     case ndvi = "NDVI"
     case ndsi = "NDSI"
+    case wdvi = "WDVI"
     
     var id: String { rawValue }
     
@@ -10,6 +11,7 @@ enum NDIndexPreset: String, CaseIterable, Identifiable {
         switch self {
         case .ndvi: return "NDVI (растительность)"
         case .ndsi: return "NDSI (снег)"
+        case .wdvi: return "WDVI (почвенная линия)"
         }
     }
 }
