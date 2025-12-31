@@ -11,6 +11,14 @@ struct ContentView: View {
     @State private var currentGeoSize: CGSize = .zero
     @State private var roiDragStartPixel: PixelCoordinate?
     @State private var roiPreviewRect: SpectrumROIRect?
+    @State private var showWDVIAutoSheet: Bool = false
+    @State private var wdviAutoConfig = WDVIAutoEstimationConfig(
+        selectedROIIDs: [],
+        lowerPercentile: 0.02,
+        upperPercentile: 0.98,
+        zScoreThreshold: 3.0,
+        method: .ols
+    )
     @FocusState private var isImageFocused: Bool
     
     private let imageCoordinateSpaceName = "image-canvas"
@@ -46,6 +54,9 @@ struct ContentView: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .sheet(isPresented: $showWDVIAutoSheet) {
+            wdviAutoSheet
         }
     }
     
@@ -942,6 +953,27 @@ struct ContentView: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
                     }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(" ")
+                            .font(.system(size: 10))
+                        Button {
+                            let roiIDs = Set(state.roiSamples.map { $0.id })
+                            wdviAutoConfig = WDVIAutoEstimationConfig(
+                                selectedROIIDs: roiIDs,
+                                lowerPercentile: wdviAutoConfig.lowerPercentile,
+                                upperPercentile: wdviAutoConfig.upperPercentile,
+                                zScoreThreshold: wdviAutoConfig.zScoreThreshold,
+                                method: wdviAutoConfig.method
+                            )
+                            showWDVIAutoSheet = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "wand.and.stars")
+                                Text("Автооценка почвы…")
+                            }
+                        }
+                    }
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -973,6 +1005,144 @@ struct ContentView: View {
                 }
             }
         }
+    }
+    
+    private var wdviAutoSheet: some View {
+        let rois = state.roiSamples
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Автооценка линии почвы (WDVI)")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+            }
+            
+            if rois.isEmpty {
+                Text("Сохранённых ROI нет — добавьте области на изображении и повторите.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("ROI для оценки")
+                            .font(.system(size: 11, weight: .medium))
+                        Spacer()
+                        Button("Выбрать все") {
+                            wdviAutoConfig.selectedROIIDs = Set(rois.map { $0.id })
+                        }
+                        Button("Очистить") {
+                            wdviAutoConfig.selectedROIIDs.removeAll()
+                        }
+                    }
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(rois) { roi in
+                                Toggle(isOn: Binding(
+                                    get: { wdviAutoConfig.selectedROIIDs.contains(roi.id) },
+                                    set: { isOn in
+                                        if isOn {
+                                            wdviAutoConfig.selectedROIIDs.insert(roi.id)
+                                        } else {
+                                            wdviAutoConfig.selectedROIIDs.remove(roi.id)
+                                        }
+                                    }
+                                )) {
+                                    Text(roi.displayName ?? "ROI \(roi.id.uuidString.prefix(4))")
+                                        .font(.system(size: 11))
+                                }
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                        .cornerRadius(8)
+                        .frame(maxHeight: 180)
+                    }
+                }
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Фильтрация и регрессия")
+                    .font(.system(size: 11, weight: .medium))
+                
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Обрезка по перцентилям")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        Text("Нижний")
+                            .font(.system(size: 10))
+                            .frame(width: 60, alignment: .leading)
+                        Slider(value: Binding(
+                            get: { wdviAutoConfig.lowerPercentile * 100 },
+                            set: { v in wdviAutoConfig.lowerPercentile = min(v / 100, wdviAutoConfig.upperPercentile - 0.01) }
+                        ), in: 0...20, step: 0.5)
+                        Text(String(format: "%.1f%%", wdviAutoConfig.lowerPercentile * 100))
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(width: 60, alignment: .trailing)
+                    }
+                    HStack(spacing: 12) {
+                        Text("Верхний")
+                            .font(.system(size: 10))
+                            .frame(width: 60, alignment: .leading)
+                        Slider(value: Binding(
+                            get: { wdviAutoConfig.upperPercentile * 100 },
+                            set: { v in wdviAutoConfig.upperPercentile = max(v / 100, wdviAutoConfig.lowerPercentile + 0.01) }
+                        ), in: 80...100, step: 0.5)
+                        Text(String(format: "%.1f%%", wdviAutoConfig.upperPercentile * 100))
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(width: 60, alignment: .trailing)
+                    }
+                }
+                
+                HStack(alignment: .center, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Отсечение по z-score")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            Slider(value: $wdviAutoConfig.zScoreThreshold, in: 0...5, step: 0.1)
+                                .frame(width: 220)
+                            Text(String(format: "%.1f", wdviAutoConfig.zScoreThreshold))
+                                .font(.system(size: 10, design: .monospaced))
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Метод регрессии")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Picker("", selection: $wdviAutoConfig.method) {
+                            ForEach(WDVIAutoRegressionMethod.allCases) { method in
+                                Text(method.rawValue).tag(method)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 220)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            HStack {
+                Spacer()
+                Button("Отмена") {
+                    showWDVIAutoSheet = false
+                }
+                Button("Рассчитать") {
+                    var normalizedConfig = wdviAutoConfig
+                    normalizedConfig.lowerPercentile = max(0, min(0.5, normalizedConfig.lowerPercentile))
+                    normalizedConfig.upperPercentile = min(1, max(normalizedConfig.lowerPercentile + 0.01, normalizedConfig.upperPercentile))
+                    state.runWDVIAutoEstimation(config: normalizedConfig)
+                    showWDVIAutoSheet = false
+                }
+                .disabled(rois.isEmpty || wdviAutoConfig.selectedROIIDs.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 560, minHeight: 420)
     }
     
     @ViewBuilder

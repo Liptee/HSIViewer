@@ -369,6 +369,53 @@ final class AppState: ObservableObject {
         }
     }
     
+    func runWDVIAutoEstimation(config: WDVIAutoEstimationConfig) {
+        guard ndPreset == .wdvi else { return }
+        guard let cube = cube else {
+            loadError = "Нет данных для оценки WDVI"
+            return
+        }
+        guard let axes = cube.axes(for: activeLayout) else {
+            loadError = "Не удалось определить layout"
+            return
+        }
+        guard let indices = ndChannelIndices() else {
+            loadError = "Не удалось определить каналы Red/NIR"
+            return
+        }
+        
+        let selectedROIs = roiSamples.filter { config.selectedROIIDs.contains($0.id) }
+        guard !selectedROIs.isEmpty else {
+            loadError = "Выберите хотя бы один ROI для оценки"
+            return
+        }
+        
+        beginBusy(message: "Оценка линии почвы…")
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = self.computeWDVISoilLine(
+                cube: cube,
+                axes: axes,
+                indices: indices,
+                rois: selectedROIs,
+                config: config
+            )
+            DispatchQueue.main.async {
+                self.endBusy()
+                switch result {
+                case .success(let (slope, intercept, pairsCount)):
+                    self.wdviSlope = String(format: "%.4f", slope)
+                    self.wdviIntercept = String(format: "%.4f", intercept)
+                    let aText = String(format: "%.4f", slope)
+                    let bText = String(format: "%.4f", intercept)
+                    self.loadError = "Оценка WDVI: a=\(aText), b=\(bText) по \(pairsCount) пикселям"
+                case .failure(let error):
+                    self.loadError = error.localizedDescription
+                }
+            }
+        }
+    }
+    
     private func closestIndex(in wavelengths: [Double], to target: Double, limit: Int) -> Int? {
         guard !wavelengths.isEmpty else { return nil }
         var bestIdx = 0
@@ -381,6 +428,169 @@ final class AppState: ObservableObject {
             }
         }
         return bestIdx
+    }
+    
+    private func computeWDVISoilLine(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        indices: (positive: Int, negative: Int),
+        rois: [SpectrumROISample],
+        config: WDVIAutoEstimationConfig
+    ) -> Result<(Double, Double, Int), WDVIEstimationError> {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        guard width > 0, height > 0 else { return .failure(.message("Размеры изображения некорректны")) }
+        
+        var pairs: [(Double, Double)] = []
+        for roi in rois {
+            guard let rect = roi.rect.clamped(maxWidth: width, maxHeight: height) else { continue }
+            guard rect.area > 0 else { continue }
+            for y in rect.minY..<(rect.minY + rect.height) {
+                for x in rect.minX..<(rect.minX + rect.width) {
+                    var idx = [0, 0, 0]
+                    idx[axes.height] = y
+                    idx[axes.width] = x
+                    
+                    idx[axes.channel] = indices.negative
+                    let red = cube.getValue(i0: idx[0], i1: idx[1], i2: idx[2])
+                    
+                    idx[axes.channel] = indices.positive
+                    let nir = cube.getValue(i0: idx[0], i1: idx[1], i2: idx[2])
+                    
+                    if red.isFinite && nir.isFinite {
+                        pairs.append((red, nir))
+                    }
+                }
+            }
+        }
+        
+        guard !pairs.isEmpty else { return .failure(.message("Нет данных в выбранных ROI")) }
+        
+        // percentile filtering
+        let reds = pairs.map { $0.0 }.sorted()
+        let nirs = pairs.map { $0.1 }.sorted()
+        let lowerP = max(0.0, min(config.lowerPercentile, 0.5))
+        let upperP = min(1.0, max(config.upperPercentile, lowerP))
+        let redLower = quantile(sorted: reds, q: lowerP)
+        let redUpper = quantile(sorted: reds, q: upperP)
+        let nirLower = quantile(sorted: nirs, q: lowerP)
+        let nirUpper = quantile(sorted: nirs, q: upperP)
+        
+        var filtered = pairs.filter { pair in
+            pair.0 >= redLower && pair.0 <= redUpper && pair.1 >= nirLower && pair.1 <= nirUpper
+        }
+        
+        // z-score trimming
+        if config.zScoreThreshold > 0 {
+            let meanRed = filtered.map { $0.0 }.reduce(0, +) / Double(filtered.count)
+            let meanNir = filtered.map { $0.1 }.reduce(0, +) / Double(filtered.count)
+            let stdRed = sqrt(filtered.map { pow($0.0 - meanRed, 2) }.reduce(0, +) / Double(max(filtered.count - 1, 1)))
+            let stdNir = sqrt(filtered.map { pow($0.1 - meanNir, 2) }.reduce(0, +) / Double(max(filtered.count - 1, 1)))
+            
+            if stdRed > 0, stdNir > 0 {
+                filtered = filtered.filter { pair in
+                    let zr = abs(pair.0 - meanRed) / stdRed
+                    let zn = abs(pair.1 - meanNir) / stdNir
+                    return zr <= config.zScoreThreshold && zn <= config.zScoreThreshold
+                }
+            }
+        }
+        
+        guard filtered.count >= 2 else { return .failure(.message("Недостаточно данных после фильтрации")) }
+        
+        let regression: (Double, Double)
+        switch config.method {
+        case .ols:
+            regression = linearRegression(pairs: filtered)
+        case .huber:
+            regression = huberRegression(pairs: filtered)
+        }
+        
+        return .success((regression.0, regression.1, filtered.count))
+    }
+    
+    private func quantile(sorted values: [Double], q: Double) -> Double {
+        guard !values.isEmpty else { return 0 }
+        let clampedQ = max(0.0, min(1.0, q))
+        let pos = clampedQ * Double(values.count - 1)
+        let idx = Int(pos)
+        if idx >= values.count - 1 { return values.last! }
+        let frac = pos - Double(idx)
+        return values[idx] * (1 - frac) + values[idx + 1] * frac
+    }
+    
+    private func linearRegression(pairs: [(Double, Double)]) -> (Double, Double) {
+        let n = Double(pairs.count)
+        let sumX = pairs.map { $0.0 }.reduce(0, +)
+        let sumY = pairs.map { $0.1 }.reduce(0, +)
+        let sumXY = pairs.map { $0.0 * $0.1 }.reduce(0, +)
+        let sumXX = pairs.map { $0.0 * $0.0 }.reduce(0, +)
+        let denom = n * sumXX - sumX * sumX
+        if abs(denom) < 1e-12 {
+            let meanY = sumY / n
+            return (0.0, meanY)
+        }
+        let slope = (n * sumXY - sumX * sumY) / denom
+        let intercept = (sumY - slope * sumX) / n
+        return (slope, intercept)
+    }
+    
+    private func huberRegression(pairs: [(Double, Double)], iterations: Int = 6, delta: Double = 1.5) -> (Double, Double) {
+        var weights = Array(repeating: 1.0, count: pairs.count)
+        var slope = 0.0
+        var intercept = 0.0
+        
+        for _ in 0..<iterations {
+            let result = weightedLinearRegression(pairs: pairs, weights: weights)
+            slope = result.0
+            intercept = result.1
+            
+            let residuals = pairs.enumerated().map { idx, pair in
+                let pred = slope * pair.0 + intercept
+                return pair.1 - pred
+            }
+            let scale = max(1e-6, medianAbsoluteDeviation(residuals))
+            for i in 0..<weights.count {
+                let r = residuals[i] / (delta * scale)
+                let w = abs(r) <= 1 ? 1.0 : (delta / abs(residuals[i] / scale))
+                weights[i] = w.isFinite ? max(1e-6, w) : 1e-6
+            }
+        }
+        
+        return (slope, intercept)
+    }
+    
+    private func weightedLinearRegression(pairs: [(Double, Double)], weights: [Double]) -> (Double, Double) {
+        var sumW = 0.0
+        var sumWX = 0.0
+        var sumWY = 0.0
+        var sumWXX = 0.0
+        var sumWXY = 0.0
+        
+        for (pair, w) in zip(pairs, weights) {
+            sumW += w
+            sumWX += w * pair.0
+            sumWY += w * pair.1
+            sumWXX += w * pair.0 * pair.0
+            sumWXY += w * pair.0 * pair.1
+        }
+        let denom = sumW * sumWXX - sumWX * sumWX
+        if abs(denom) < 1e-12 {
+            let meanY = sumWY / max(sumW, 1e-6)
+            return (0.0, meanY)
+        }
+        let slope = (sumW * sumWXY - sumWX * sumWY) / denom
+        let intercept = (sumWY - slope * sumWX) / sumW
+        return (slope, intercept)
+    }
+    
+    private func medianAbsoluteDeviation(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 1e-6 }
+        let median = quantile(sorted: values.sorted(), q: 0.5)
+        let deviations = values.map { abs($0 - median) }.sorted()
+        return quantile(sorted: deviations, q: 0.5) / 0.6745
     }
     
     private func clampedPCAConfig(_ config: PCAVisualizationConfig) -> PCAVisualizationConfig {
@@ -2135,6 +2345,31 @@ struct SpectrumROISample: Identifiable, Equatable {
             wavelengths: trimmedWavelengths,
             colorIndex: colorIndex
         )
+    }
+}
+
+enum WDVIAutoRegressionMethod: String, CaseIterable, Identifiable {
+    case ols = "OLS (линейная регрессия)"
+    case huber = "Huber (робастная)"
+    
+    var id: String { rawValue }
+}
+
+struct WDVIAutoEstimationConfig {
+    var selectedROIIDs: Set<UUID>
+    var lowerPercentile: Double
+    var upperPercentile: Double
+    var zScoreThreshold: Double
+    var method: WDVIAutoRegressionMethod
+}
+
+enum WDVIEstimationError: Error {
+    case message(String)
+    
+    var localizedDescription: String {
+        switch self {
+        case .message(let text): return text
+        }
     }
 }
 
