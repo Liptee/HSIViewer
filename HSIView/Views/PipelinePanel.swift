@@ -1097,15 +1097,15 @@ struct OperationEditorView: View {
             case .pcaVisualization:
                 return state.pcaRenderedImage
             }
-        case .ndvi:
-            guard let indices = state.ndviChannelIndices() else { return nil }
-            return ImageRenderer.renderNDVI(
+        case .nd:
+            guard let indices = state.ndChannelIndices() else { return nil }
+            return ImageRenderer.renderND(
                 cube: cube,
                 layout: layout,
-                redIndex: indices.red,
-                nirIndex: indices.nir,
-                palette: state.ndviPalette,
-                threshold: state.ndviThreshold
+                positiveIndex: indices.positive,
+                negativeIndex: indices.negative,
+                palette: state.ndPalette,
+                threshold: state.ndThreshold
             )
         }
     }

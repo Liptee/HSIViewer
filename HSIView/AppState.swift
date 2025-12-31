@@ -21,10 +21,13 @@ final class AppState: ObservableObject {
     
     @Published var viewMode: ViewMode = .gray
     @Published var colorSynthesisConfig: ColorSynthesisConfig = .default(channelCount: 0, wavelengths: nil)
+    @Published var ndPreset: NDIndexPreset = .ndvi
     @Published var ndviRedTarget: String = "660"
     @Published var ndviNIRTarget: String = "840"
-    @Published var ndviPalette: NDVIPalette = .classic
-    @Published var ndviThreshold: Double = 0.3
+    @Published var ndsiGreenTarget: String = "555"
+    @Published var ndsiSWIRTarget: String = "1610"
+    @Published var ndPalette: NDPalette = .classic
+    @Published var ndThreshold: Double = 0.3
     
     @Published var wavelengths: [Double]? = nil {
         didSet {
@@ -96,7 +99,10 @@ final class AppState: ObservableObject {
     @Published var isPCAApplying: Bool = false
     @Published var pcaProgressMessage: String?
     private var hasCustomColorSynthesisMapping: Bool = false
-    private var ndviFallbackIndices: (red: Int, nir: Int) = (0, 0)
+    private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
+        .ndvi: (0, 0),
+        .ndsi: (0, 0)
+    ]
     private var lastPipelineAppliedOperations: [PipelineOperation] = []
     private var lastPipelineResult: HyperCube?
     private var lastPipelineBaseCubeID: UUID?
@@ -311,25 +317,44 @@ final class AppState: ObservableObject {
         }
     }
     
-    func ndviChannelIndices() -> (red: Int, nir: Int)? {
+    func ndChannelIndices() -> (positive: Int, negative: Int)? {
         guard channelCount > 1 else { return nil }
         let count = channelCount
-        let fallbackRed = min(max(0, count / 3), count - 1)
-        let fallbackNIR = max(fallbackRed + 1, count - 1)
         
-        let redTarget = Double(ndviRedTarget.replacingOccurrences(of: ",", with: ".")) ?? 660
-        let nirTarget = Double(ndviNIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 840
+        let targets: (positive: Double, negative: Double)
+        let fallback: (positive: Int, negative: Int)
+        
+        switch ndPreset {
+        case .ndvi:
+            targets = (
+                positive: Double(ndviNIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 840,
+                negative: Double(ndviRedTarget.replacingOccurrences(of: ",", with: ".")) ?? 660
+            )
+            let fallbackNeg = min(max(0, count / 3), count - 1)
+            let fallbackPos = max(fallbackNeg + 1, count - 1)
+            fallback = (positive: fallbackPos, negative: fallbackNeg)
+        case .ndsi:
+            targets = (
+                positive: Double(ndsiGreenTarget.replacingOccurrences(of: ",", with: ".")) ?? 555,
+                negative: Double(ndsiSWIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 1610
+            )
+            let fallbackPos = min(max(0, count / 3), count - 1)
+            let fallbackNeg = max(fallbackPos + 1, count - 1)
+            fallback = (positive: fallbackPos, negative: fallbackNeg)
+        }
         
         if let wl = wavelengths, wl.count >= count {
-            let redIndex = closestIndex(in: wl, to: redTarget, limit: count) ?? fallbackRed
-            let nirIndex = closestIndex(in: wl, to: nirTarget, limit: count) ?? fallbackNIR
-            ndviFallbackIndices = (red: redIndex, nir: nirIndex)
-            return (redIndex, nirIndex)
+            let posIndex = closestIndex(in: wl, to: targets.positive, limit: count) ?? fallback.positive
+            let negIndex = closestIndex(in: wl, to: targets.negative, limit: count) ?? fallback.negative
+            ndFallbackIndices[ndPreset] = (positive: posIndex, negative: negIndex)
+            return (posIndex, negIndex)
         } else {
-            if ndviFallbackIndices == (0, 0) {
-                ndviFallbackIndices = (red: fallbackRed, nir: fallbackNIR)
+            var stored = ndFallbackIndices[ndPreset] ?? (0, 0)
+            if stored == (0, 0) {
+                stored = fallback
+                ndFallbackIndices[ndPreset] = stored
             }
-            return ndviFallbackIndices
+            return stored
         }
     }
     
@@ -1252,10 +1277,13 @@ final class AppState: ObservableObject {
             mapping: snapshot.colorSynthesisConfig.mapping,
             pcaConfig: clampedPCAConfig(snapshot.colorSynthesisConfig.pcaConfig)
         )
+        ndPreset = snapshot.ndPreset
         ndviRedTarget = snapshot.ndviRedTarget
         ndviNIRTarget = snapshot.ndviNIRTarget
-        ndviPalette = NDVIPalette(rawValue: snapshot.ndviPaletteRaw) ?? .classic
-        ndviThreshold = snapshot.ndviThreshold
+        ndsiGreenTarget = snapshot.ndsiGreenTarget
+        ndsiSWIRTarget = snapshot.ndsiSWIRTarget
+        ndPalette = NDPalette(rawValue: snapshot.ndPaletteRaw) ?? .classic
+        ndThreshold = snapshot.ndThreshold
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         hasCustomColorSynthesisMapping = true
@@ -1312,9 +1340,14 @@ final class AppState: ObservableObject {
         spectralTrimRange = nil
         viewMode = .gray
         colorSynthesisConfig = .default(channelCount: channelCount, wavelengths: wavelengths)
+        ndPreset = .ndvi
         ndviRedTarget = "660"
         ndviNIRTarget = "840"
-        ndviPalette = .classic
+        ndsiGreenTarget = "555"
+        ndsiSWIRTarget = "1610"
+        ndPalette = .classic
+        ndThreshold = 0.3
+        ndFallbackIndices = [.ndvi: (0, 0), .ndsi: (0, 0)]
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         isPCAApplying = false
@@ -1392,10 +1425,13 @@ final class AppState: ObservableObject {
             roiSamples: roiDescriptors,
             roiAggregationMode: roiAggregationMode,
             colorSynthesisConfig: clampedConfig,
+            ndPreset: ndPreset,
             ndviRedTarget: ndviRedTarget,
             ndviNIRTarget: ndviNIRTarget,
-            ndviPaletteRaw: ndviPalette.rawValue,
-            ndviThreshold: ndviThreshold
+            ndsiGreenTarget: ndsiGreenTarget,
+            ndsiSWIRTarget: ndsiSWIRTarget,
+            ndPaletteRaw: ndPalette.rawValue,
+            ndThreshold: ndThreshold
         )
     }
     

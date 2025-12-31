@@ -108,12 +108,12 @@ class ImageRenderer {
         return slice
     }
 
-    static func renderNDVI(
+    static func renderND(
         cube: HyperCube,
         layout: CubeLayout,
-        redIndex: Int,
-        nirIndex: Int,
-        palette: NDVIPalette,
+        positiveIndex: Int,
+        negativeIndex: Int,
+        palette: NDPalette,
         threshold: Double
     ) -> NSImage? {
         guard let axes = cube.axes(for: layout) else { return nil }
@@ -124,20 +124,20 @@ class ImageRenderer {
         let height = dimsArr[axes.height]
         let width = dimsArr[axes.width]
         
-        guard channels > max(redIndex, nirIndex), redIndex >= 0, nirIndex >= 0 else { return nil }
+        guard channels > max(positiveIndex, negativeIndex), positiveIndex >= 0, negativeIndex >= 0 else { return nil }
         
-        let redSlice = extractChannel(cube: cube, axes: axes, channelIndex: redIndex, h: height, w: width)
-        let nirSlice = extractChannel(cube: cube, axes: axes, channelIndex: nirIndex, h: height, w: width)
+        let positiveSlice = extractChannel(cube: cube, axes: axes, channelIndex: positiveIndex, h: height, w: width)
+        let negativeSlice = extractChannel(cube: cube, axes: axes, channelIndex: negativeIndex, h: height, w: width)
         
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         let epsilon = 1e-9
         
         for i in 0..<(width * height) {
-            let red = redSlice[i]
-            let nir = nirSlice[i]
-            let denom = nir + red
-            let ndvi: Double = abs(denom) < epsilon ? 0.0 : (nir - red) / denom
-            let (r, g, b) = colorForNDVI(ndvi, palette: palette, threshold: threshold)
+            let positive = positiveSlice[i]
+            let negative = negativeSlice[i]
+            let denom = positive + negative
+            let nd: Double = abs(denom) < epsilon ? 0.0 : (positive - negative) / denom
+            let (r, g, b) = colorForND(nd, palette: palette, threshold: threshold)
             let base = i * 4
             pixels[base] = r
             pixels[base + 1] = g
@@ -160,7 +160,7 @@ class ImageRenderer {
         return result
     }
     
-    private static func colorForNDVI(_ value: Double, palette: NDVIPalette, threshold: Double) -> (UInt8, UInt8, UInt8) {
+    private static func colorForND(_ value: Double, palette: NDPalette, threshold: Double) -> (UInt8, UInt8, UInt8) {
         let v = max(-1.0, min(1.0, value))
         switch palette {
         case .grayscale:

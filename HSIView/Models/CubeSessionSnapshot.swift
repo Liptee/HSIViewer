@@ -23,10 +23,13 @@ struct CubeSessionSnapshot {
     var roiSamples: [SpectrumROISampleDescriptor]
     var roiAggregationMode: SpectrumROIAggregationMode
     var colorSynthesisConfig: ColorSynthesisConfig
+    var ndPreset: NDIndexPreset
     var ndviRedTarget: String
     var ndviNIRTarget: String
-    var ndviPaletteRaw: String
-    var ndviThreshold: Double
+    var ndsiGreenTarget: String
+    var ndsiSWIRTarget: String
+    var ndPaletteRaw: String
+    var ndThreshold: Double
     
     static let empty = CubeSessionSnapshot(
         pipelineOperations: [],
@@ -50,10 +53,13 @@ struct CubeSessionSnapshot {
         roiSamples: [],
         roiAggregationMode: .mean,
         colorSynthesisConfig: .default(channelCount: 0, wavelengths: nil),
+        ndPreset: .ndvi,
         ndviRedTarget: "660",
         ndviNIRTarget: "840",
-        ndviPaletteRaw: NDVIPalette.classic.rawValue,
-        ndviThreshold: 0.3
+        ndsiGreenTarget: "555",
+        ndsiSWIRTarget: "1610",
+        ndPaletteRaw: NDPalette.classic.rawValue,
+        ndThreshold: 0.3
     )
 }
 

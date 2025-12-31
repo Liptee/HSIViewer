@@ -561,20 +561,20 @@ struct ContentView: View {
                 )
             }
             
-        case .ndvi:
-            if let indices = state.ndviChannelIndices(),
-               let nsImage = ImageRenderer.renderNDVI(
+        case .nd:
+            if let indices = state.ndChannelIndices(),
+               let nsImage = ImageRenderer.renderND(
                 cube: cube,
                 layout: state.activeLayout,
-                redIndex: indices.red,
-                nirIndex: indices.nir,
-                palette: state.ndviPalette,
-                threshold: state.ndviThreshold
+                positiveIndex: indices.positive,
+                negativeIndex: indices.negative,
+                palette: state.ndPalette,
+                threshold: state.ndThreshold
                ) {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
                 view = AnyView(
-                    Text("Не удалось построить NDVI")
+                    Text("Не удалось построить ND")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 )
@@ -717,8 +717,8 @@ struct ContentView: View {
                     grayscaleChannelControls(cube: cube)
                 } else if state.viewMode == .rgb {
                     colorSynthesisControls(cube: cube)
-                } else if state.viewMode == .ndvi {
-                    ndviControls()
+                } else if state.viewMode == .nd {
+                    ndControls()
                 }
                 
                 HStack(spacing: 12) {
@@ -847,36 +847,69 @@ struct ContentView: View {
         return "\(red) • \(green) • \(blue)"
     }
     
-    private func ndviControls() -> some View {
+    private func ndControls() -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("NDVI настройки")
+            Text("ND индексы")
                 .font(.system(size: 11, weight: .medium))
             
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Red (нм)")
+                    Text("Пресет")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
-                    TextField("660", text: $state.ndviRedTarget)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 70)
+                    Picker("", selection: $state.ndPreset) {
+                        ForEach(NDIndexPreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("NIR (нм)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    TextField("840", text: $state.ndviNIRTarget)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 70)
+                if state.ndPreset == .ndvi {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Red (нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("660", text: $state.ndviRedTarget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NIR (нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("840", text: $state.ndviNIRTarget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Green (нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("555", text: $state.ndsiGreenTarget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("SWIR (нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("1610", text: $state.ndsiSWIRTarget)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Палитра")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
-                    Picker("", selection: $state.ndviPalette) {
-                        ForEach(NDVIPalette.allCases) { palette in
+                    Picker("", selection: $state.ndPalette) {
+                        ForEach(NDPalette.allCases) { palette in
                             Text(palette.rawValue).tag(palette)
                         }
                     }
@@ -884,15 +917,15 @@ struct ContentView: View {
                     .frame(width: 200)
                 }
                 
-                if state.ndviPalette == .binaryVegetation {
+                if state.ndPalette == .binaryVegetation {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Порог NDVI")
+                        Text("Порог ND")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         HStack {
-                            Slider(value: $state.ndviThreshold, in: -1...1, step: 0.01)
+                            Slider(value: $state.ndThreshold, in: -1...1, step: 0.01)
                                 .frame(width: 180)
-                            Text(String(format: "%.2f", state.ndviThreshold))
+                            Text(String(format: "%.2f", state.ndThreshold))
                                 .font(.system(size: 10, design: .monospaced))
                                 .frame(width: 50, alignment: .leading)
                         }

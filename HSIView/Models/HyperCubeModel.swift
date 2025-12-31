@@ -209,7 +209,7 @@ enum CubeLayout: String, CaseIterable, Identifiable {
 enum ViewMode: String, CaseIterable, Identifiable {
     case gray = "Gray"
     case rgb  = "RGB"
-    case ndvi = "NDVI"
+    case nd   = "ND"
     
     var id: String { rawValue }
 }
