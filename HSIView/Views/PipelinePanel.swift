@@ -87,10 +87,9 @@ struct PipelinePanel: View {
                     }
                     .onDrop(of: [.text], delegate: OperationDropDelegate(
                         item: operation,
-                        operations: $state.pipelineOperations,
                         draggingItem: $draggingItem,
-                        autoApply: state.pipelineAutoApply,
-                        onApply: { state.applyPipeline() }
+                        operationsProvider: { state.pipelineOperations },
+                        moveHandler: { from, to in state.moveOperation(from: from, to: to) }
                     ))
                 }
             }
@@ -297,18 +296,12 @@ struct OperationRow: View {
 
 struct OperationDropDelegate: SwiftUI.DropDelegate {
     let item: PipelineOperation
-    @Binding var operations: [PipelineOperation]
     @Binding var draggingItem: PipelineOperation?
-    let autoApply: Bool
-    let onApply: () -> Void
+    let operationsProvider: () -> [PipelineOperation]
+    let moveHandler: (Int, Int) -> Void
     
     func performDrop(info: DropInfo) -> Bool {
         draggingItem = nil
-        if autoApply {
-            DispatchQueue.main.async {
-                onApply()
-            }
-        }
         return true
     }
     
@@ -316,16 +309,13 @@ struct OperationDropDelegate: SwiftUI.DropDelegate {
         guard let draggingItem = draggingItem else { return }
         guard draggingItem.id != item.id else { return }
         
-        guard let fromIndex = operations.firstIndex(where: { $0.id == draggingItem.id }),
-              let toIndex = operations.firstIndex(where: { $0.id == item.id }) else {
+        let ops = operationsProvider()
+        guard let fromIndex = ops.firstIndex(where: { $0.id == draggingItem.id }),
+              let toIndex = ops.firstIndex(where: { $0.id == item.id }) else {
             return
         }
         
-        withAnimation(.default) {
-            let fromItem = operations[fromIndex]
-            operations.remove(at: fromIndex)
-            operations.insert(fromItem, at: toIndex)
-        }
+        moveHandler(fromIndex, toIndex)
     }
     
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -1109,6 +1099,13 @@ struct OperationEditorView: View {
                 preset: state.ndPreset,
                 wdviSlope: Double(state.wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0,
                 wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
+            )
+        case .mask:
+            return ImageRenderer.renderRGB(
+                cube: cube,
+                layout: layout,
+                wavelengths: state.wavelengths,
+                mapping: state.colorSynthesisConfig.mapping
             )
         }
     }

@@ -13,25 +13,52 @@ struct PendingExportInfo: Equatable {
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy = "NumPy (.npy)"
     case mat = "MATLAB (.mat)"
-    case tiff = "PNG Channels"
+    case tiff = "TIFF (.tiff)"
+    case pngChannels = "PNG Channels"
     case quickPNG = "Быстрый PNG"
+    case maskPNG = "Маска PNG"
+    case maskNpy = "Маска NumPy"
+    case maskMat = "Маска MAT"
     
     var id: String { rawValue }
     
     var fileExtension: String {
         switch self {
-        case .npy: return "npy"
-        case .mat: return "mat"
-        case .tiff: return "png"
-        case .quickPNG: return "png"
+        case .npy, .maskNpy: return "npy"
+        case .mat, .maskMat: return "mat"
+        case .tiff: return "tiff"
+        case .pngChannels, .quickPNG, .maskPNG: return "png"
         }
     }
+    
+    var isMaskExport: Bool {
+        switch self {
+        case .maskPNG, .maskNpy, .maskMat: return true
+        default: return false
+        }
+    }
+    
+    static var cubeFormats: [ExportFormat] {
+        [.npy, .mat, .tiff, .pngChannels, .quickPNG]
+    }
+    
+    static var maskFormats: [ExportFormat] {
+        [.maskPNG, .maskNpy, .maskMat]
+    }
+}
+
+enum ExportTab: String, CaseIterable, Identifiable {
+    case cube = "Гиперкуб"
+    case mask = "Маска"
+    
+    var id: String { rawValue }
 }
 
 struct ExportView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) var dismiss
     
+    @State private var selectedTab: ExportTab = .cube
     @State private var selectedFormat: ExportFormat = .npy
     @State private var exportWavelengths: Bool = true
     @State private var matVariableName: String = "hypercube"
@@ -39,9 +66,15 @@ struct ExportView: View {
     @State private var colorSynthesisMode: ColorSynthesisMode = .trueColorRGB
     @State private var isExporting: Bool = false
     @State private var exportError: String?
+    @State private var maskExportColored: Bool = false
+    @State private var maskVariableName: String = "mask"
     
     private var defaultExportBaseName: String {
         state.defaultExportBaseName
+    }
+    
+    private var hasMask: Bool {
+        !state.maskEditorState.maskLayers.isEmpty
     }
     
     var body: some View {
@@ -50,24 +83,24 @@ struct ExportView: View {
             
             Divider()
             
+            Picker("", selection: $selectedTab) {
+                ForEach(ExportTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            
+            Divider()
+            
             ScrollView {
                 VStack(spacing: 20) {
-                    formatSection
-                    libraryExportSection
-                    
-                    if selectedFormat == .mat {
-                        matOptionsSection
+                    if selectedTab == .cube {
+                        cubeExportContent
+                    } else {
+                        maskExportContent
                     }
-                    
-                    if selectedFormat == .quickPNG {
-                        colorSynthesisSection
-                    }
-                    
-                    if selectedFormat != .quickPNG {
-                        wavelengthsSection
-                    }
-                    
-                    cubeInfoSection
                 }
                 .padding(20)
             }
@@ -76,9 +109,162 @@ struct ExportView: View {
             
             footerView
         }
-        .frame(width: 500, height: 450)
+        .frame(width: 500, height: 500)
         .onAppear {
             colorSynthesisMode = state.colorSynthesisConfig.mode
+            if state.viewMode == .mask && hasMask {
+                selectedTab = .mask
+                selectedFormat = .maskPNG
+            }
+        }
+        .onChange(of: selectedTab) { newTab in
+            if newTab == .cube && selectedFormat.isMaskExport {
+                selectedFormat = .npy
+            } else if newTab == .mask && !selectedFormat.isMaskExport {
+                selectedFormat = .maskPNG
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var cubeExportContent: some View {
+        formatSection
+        libraryExportSection
+        
+        if selectedFormat == .mat {
+            matOptionsSection
+        }
+        
+        if selectedFormat == .quickPNG {
+            colorSynthesisSection
+        }
+        
+        if selectedFormat != .quickPNG {
+            wavelengthsSection
+        }
+        
+        cubeInfoSection
+    }
+    
+    @ViewBuilder
+    private var maskExportContent: some View {
+        if !hasMask {
+            VStack(spacing: 12) {
+                Image(systemName: "square.stack.3d.up.slash")
+                    .font(.system(size: 32))
+                    .foregroundColor(.secondary)
+                Text("Нет маски для экспорта")
+                    .font(.system(size: 13, weight: .medium))
+                Text("Переключитесь в режим Mask и создайте маску")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(40)
+        } else {
+            maskFormatSection
+            maskOptionsSection
+            maskInfoSection
+        }
+    }
+    
+    private var maskFormatSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Формат экспорта маски:")
+                .font(.system(size: 11, weight: .semibold))
+            
+            Picker("", selection: $selectedFormat) {
+                ForEach(ExportFormat.maskFormats) { format in
+                    Text(format.rawValue).tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+            
+            maskFormatDescription
+        }
+    }
+    
+    @ViewBuilder
+    private var maskFormatDescription: some View {
+        switch selectedFormat {
+        case .maskPNG:
+            infoBox(
+                icon: "photo",
+                text: maskExportColored
+                    ? "Цветной PNG с цветами классов. Для визуализации."
+                    : "Одноканальный PNG (grayscale). Значения пикселей = номера классов."
+            )
+        case .maskNpy:
+            infoBox(
+                icon: "doc.badge.gearshape",
+                text: "NumPy массив HxW uint8. Значения = номера классов (0 = фон)."
+            )
+        case .maskMat:
+            infoBox(
+                icon: "doc.badge.gearshape",
+                text: "MATLAB формат с маской и метаданными классов."
+            )
+        default:
+            EmptyView()
+        }
+    }
+    
+    private var maskOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if selectedFormat == .maskPNG {
+                Toggle(isOn: $maskExportColored) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "paintpalette")
+                            .font(.system(size: 11))
+                        Text("Экспорт в цвете")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+            }
+            
+            if selectedFormat == .maskMat {
+                HStack(spacing: 8) {
+                    Text("Имя переменной:")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    
+                    TextField("mask", text: $maskVariableName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(maxWidth: 200)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(8)
+    }
+    
+    private var maskInfoSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Информация о маске:")
+                .font(.system(size: 11, weight: .semibold))
+            
+            if let firstMask = state.maskEditorState.maskLayers.first {
+                infoRow(label: "Размер", value: "\(firstMask.width) × \(firstMask.height)")
+                infoRow(label: "Классов", value: "\(state.maskEditorState.maskLayers.count)")
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(state.maskEditorState.maskLayers, id: \.id) { layer in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color(layer.color))
+                                .frame(width: 10, height: 10)
+                            Text("\(layer.classValue): \(layer.name)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.3))
+                .cornerRadius(4)
+            }
         }
     }
     
@@ -100,7 +286,7 @@ struct ExportView: View {
                 .font(.system(size: 11, weight: .semibold))
             
             Picker("", selection: $selectedFormat) {
-                ForEach(ExportFormat.allCases) { format in
+                ForEach(ExportFormat.cubeFormats) { format in
                     Text(format.rawValue).tag(format)
                 }
             }
@@ -153,6 +339,11 @@ struct ExportView: View {
         case .tiff:
             infoBox(
                 icon: "photo.stack",
+                text: "Экспорт всех каналов в один многокадровый TIFF файл."
+            )
+        case .pngChannels:
+            infoBox(
+                icon: "photo.stack",
                 text: "Экспорт каналов как отдельные PNG изображения в выбранную папку. Все типы данных автоматически масштабируются."
             )
         case .quickPNG:
@@ -160,6 +351,8 @@ struct ExportView: View {
                 icon: "photo",
                 text: "Быстрый экспорт RGB изображения с выбранным режимом цветосинтеза."
             )
+        case .maskPNG, .maskNpy, .maskMat:
+            EmptyView()
         }
     }
     
@@ -308,7 +501,12 @@ struct ExportView: View {
                     icon: "doc.text",
                     text: "Будет создан файл '\(defaultExportBaseName)_wavelengths.txt' с \(wavelengths.count) длинами волн."
                 )
-            case .quickPNG:
+            case .pngChannels:
+                infoBox(
+                    icon: "doc.text",
+                    text: "Будет создан файл '\(defaultExportBaseName)_wavelengths.txt' с \(wavelengths.count) длинами волн."
+                )
+            case .quickPNG, .maskPNG, .maskNpy, .maskMat:
                 EmptyView()
             }
         } else {
@@ -401,8 +599,9 @@ struct ExportView: View {
             .controlSize(.large)
             .keyboardShortcut(.escape, modifiers: [])
             
-            let singleCubeMissing = !state.exportEntireLibrary && state.cube == nil
-            let libraryUnavailable = state.exportEntireLibrary && state.libraryEntries.isEmpty
+            let canExportCube = selectedTab == .cube && (state.exportEntireLibrary ? !state.libraryEntries.isEmpty : state.cube != nil)
+            let canExportMask = selectedTab == .mask && hasMask
+            let canExport = canExportCube || canExportMask
             
             Button(action: performExport) {
                 HStack {
@@ -418,7 +617,7 @@ struct ExportView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(isExporting || singleCubeMissing || libraryUnavailable)
+            .disabled(isExporting || !canExport)
             .keyboardShortcut(.return, modifiers: [])
         }
         .padding(16)
@@ -426,6 +625,11 @@ struct ExportView: View {
     
     private func performExport() {
         exportError = nil
+        
+        if selectedTab == .mask {
+            performMaskExport()
+            return
+        }
         
         if state.exportEntireLibrary {
             guard !state.libraryEntries.isEmpty else {
@@ -438,8 +642,8 @@ struct ExportView: View {
                 return
             }
         }
-        
-        state.pendingExport = PendingExportInfo(
+
+        let pendingInfo = PendingExportInfo(
             format: selectedFormat,
             wavelengths: exportWavelengths,
             matVariableName: selectedFormat == .mat ? matVariableName : nil,
@@ -453,6 +657,78 @@ struct ExportView: View {
             : nil
         )
         dismiss()
+        // Даем модальному окну закрыться, прежде чем показывать системную панель выбора пути
+        DispatchQueue.main.async {
+            state.pendingExport = pendingInfo
+        }
+    }
+    
+    private func performMaskExport() {
+        guard let firstMask = state.maskEditorState.maskLayers.first else {
+            exportError = "Нет маски для экспорта"
+            return
+        }
+        
+        let mergedMask = state.maskEditorState.computeMergedMask()
+        let width = firstMask.width
+        let height = firstMask.height
+        
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "\(defaultExportBaseName)_mask.\(selectedFormat.fileExtension)"
+        
+        switch selectedFormat {
+        case .maskPNG:
+            panel.allowedContentTypes = [.png]
+        case .maskNpy:
+            panel.allowedContentTypes = [.data]
+        case .maskMat:
+            panel.allowedContentTypes = [.data]
+        default:
+            break
+        }
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        
+        isExporting = true
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: Result<Void, Error>
+            
+            switch selectedFormat {
+            case .maskPNG:
+                if maskExportColored {
+                    let colors = state.maskEditorState.maskLayers.map { (id: $0.classValue, color: $0.color) }
+                    result = MaskExporter.exportAsPNG(mask: mergedMask, width: width, height: height, to: url, classColors: colors)
+                } else {
+                    result = MaskExporter.exportAsGrayscalePNG(mask: mergedMask, width: width, height: height, to: url)
+                }
+            case .maskNpy:
+                result = MaskExporter.exportAsNumPy(mask: mergedMask, width: width, height: height, to: url)
+            case .maskMat:
+                let metadata = state.maskEditorState.classMetadata()
+                result = MaskExporter.exportAsMAT(
+                    mask: mergedMask,
+                    width: width,
+                    height: height,
+                    to: url,
+                    maskVariableName: maskVariableName.isEmpty ? "mask" : maskVariableName,
+                    metadata: metadata
+                )
+            default:
+                result = .failure(ExportError.invalidData)
+            }
+            
+            DispatchQueue.main.async {
+                isExporting = false
+                switch result {
+                case .success:
+                    dismiss()
+                case .failure(let error):
+                    exportError = error.localizedDescription
+                }
+            }
+        }
     }
     
     private func formatMemorySize(bytes: Int) -> String {

@@ -65,7 +65,7 @@ struct ContentView: View {
             topBar
             
             HStack(spacing: 0) {
-                if state.cube != nil {
+                if state.cube != nil && state.viewMode != .mask {
                     PipelinePanel()
                         .environmentObject(state)
                         .padding(.leading, 12)
@@ -73,6 +73,10 @@ struct ContentView: View {
                     Divider()
                 }
                 
+                if state.viewMode == .mask && state.cube != nil {
+                    MaskEditorView(maskState: state.maskEditorState)
+                        .environmentObject(state)
+                } else {
                 GeometryReader { geo in
                         ZStack {
                             if let cube = state.cube {
@@ -204,16 +208,26 @@ struct ContentView: View {
                     }
                     .padding(.trailing, 12)
                 }
+            } // end else for mask mode check
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             
             if let cube = state.cube {
                 GlassPanel(cornerRadius: 0, padding: 8) {
-                bottomControls(cube: cube)
+                    if state.viewMode == .mask {
+                        maskModeBottomControls(cube: cube)
+                    } else {
+                        bottomControls(cube: cube)
+                    }
                 }
             }
         }
         .frame(minWidth: 960, minHeight: 500)
+        .onChange(of: state.viewMode) { newMode in
+            if newMode == .mask {
+                state.initializeMaskEditor()
+            }
+        }
         .sheet(item: $state.pendingMatSelection) { request in
             MatVariableSelectionView(request: request)
                 .environmentObject(state)
@@ -289,7 +303,7 @@ struct ContentView: View {
         let defaultBaseName = state.defaultExportBaseName
         
         // PNG Channels требует выбора директории, так как создаётся много файлов
-        if format == .tiff {
+        if format == .pngChannels {
             let openPanel = NSOpenPanel()
             openPanel.canChooseDirectories = true
             openPanel.canChooseFiles = false
@@ -314,7 +328,7 @@ struct ContentView: View {
                 
                 DispatchQueue.global(qos: .userInitiated).async {
                     print("ContentView: Calling TiffExporter with layout: \(currentLayout)")
-                    let result = TiffExporter.export(cube: cube, to: baseURL, wavelengths: wavelengthsToExport, layout: currentLayout)
+                    let result = PngChannelsExporter.export(cube: cube, to: baseURL, wavelengths: wavelengthsToExport, layout: currentLayout)
                     
                     DispatchQueue.main.async {
                         switch result {
@@ -334,7 +348,7 @@ struct ContentView: View {
         panel.canCreateDirectories = true
         
         switch format {
-        case .tiff:
+        case .pngChannels:
             break // Обработано выше
         case .quickPNG:
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
@@ -348,6 +362,12 @@ struct ContentView: View {
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType(filenameExtension: "mat") ?? .data]
             panel.message = "Выберите путь для сохранения"
+        case .tiff:
+            panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
+            panel.allowedContentTypes = [UTType.tiff]
+            panel.message = "Выберите путь для сохранения TIFF"
+        case .maskPNG, .maskNpy, .maskMat:
+            return // Маска экспортируется через ExportView
         }
         
         panel.begin { response in
@@ -379,7 +399,7 @@ struct ContentView: View {
                         wavelengthsAsVariable: matWavelengthsAsVariable
                     )
                 case .tiff:
-                    result = .failure(ExportError.writeError("Unexpected tiff format"))
+                    result = TiffExporter.export(cube: cube, to: saveURL, wavelengths: wavelengthsToExport, layout: currentLayout)
                 case .quickPNG:
                     result = QuickPNGExporter.export(
                         cube: cube,
@@ -388,6 +408,10 @@ struct ContentView: View {
                         wavelengths: currentWavelengths,
                         config: colorSynthesisConfig ?? state.colorSynthesisConfig
                     )
+                case .pngChannels:
+                    result = .failure(ExportError.writeError("PNG channels export handled elsewhere"))
+                case .maskPNG, .maskNpy, .maskMat:
+                    result = .failure(ExportError.writeError("Mask export handled elsewhere"))
                 }
                 
                 DispatchQueue.main.async {
@@ -441,8 +465,11 @@ struct ContentView: View {
                             wavelengthsAsVariable: matWavelengthsAsVariable && includeWavelengths
                         )
                     case .tiff:
-                        let target = destinationFolder.appendingPathComponent(baseName)
+                        let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("tiff")
                         result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)
+                    case .pngChannels:
+                        let target = destinationFolder.appendingPathComponent(baseName)
+                        result = PngChannelsExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)
                     case .quickPNG:
                             let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("png")
                         let config = colorSynthesisConfig ?? payload.colorSynthesisConfig
@@ -453,6 +480,8 @@ struct ContentView: View {
                                 wavelengths: payload.wavelengths,
                             config: config
                             )
+                    case .maskPNG, .maskNpy, .maskMat:
+                        result = .success(())
                     }
                     
                     switch result {
@@ -593,6 +622,9 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 )
             }
+            
+        case .mask:
+            view = AnyView(EmptyView())
         }
         
         return view
@@ -772,6 +804,63 @@ struct ContentView: View {
         }
         .onChange(of: state.cube?.dims.0) { _ in
             state.updateChannelCount()
+        }
+    }
+    
+    private func maskModeBottomControls(cube: HyperCube) -> some View {
+        HStack {
+            Text("Layout:")
+                .font(.system(size: 11))
+            Picker("", selection: $state.layout) {
+                ForEach(CubeLayout.allCases) { layout in
+                    Text(layout.rawValue).tag(layout)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 200)
+            
+            Divider()
+                .frame(height: 18)
+            
+            Text("Mode:")
+                .font(.system(size: 11))
+            
+            Picker("", selection: $state.viewMode) {
+                ForEach(ViewMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .frame(width: 200)
+            
+            Spacer()
+            
+            HStack(spacing: 12) {
+                Button(action: {
+                    state.resetZoom()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10))
+                        Text("Центрировать")
+                            .font(.system(size: 11))
+                    }
+                }
+                .disabled(state.zoomScale == 1.0 && state.imageOffset == .zero)
+                
+                Text("Zoom: \(String(format: "%.1f", state.zoomScale))x")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                
+                Divider()
+                    .frame(height: 18)
+                
+                if let firstMask = state.maskEditorState.maskLayers.first {
+                    Text("Маска: \(firstMask.width) × \(firstMask.height)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
     

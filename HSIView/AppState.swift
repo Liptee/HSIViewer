@@ -100,6 +100,8 @@ final class AppState: ObservableObject {
     @Published var pcaRenderedImage: NSImage?
     @Published var isPCAApplying: Bool = false
     @Published var pcaProgressMessage: String?
+    
+    @Published var maskEditorState = MaskEditorState()
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
         .ndvi: (0, 0),
@@ -776,6 +778,55 @@ final class AppState: ObservableObject {
     
     func toggleGraphPanel() {
         isGraphPanelExpanded.toggle()
+    }
+    
+    func initializeMaskEditor() {
+        guard let cube = cube else { return }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: activeLayout) else { return }
+        
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        
+        let rgbImage = ImageRenderer.renderRGB(
+            cube: cube,
+            layout: activeLayout,
+            wavelengths: wavelengths,
+            mapping: colorSynthesisConfig.mapping
+        )
+        
+        maskEditorState.initialize(width: width, height: height, rgbImage: rgbImage)
+    }
+    
+    func syncMaskEditorWithPipeline() {
+        guard viewMode == .mask, let cube = cube else { return }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: activeLayout) else { return }
+        
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let rotationTurns = pipelineRotationTurns()
+        
+        maskEditorState.syncWithImageSize(width: width, height: height, rotationTurns: rotationTurns)
+    }
+    
+    func updateMaskReferenceImage() {
+        guard viewMode == .mask, let cube = cube else { return }
+        let rgbImage = ImageRenderer.renderRGB(
+            cube: cube,
+            layout: activeLayout,
+            wavelengths: wavelengths,
+            mapping: colorSynthesisConfig.mapping
+        )
+        
+        if let refLayer = maskEditorState.referenceLayers.first,
+           let index = maskEditorState.layers.firstIndex(where: { $0.id == refLayer.id }),
+           var ref = maskEditorState.layers[index] as? ReferenceLayer {
+            ref.rgbImage = rgbImage
+            maskEditorState.layers[index] = ref
+        }
     }
     
     func applyNormalization() {

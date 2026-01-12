@@ -2,21 +2,21 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
-class TiffExporter {
+class PngChannelsExporter {
     static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?, layout: CubeLayout = .auto) -> Result<Void, Error> {
-        print("TiffExporter: Starting export to \(url.path)")
-        print("TiffExporter: Cube dims: \(cube.dims), dataType: \(cube.originalDataType), layout: \(layout)")
+        print("PngChannelsExporter: Starting export to \(url.path)")
+        print("PngChannelsExporter: Cube dims: \(cube.dims), dataType: \(cube.originalDataType), layout: \(layout)")
         
         guard let preparedCube = ensureExportableCube(cube) else {
-            print("TiffExporter: Failed to prepare cube for export")
+            print("PngChannelsExporter: Failed to prepare cube for export")
             return .failure(ExportError.unsupportedDataType)
         }
         
-        print("TiffExporter: Cube prepared, storage type: \(type(of: preparedCube.storage))")
+        print("PngChannelsExporter: Cube prepared, storage type: \(type(of: preparedCube.storage))")
         
         do {
-            try exportAsTIFF(cube: preparedCube, to: url, layout: layout)
-            print("TiffExporter: Export completed successfully")
+            try exportAsPNG(cube: preparedCube, to: url, layout: layout)
+            print("PngChannelsExporter: Export completed successfully")
             
             if let wavelengths = wavelengths, !wavelengths.isEmpty {
                 let baseName = url.deletingPathExtension().lastPathComponent
@@ -59,7 +59,7 @@ class TiffExporter {
             return HyperCube(
                 dims: cube.dims,
                 storage: .uint16(zeros),
-                sourceFormat: cube.sourceFormat + " [UInt16 TIFF]",
+                sourceFormat: cube.sourceFormat + " [UInt16 PNG]",
                 isFortranOrder: cube.isFortranOrder,
                 wavelengths: cube.wavelengths
             )
@@ -77,34 +77,27 @@ class TiffExporter {
         return HyperCube(
             dims: cube.dims,
             storage: .uint16(scaled),
-            sourceFormat: cube.sourceFormat + " [UInt16 TIFF]",
+            sourceFormat: cube.sourceFormat + " [UInt16 PNG]",
             isFortranOrder: cube.isFortranOrder,
             wavelengths: cube.wavelengths
         )
     }
     
-    private static func exportAsTIFF(cube: HyperCube, to url: URL, layout: CubeLayout) throws {
+    private static func exportAsPNG(cube: HyperCube, to url: URL, layout: CubeLayout) throws {
         let dims = cube.dims
         let dimsArray = [dims.0, dims.1, dims.2]
         guard let axes = cube.axes(for: layout) else {
-            print("TiffExporter: Failed to get axes for layout \(layout)")
+            print("PngChannelsExporter: Failed to get axes for layout \(layout)")
             throw ExportError.invalidData
         }
         let width = dimsArray[axes.width]
         let height = dimsArray[axes.height]
         let channels = dimsArray[axes.channel]
         
-        print("TiffExporter: Exporting \(channels) channels, size: \(width)x\(height)")
-        print("TiffExporter: Axes - width: \(axes.width), height: \(axes.height), channel: \(axes.channel)")
+        print("PngChannelsExporter: Exporting \(channels) channels, size: \(width)x\(height)")
+        print("PngChannelsExporter: Axes - width: \(axes.width), height: \(axes.height), channel: \(axes.channel)")
         
-        guard let destination = CGImageDestinationCreateWithURL(
-            url as CFURL,
-            "public.tiff" as CFString,
-            channels,
-            nil
-        ) else {
-            throw ExportError.writeError("Не удалось создать TIFF")
-        }
+        var allImages: [Data] = []
         
         for channel in 0..<channels {
             var channelData: [UInt8] = []
@@ -138,11 +131,24 @@ class TiffExporter {
                 throw ExportError.invalidData
             }
             
-            CGImageDestinationAddImage(destination, cgImage, nil)
+            guard let pngData = cgImageToPNG(cgImage) else {
+                throw ExportError.writeError("Не удалось создать PNG")
+            }
+            
+            allImages.append(pngData)
         }
         
-        guard CGImageDestinationFinalize(destination) else {
-            throw ExportError.writeError("Не удалось записать TIFF")
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let directory = url.deletingLastPathComponent()
+        
+        print("PngChannelsExporter: Writing \(allImages.count) PNG files to \(directory.path)")
+        print("PngChannelsExporter: Base name: \(baseName)")
+        
+        for (index, imageData) in allImages.enumerated() {
+            let channelName = String(format: "%@_channel_%03d.png", baseName, index)
+            let channelURL = directory.appendingPathComponent(channelName)
+            try imageData.write(to: channelURL)
+            print("PngChannelsExporter: Written channel \(index) to \(channelURL.lastPathComponent)")
         }
     }
     
@@ -151,28 +157,42 @@ class TiffExporter {
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
         
         guard let provider = CGDataProvider(data: Data(data) as CFData) else {
-            print("TiffExporter: Failed to create CGDataProvider")
+            print("PngChannelsExporter: Failed to create CGDataProvider")
             return nil
         }
             
         guard let cgImage = CGImage(
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
             bitsPerPixel: 8,
-                bytesPerRow: width,
-                space: colorSpace,
+            bytesPerRow: width,
+            space: colorSpace,
             bitmapInfo: bitmapInfo,
             provider: provider,
             decode: nil,
             shouldInterpolate: false,
             intent: .defaultIntent
         ) else {
-            print("TiffExporter: Failed to create CGImage")
+            print("PngChannelsExporter: Failed to create CGImage")
             return nil
         }
         
         return cgImage
     }
     
+    private static func cgImageToPNG(_ cgImage: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else {
+            return nil
+        }
+        
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        
+        return data as Data
+    }
 }

@@ -210,6 +210,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case gray = "Gray"
     case rgb  = "RGB"
     case nd   = "ND"
+    case mask = "Mask"
     
     var id: String { rawValue }
 }

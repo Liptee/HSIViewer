@@ -44,9 +44,15 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
         return false;
     }
 
+    tdir_t dirCount = TIFFNumberOfDirectories(tif);
+    if (dirCount == 0) {
+        dirCount = 1;
+    }
+    bool useDirectoriesAsChannels = (dirCount > 1 && samplesPerPixel == 1);
+
     size_t W = (size_t)width;
     size_t H = (size_t)height;
-    size_t C = (size_t)samplesPerPixel;
+    size_t C = useDirectoriesAsChannels ? (size_t)dirCount : (size_t)samplesPerPixel;
     size_t planeSize = W * H;
     size_t total = planeSize * C;
 
@@ -56,7 +62,70 @@ bool load_tiff_cube(const char *path, TiffCube3D *outCube) {
         return false;
     }
 
-    if (planarConfig == PLANARCONFIG_CONTIG) {
+    if (useDirectoriesAsChannels) {
+        for (tdir_t dir = 0; dir < dirCount; ++dir) {
+            if (!TIFFSetDirectory(tif, dir)) {
+                free(data);
+                TIFFClose(tif);
+                return false;
+            }
+
+            uint32 dirWidth = 0;
+            uint32 dirHeight = 0;
+            uint16 dirSamples = 0;
+            uint16 dirBits = 0;
+            uint16 dirPlanar = 0;
+            uint32 dirRowsPerStrip = 0;
+
+            if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &dirWidth) ||
+                !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &dirHeight) ||
+                !TIFFGetField(tif, TIFFTAG_SAMPLESPERPIXEL, &dirSamples) ||
+                !TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &dirBits) ||
+                !TIFFGetField(tif, TIFFTAG_PLANARCONFIG, &dirPlanar) ||
+                !TIFFGetField(tif, TIFFTAG_ROWSPERSTRIP, &dirRowsPerStrip)) {
+                free(data);
+                TIFFClose(tif);
+                return false;
+            }
+
+            if (dirWidth != width || dirHeight != height || dirBits != 8 || dirSamples != 1) {
+                free(data);
+                TIFFClose(tif);
+                return false;
+            }
+
+            tsize_t stripSize = TIFFStripSize(tif);
+            tstrip_t totalStrips = TIFFNumberOfStrips(tif);
+            size_t written = 0;
+
+            for (tstrip_t strip = 0; strip < totalStrips; ++strip) {
+                uint8 *buf = (uint8 *)_TIFFmalloc(stripSize);
+                if (!buf) {
+                    free(data);
+                    TIFFClose(tif);
+                    return false;
+                }
+
+                tsize_t n = TIFFReadEncodedStrip(tif, strip, buf, stripSize);
+                if (n < 0) {
+                    _TIFFfree(buf);
+                    free(data);
+                    TIFFClose(tif);
+                    return false;
+                }
+
+                size_t bytes = (size_t)n;
+                for (size_t i = 0; i < bytes && written < planeSize; ++i, ++written) {
+                    size_t row = written / W;
+                    size_t col = written % W;
+                    size_t colMajorIdx = row + H * (col + W * (size_t)dir);
+                    data[colMajorIdx] = (double)buf[i];
+                }
+
+                _TIFFfree(buf);
+            }
+        }
+    } else if (planarConfig == PLANARCONFIG_CONTIG) {
         // CONTIG: каналы чередуются (R0,G0,B0,R1,G1,B1,...)
         tstrip_t totalStrips = TIFFNumberOfStrips(tif);
         tsize_t stripSize = TIFFStripSize(tif);

@@ -439,7 +439,7 @@
 					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
 					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
 				);
-				MARKETING_VERSION = 0.6.5;
+				MARKETING_VERSION = 0.6.6;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -476,7 +476,7 @@
 					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
 					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
 				);
-				MARKETING_VERSION = 0.6.5;
+				MARKETING_VERSION = 0.6.6;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
