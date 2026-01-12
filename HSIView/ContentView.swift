@@ -693,6 +693,7 @@ struct ContentView: View {
                     
                     Text("Mode:")
                         .font(.system(size: 11))
+                        .padding(.trailing, 6)
                     
                     Picker("", selection: $state.viewMode) {
                         ForEach(ViewMode.allCases) { mode in
@@ -700,14 +701,17 @@ struct ContentView: View {
                         }
                     }
                     .pickerStyle(SegmentedPickerStyle())
+                    .padding(.leading, 2)
                     .frame(width: 160)
                     
                     if state.viewMode == .rgb {
                         Divider()
                             .frame(height: 18)
+                            .padding(.leading, 8)
                         
                         Text("Цветосинтез:")
                             .font(.system(size: 11))
+                            .padding(.leading, 4)
                         
                         Picker("", selection: Binding(
                             get: { state.colorSynthesisConfig.mode },
@@ -824,6 +828,7 @@ struct ContentView: View {
             
             Text("Mode:")
                 .font(.system(size: 11))
+                .padding(.trailing, 6)
             
             Picker("", selection: $state.viewMode) {
                 ForEach(ViewMode.allCases) { mode in
@@ -831,6 +836,7 @@ struct ContentView: View {
                 }
             }
             .pickerStyle(SegmentedPickerStyle())
+            .padding(.leading, 2)
             .frame(width: 200)
             
             Spacer()
