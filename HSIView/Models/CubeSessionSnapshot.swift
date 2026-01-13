@@ -5,6 +5,7 @@ struct CubeSessionSnapshot {
     var pipelineOperations: [PipelineOperation]
     var pipelineAutoApply: Bool
     var wavelengths: [Double]?
+    var baseWavelengths: [Double]?
     var lambdaStart: String
     var lambdaEnd: String
     var lambdaStep: String
@@ -37,6 +38,7 @@ struct CubeSessionSnapshot {
         pipelineOperations: [],
         pipelineAutoApply: true,
         wavelengths: nil,
+        baseWavelengths: nil,
         lambdaStart: "400",
         lambdaEnd: "1000",
         lambdaStep: "",

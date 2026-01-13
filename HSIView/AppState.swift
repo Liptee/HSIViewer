@@ -85,6 +85,7 @@ final class AppState: ObservableObject {
     }
     
     private var originalCube: HyperCube?
+    private var baseWavelengths: [Double]? = nil
     private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
     private var resolvedAutoLayout: CubeLayout = .auto
     private var sessionSnapshots: [URL: CubeSessionSnapshot] = [:]
@@ -610,9 +611,11 @@ final class AppState: ObservableObject {
     func setWavelengths(_ lambda: [Double]) {
         guard !lambda.isEmpty else {
             wavelengths = nil
+            baseWavelengths = nil
             return
         }
         wavelengths = lambda
+        baseWavelengths = lambda
     }
     
     func loadWavelengthsFromTXT(url: URL) {
@@ -621,6 +624,7 @@ final class AppState: ObservableObject {
         switch result {
         case .success(let values):
             wavelengths = values
+            baseWavelengths = values
             loadError = nil
         case .failure(let error):
             loadError = "Ошибка чтения длин волн: \(error.localizedDescription)"
@@ -656,6 +660,7 @@ final class AppState: ObservableObject {
         lambdaStep = String(format: "%.4g", step)
         
         wavelengths = WavelengthManager.generateFromRange(start: start, end: end, channels: channels)
+        baseWavelengths = wavelengths
         loadError = nil
     }
     
@@ -919,12 +924,16 @@ final class AppState: ObservableObject {
             let newOp = operations.last!
             processingQueue.async { [weak self] in
                 guard let self else { return }
-                let result = newOp.apply(to: cachedResult)
+                let baseCube = self.cubeWithWavelengthsIfNeeded(cachedResult, layout: newOp.layout)
+                let result = newOp.apply(to: baseCube)
                 DispatchQueue.main.async {
-                    self.cube = result ?? cachedResult
+                    self.cube = result ?? baseCube
                     self.lastPipelineResult = self.cube
                     self.lastPipelineAppliedOperations = operations
                     self.lastPipelineBaseCubeID = original.id
+                    self.updateWavelengthsFromPipelineResult()
+                    self.updateSpectralTrimRangeFromPipeline()
+                    self.updateChannelCount()
                     self.endBusy()
                 }
             }
@@ -934,15 +943,65 @@ final class AppState: ObservableObject {
             
             processingQueue.async { [weak self] in
                 guard let self else { return }
-                let result = self.processPipeline(original: original, operations: operations)
+                let baseCube = self.cubeWithWavelengthsIfNeeded(original, layout: activeLayout)
+                let result = self.processPipeline(original: baseCube, operations: operations)
                 DispatchQueue.main.async {
-                    self.cube = result ?? original
+                    self.cube = result ?? baseCube
                     self.lastPipelineResult = self.cube
                     self.lastPipelineAppliedOperations = operations
                     self.lastPipelineBaseCubeID = original.id
+                    self.updateWavelengthsFromPipelineResult()
+                    self.updateSpectralTrimRangeFromPipeline()
+                    self.updateChannelCount()
                     self.endBusy()
                 }
             }
+        }
+    }
+
+    private func cubeWithWavelengthsIfNeeded(
+        _ cube: HyperCube,
+        layout: CubeLayout,
+        baseWavelengths override: [Double]? = nil
+    ) -> HyperCube {
+        let existing = cube.wavelengths
+        guard existing == nil || existing?.isEmpty == true else { return cube }
+        let stored = override ?? baseWavelengths
+        guard let stored, !stored.isEmpty else { return cube }
+        guard stored.count == cube.channelCount(for: layout) else { return cube }
+        return HyperCube(
+            dims: cube.dims,
+            storage: cube.storage,
+            sourceFormat: cube.sourceFormat,
+            isFortranOrder: cube.isFortranOrder,
+            wavelengths: stored
+        )
+    }
+
+    private func updateWavelengthsFromPipelineResult() {
+        guard let result = cube?.wavelengths, !result.isEmpty else { return }
+        wavelengths = result
+        updateLambdaRange(from: result)
+    }
+
+    private func updateSpectralTrimRangeFromPipeline() {
+        if let op = pipelineOperations.first(where: { $0.type == .spectralTrim }),
+           let params = op.spectralTrimParams {
+            spectralTrimRange = params.startChannel...params.endChannel
+        } else {
+            spectralTrimRange = nil
+        }
+    }
+
+    private func updateLambdaRange(from wavelengths: [Double]) {
+        guard let first = wavelengths.first, let last = wavelengths.last else { return }
+        lambdaStart = String(format: "%.1f", first)
+        lambdaEnd = String(format: "%.1f", last)
+        if wavelengths.count > 1 {
+            let step = (last - first) / Double(wavelengths.count - 1)
+            lambdaStep = String(format: "%.2f", step)
+        } else {
+            lambdaStep = ""
         }
     }
     
@@ -957,8 +1016,6 @@ final class AppState: ObservableObject {
     }
     
     func applyTrim() {
-        guard let original = originalCube else { return }
-        
         let startChannel = Int(trimStart)
         let endChannel = Int(trimEnd)
         let currentChannels = channelCount
@@ -967,60 +1024,43 @@ final class AppState: ObservableObject {
             loadError = "Некорректный диапазон обрезки"
             return
         }
-        
-        let layoutSnapshot = activeLayout
-        let wavelengthsSnapshot = wavelengths
-        let operationsSnapshot = pipelineOperations.map { operation -> PipelineOperation in
-            var updatedOperation = operation
-            updatedOperation.layout = .chw
-            return updatedOperation
+        let maxChannelIndex = max(currentChannels - 1, 0)
+        guard startChannel != 0 || endChannel != maxChannelIndex else {
+            isTrimMode = false
+            loadError = nil
+            return
         }
         
-        let baseRange: ClosedRange<Int> = spectralTrimRange ?? 0...max(currentChannels - 1, 0)
+        let baseRange: ClosedRange<Int> = {
+            if let range = spectralTrimRange {
+                return range
+            }
+            if let op = pipelineOperations.first(where: { $0.type == .spectralTrim }),
+               let params = op.spectralTrimParams {
+                return params.startChannel...params.endChannel
+            }
+            return 0...maxChannelIndex
+        }()
         let absoluteRange = (baseRange.lowerBound + startChannel)...(baseRange.lowerBound + endChannel)
         
-        beginBusy(message: "Обрезка каналов…")
+        var trimOp = PipelineOperation(type: .spectralTrim)
+        trimOp.layout = activeLayout
+        trimOp.spectralTrimParams = SpectralTrimParameters(
+            startChannel: absoluteRange.lowerBound,
+            endChannel: absoluteRange.upperBound
+        )
         
-        processingQueue.async { [weak self] in
-            guard let self else { return }
-            
-            guard let trimmedCube = self.trimChannels(cube: original, layout: layoutSnapshot, from: startChannel, to: endChannel) else {
-                DispatchQueue.main.async {
-                    self.loadError = "Ошибка при обрезке каналов"
-                    self.endBusy()
-                }
-                return
-            }
-            
-            let trimmedWavelengths: [Double]? = {
-                guard let wl = wavelengthsSnapshot, wl.count == currentChannels else { return nil }
-                return Array(wl[startChannel...endChannel])
-            }()
-            
-            let resultCube = self.processPipeline(original: trimmedCube, operations: operationsSnapshot)
-            
-            DispatchQueue.main.async {
-                self.originalCube = trimmedCube
-                self.layout = .chw
-                for index in self.pipelineOperations.indices {
-                    self.pipelineOperations[index].layout = self.layout
-                }
-                self.currentChannel = 0
-                self.cube = resultCube ?? trimmedCube
-                self.updateChannelCount()
-                self.isTrimMode = false
-                self.spectralTrimRange = absoluteRange
-                self.loadError = nil
-                self.suppressSpectrumRefresh = true
-                if let trimmedWavelengths {
-                    self.wavelengths = trimmedWavelengths
-                }
-                self.suppressSpectrumRefresh = false
-                self.refreshSpectrumSamples()
-                self.refreshROISamples()
-                self.endBusy()
-            }
+        if let index = pipelineOperations.firstIndex(where: { $0.type == .spectralTrim }) {
+            pipelineOperations[index] = trimOp
+        } else {
+            pipelineOperations.insert(trimOp, at: 0)
         }
+        
+        spectralTrimRange = absoluteRange
+        isTrimMode = false
+        loadError = nil
+        
+        applyPipeline()
     }
     
     private func trimChannels(cube: HyperCube, layout: CubeLayout, from startChannel: Int, to endChannel: Int) -> HyperCube? {
@@ -1221,6 +1261,7 @@ final class AppState: ObservableObject {
             
             if let enviWavelengths = hyperCube.wavelengths, !enviWavelengths.isEmpty {
                 wavelengths = enviWavelengths
+                baseWavelengths = enviWavelengths
                 if let first = enviWavelengths.first, let last = enviWavelengths.last {
                     lambdaStart = String(format: "%.1f", first)
                     lambdaEnd = String(format: "%.1f", last)
@@ -1471,65 +1512,34 @@ final class AppState: ObservableObject {
         pcaRenderedImage = nil
         pcaPendingConfig = nil
         busyMessage = "Восстановление настроек…"
-        restoreSession(from: snapshot)
-    }
-    
-    private func restoreSession(from snapshot: CubeSessionSnapshot) {
-        if let range = snapshot.spectralTrimRange {
-            restoreTrim(range: range, snapshot: snapshot)
-        } else {
-            applySnapshot(snapshot)
-            endBusy()
-        }
-    }
-    
-    private func restoreTrim(range: ClosedRange<Int>, snapshot: CubeSessionSnapshot) {
-        guard let sourceCube = originalCube else {
-            applySnapshot(snapshot)
-            endBusy()
-            return
-        }
-        let layoutSnapshot = activeLayout
-        let availableChannels = sourceCube.channelCount(for: layoutSnapshot)
-        guard range.lowerBound >= 0, range.upperBound < availableChannels else {
-            applySnapshotWithoutTrim(snapshot)
-            endBusy()
-            return
-        }
-        
-        busyMessage = "Восстановление обрезки…"
-        
-        processingQueue.async { [weak self] in
-            guard let self else { return }
-            guard let trimmed = self.trimChannels(
-                cube: sourceCube,
-                layout: layoutSnapshot,
-                from: range.lowerBound,
-                to: range.upperBound
-            ) else {
-                DispatchQueue.main.async {
-                    self.applySnapshotWithoutTrim(snapshot)
-                    self.endBusy()
-                }
-                return
-            }
-            
-            DispatchQueue.main.async {
-                self.originalCube = trimmed
-                self.cube = trimmed
-                self.spectralTrimRange = range
-                self.updateChannelCount()
-                self.applySnapshot(snapshot)
-                self.endBusy()
-            }
-        }
+        applySnapshot(snapshot)
+        endBusy()
     }
     
     private func applySnapshot(_ snapshot: CubeSessionSnapshot) {
-        wavelengths = snapshot.wavelengths
-        lambdaStart = snapshot.lambdaStart
-        lambdaEnd = snapshot.lambdaEnd
-        lambdaStep = snapshot.lambdaStep
+        let baseChannelCount: Int = {
+            if let cube {
+                return cube.channelCount(for: snapshot.layout)
+            }
+            return channelCount
+        }()
+        if let snapshotBase = snapshot.baseWavelengths,
+           snapshotBase.count == baseChannelCount {
+            baseWavelengths = snapshotBase
+        } else if let snapshotWavelengths = snapshot.wavelengths,
+                  snapshotWavelengths.count == baseChannelCount {
+            baseWavelengths = snapshotWavelengths
+        }
+
+        if let snapshotWavelengths = snapshot.wavelengths,
+           snapshotWavelengths.count == baseChannelCount {
+            wavelengths = snapshotWavelengths
+            lambdaStart = snapshot.lambdaStart
+            lambdaEnd = snapshot.lambdaEnd
+            lambdaStep = snapshot.lambdaStep
+        } else if let currentWavelengths = baseWavelengths, !currentWavelengths.isEmpty {
+            updateLambdaRange(from: currentWavelengths)
+        }
         trimStart = snapshot.trimStart
         trimEnd = snapshot.trimEnd
         isTrimMode = false
@@ -1563,6 +1573,18 @@ final class AppState: ObservableObject {
         hasCustomColorSynthesisMapping = true
         restoreSpectrumSamples(from: snapshot.spectrumSamples)
         restoreROISamples(from: snapshot.roiSamples)
+
+        if let range = snapshot.spectralTrimRange,
+           !pipelineOperations.contains(where: { $0.type == .spectralTrim }) {
+            var trimOp = PipelineOperation(type: .spectralTrim)
+            trimOp.layout = layout
+            trimOp.spectralTrimParams = SpectralTrimParameters(
+                startChannel: range.lowerBound,
+                endChannel: range.upperBound
+            )
+            pipelineOperations.insert(trimOp, at: 0)
+            spectralTrimRange = range
+        }
         
         let maxChannel = max(channelCount - 1, 0)
         if maxChannel >= 0 {
@@ -1602,6 +1624,7 @@ final class AppState: ObservableObject {
         lambdaStart = "400"
         lambdaEnd = "1000"
         lambdaStep = ""
+        baseWavelengths = nil
         normalizationType = .none
         normalizationParams = .default
         autoScaleOnTypeConversion = true
@@ -1683,6 +1706,7 @@ final class AppState: ObservableObject {
             pipelineOperations: pipelineOperations,
             pipelineAutoApply: pipelineAutoApply,
             wavelengths: wavelengths,
+            baseWavelengths: baseWavelengths,
             lambdaStart: lambdaStart,
             lambdaEnd: lambdaEnd,
             lambdaStep: lambdaStep,
@@ -1726,7 +1750,8 @@ final class AppState: ObservableObject {
         var layout = snapshot.layout
         var wavelengths = snapshot.wavelengths ?? cube.wavelengths
         
-        if let trimRange = snapshot.spectralTrimRange {
+        if let trimRange = snapshot.spectralTrimRange,
+           !snapshot.pipelineOperations.contains(where: { $0.type == .spectralTrim }) {
             guard trimRange.lowerBound >= 0 else { return nil }
             guard let trimmed = trimChannels(
                 cube: workingCube,
@@ -1748,7 +1773,9 @@ final class AppState: ObservableObject {
         }
         
         if !snapshot.pipelineOperations.isEmpty {
-            workingCube = processPipeline(original: workingCube, operations: snapshot.pipelineOperations) ?? workingCube
+            let baseWavelengths = snapshot.baseWavelengths ?? wavelengths
+            let baseCube = cubeWithWavelengthsIfNeeded(workingCube, layout: layout, baseWavelengths: baseWavelengths)
+            workingCube = processPipeline(original: baseCube, operations: snapshot.pipelineOperations) ?? baseCube
         }
         
         let resolvedLayout = resolveLayout(for: workingCube, preferred: layout)
