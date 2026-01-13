@@ -468,7 +468,7 @@ struct GraphWindowView: View {
         case .area:
             AreaMark(
                 x: .value("X", x),
-                yStart: .value("YStart", 0),
+                yStart: .value("YStart", areaBaseline),
                 yEnd: .value("YEnd", y),
                 series: .value("Series", seriesID)
             )
@@ -496,6 +496,11 @@ struct GraphWindowView: View {
             return computedYMin...computedYMax
         }
         return yMin...max(yMin + 0.001, yMax)
+    }
+    
+    private var areaBaseline: Double {
+        let domain = yDomain
+        return domain.contains(0) ? 0 : domain.lowerBound
     }
     
     private var computedXMin: Double {
@@ -632,6 +637,7 @@ struct GraphWindowView: View {
             try? pdfData.write(to: url)
         }
     }
+    
 }
 
 private struct ExportableChartView: View {
@@ -730,7 +736,7 @@ private struct ExportableChartView: View {
         case .area:
             AreaMark(
                 x: .value("X", x),
-                yStart: .value("YStart", 0),
+                yStart: .value("YStart", areaBaseline),
                 yEnd: .value("YEnd", y),
                 series: .value("Series", seriesID)
             )
@@ -744,6 +750,10 @@ private struct ExportableChartView: View {
             .foregroundStyle(color)
             .lineStyle(StrokeStyle(lineWidth: lineWidth))
         }
+    }
+    
+    private var areaBaseline: Double {
+        yDomain.contains(0) ? 0 : yDomain.lowerBound
     }
 }
 
