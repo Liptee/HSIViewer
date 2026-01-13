@@ -7,7 +7,9 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case rotation = "Поворот"
     case resize = "Изменение размера"
     case spatialCrop = "Обрезка области"
+    case spectralTrim = "Обрезка длин волн"
     case calibration = "Калибровка"
+    case spectralInterpolation = "Спектральная интерполяция"
     
     var id: String { rawValue }
     
@@ -25,8 +27,12 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "arrow.up.left.and.down.right.magnifyingglass"
         case .spatialCrop:
             return "crop"
+        case .spectralTrim:
+            return "scissors"
         case .calibration:
             return "slider.horizontal.below.sun.max"
+        case .spectralInterpolation:
+            return "waveform.path.ecg"
         }
     }
     
@@ -44,8 +50,12 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "Изменить размер пространственных измерений"
         case .spatialCrop:
             return "Обрезать изображение по пространственным границам"
+        case .spectralTrim:
+            return "Обрезать спектральный диапазон по каналам"
         case .calibration:
             return "Калибровка по белой и/или чёрной точке"
+        case .spectralInterpolation:
+            return "Изменить спектральное разрешение по длинам волн"
         }
     }
 }
@@ -85,6 +95,46 @@ enum ResizeComputationPrecision: String, CaseIterable, Identifiable {
     case float64 = "Float64"
     
     var id: String { rawValue }
+}
+
+enum SpectralInterpolationMethod: String, CaseIterable, Identifiable {
+    case nearest = "Nearest"
+    case linear = "Linear"
+    case cubic = "Cubic"
+    
+    var id: String { rawValue }
+}
+
+enum SpectralExtrapolationMode: String, CaseIterable, Identifiable {
+    case clamp = "Clamp"
+    case extrapolate = "Extrapolate"
+    
+    var id: String { rawValue }
+}
+
+enum SpectralInterpolationDataType: String, CaseIterable, Identifiable {
+    case float32 = "Float32"
+    case float64 = "Float64"
+    
+    var id: String { rawValue }
+}
+
+struct SpectralInterpolationParameters: Equatable {
+    var targetChannelCount: Int
+    var targetMinLambda: Double
+    var targetMaxLambda: Double
+    var method: SpectralInterpolationMethod
+    var extrapolation: SpectralExtrapolationMode
+    var dataType: SpectralInterpolationDataType
+    
+    static let `default` = SpectralInterpolationParameters(
+        targetChannelCount: 0,
+        targetMinLambda: 0,
+        targetMaxLambda: 0,
+        method: .linear,
+        extrapolation: .clamp,
+        dataType: .float64
+    )
 }
 
 struct SpatialCropParameters: Equatable {
@@ -214,6 +264,11 @@ struct CalibrationParameters: Equatable {
     static let `default` = CalibrationParameters()
 }
 
+struct SpectralTrimParameters: Equatable {
+    var startChannel: Int
+    var endChannel: Int
+}
+
 struct PipelineOperation: Identifiable, Equatable {
     let id: UUID
     let type: PipelineOperationType
@@ -227,6 +282,8 @@ struct PipelineOperation: Identifiable, Equatable {
     var cropParameters: SpatialCropParameters?
     var calibrationParams: CalibrationParameters?
     var resizeParameters: ResizeParameters?
+    var spectralTrimParams: SpectralTrimParameters?
+    var spectralInterpolationParams: SpectralInterpolationParameters?
     
     init(id: UUID = UUID(), type: PipelineOperationType) {
         self.id = id
@@ -245,8 +302,12 @@ struct PipelineOperation: Identifiable, Equatable {
             self.resizeParameters = .default
         case .spatialCrop:
             self.cropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
+        case .spectralTrim:
+            self.spectralTrimParams = SpectralTrimParameters(startChannel: 0, endChannel: 0)
         case .calibration:
             self.calibrationParams = .default
+        case .spectralInterpolation:
+            self.spectralInterpolationParams = .default
         }
     }
     
@@ -283,8 +344,28 @@ struct PipelineOperation: Identifiable, Equatable {
                     computePrecision: .float64
                 )
             }
+        case .spectralTrim:
+            let channelCount = cube.channelCount(for: layout)
+            spectralTrimParams = SpectralTrimParameters(
+                startChannel: 0,
+                endChannel: max(channelCount - 1, 0)
+            )
         case .dataTypeConversion:
             targetDataType = cube.originalDataType
+        case .spectralInterpolation:
+            if let wavelengths = cube.wavelengths, !wavelengths.isEmpty {
+                let minLambda = wavelengths.min() ?? 0
+                let maxLambda = wavelengths.max() ?? 0
+                let channelCount = cube.channelCount(for: layout)
+                spectralInterpolationParams = SpectralInterpolationParameters(
+                    targetChannelCount: channelCount,
+                    targetMinLambda: minLambda,
+                    targetMaxLambda: maxLambda,
+                    method: .linear,
+                    extrapolation: .clamp,
+                    dataType: .float64
+                )
+            }
         default:
             break
         }
@@ -305,8 +386,12 @@ struct PipelineOperation: Identifiable, Equatable {
             return "Изменение размера"
         case .spatialCrop:
             return "Обрезка области"
+        case .spectralTrim:
+            return "Обрезка спектра"
         case .calibration:
             return "Калибровка"
+        case .spectralInterpolation:
+            return "Интерполяция спектра"
         }
     }
     
@@ -362,8 +447,19 @@ struct PipelineOperation: Identifiable, Equatable {
                 return "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
             }
             return "Настройте границы"
+        case .spectralTrim:
+            if let params = spectralTrimParams {
+                let count = max(0, params.endChannel - params.startChannel + 1)
+                return "каналы \(params.startChannel)–\(params.endChannel) (\(count))"
+            }
+            return "Настройте диапазон"
         case .calibration:
             return calibrationParams?.summaryText ?? "Не настроено"
+        case .spectralInterpolation:
+            if let params = spectralInterpolationParams {
+                return "\(params.targetChannelCount) каналов, \(params.method.rawValue)"
+            }
+            return "Настройте параметры"
         }
     }
     
@@ -399,9 +495,15 @@ struct PipelineOperation: Identifiable, Equatable {
         case .spatialCrop:
             guard let params = cropParameters else { return cube }
             return CubeSpatialCropper.crop(cube: cube, parameters: params, layout: layout)
+        case .spectralTrim:
+            guard let params = spectralTrimParams else { return cube }
+            return CubeSpectralTrimmer.trim(cube: cube, parameters: params, layout: layout)
         case .calibration:
             guard let params = calibrationParams, params.isConfigured else { return cube }
             return CubeCalibrator.calibrate(cube: cube, parameters: params, layout: layout)
+        case .spectralInterpolation:
+            guard let params = spectralInterpolationParams else { return cube }
+            return CubeSpectralInterpolator.interpolate(cube: cube, parameters: params, layout: layout)
         }
     }
 }
@@ -413,6 +515,7 @@ extension PipelineOperation {
         let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
         let width = dims[axes.width]
         let height = dims[axes.height]
+        let channelCount = dims[axes.channel]
         
         switch type {
         case .resize:
@@ -421,6 +524,9 @@ extension PipelineOperation {
         case .spatialCrop:
             guard let params = cropParameters else { return true }
             return params.left == 0 && params.top == 0 && params.right == width - 1 && params.bottom == height - 1
+        case .spectralTrim:
+            guard let params = spectralTrimParams else { return true }
+            return params.startChannel == 0 && params.endChannel == max(channelCount - 1, 0)
         case .dataTypeConversion:
             guard let targetType = targetDataType else { return true }
             return targetType == cube.originalDataType
@@ -1204,5 +1310,595 @@ class CubeCalibrator {
         } else {
             return i2 + dims.2 * (i1 + dims.1 * i0)
         }
+    }
+}
+
+class CubeSpectralTrimmer {
+    static func trim(cube: HyperCube, parameters: SpectralTrimParameters, layout: CubeLayout) -> HyperCube? {
+        let start = max(0, parameters.startChannel)
+        let end = max(start, parameters.endChannel)
+        guard let axes = cube.axes(for: layout) else { return cube }
+        let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        let channelCount = dims[axes.channel]
+        guard channelCount > 0 else { return cube }
+        let clampedEnd = min(end, channelCount - 1)
+        guard start <= clampedEnd else { return cube }
+        
+        let height = dims[axes.height]
+        let width = dims[axes.width]
+        let newChannelCount = clampedEnd - start + 1
+        var newDims = dims
+        newDims[axes.channel] = newChannelCount
+        let totalNewElements = newDims[0] * newDims[1] * newDims[2]
+        
+        func buildIndices(ch: Int, h: Int, w: Int) -> (Int, Int, Int) {
+            var i0 = 0, i1 = 0, i2 = 0
+            
+            if axes.channel == 0 { i0 = ch }
+            else if axes.channel == 1 { i1 = ch }
+            else { i2 = ch }
+            
+            if axes.height == 0 { i0 = h }
+            else if axes.height == 1 { i1 = h }
+            else { i2 = h }
+            
+            if axes.width == 0 { i0 = w }
+            else if axes.width == 1 { i1 = w }
+            else { i2 = w }
+            
+            return (i0, i1, i2)
+        }
+
+        func outputIndex(ch: Int, h: Int, w: Int) -> Int {
+            let (o0, o1, o2) = buildIndices(ch: ch, h: h, w: w)
+            return linearIndex(dims: newDims, fortran: cube.isFortranOrder, i0: o0, i1: o1, i2: o2)
+        }
+        
+        let newWavelengths: [Double]? = {
+            guard let wavelengths = cube.wavelengths, wavelengths.count == channelCount else { return nil }
+            return Array(wavelengths[start...clampedEnd])
+        }()
+        
+        switch cube.storage {
+        case .float64(let arr):
+            var newData = [Double](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .float64(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+            
+        case .float32(let arr):
+            var newData = [Float](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .float32(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+            
+        case .uint16(let arr):
+            var newData = [UInt16](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .uint16(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+            
+        case .uint8(let arr):
+            var newData = [UInt8](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .uint8(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+            
+        case .int16(let arr):
+            var newData = [Int16](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .int16(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+            
+        case .int32(let arr):
+            var newData = [Int32](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .int32(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+            
+        case .int8(let arr):
+            var newData = [Int8](repeating: 0, count: totalNewElements)
+            for ch in start...clampedEnd {
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let (i0, i1, i2) = buildIndices(ch: ch, h: h, w: w)
+                        let idx = cube.linearIndex(i0: i0, i1: i1, i2: i2)
+                        let outIdx = outputIndex(ch: ch - start, h: h, w: w)
+                        newData[outIdx] = arr[idx]
+                    }
+                }
+            }
+            return HyperCube(
+                dims: (newDims[0], newDims[1], newDims[2]),
+                storage: .int8(newData),
+                sourceFormat: cube.sourceFormat + " [Trim]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: newWavelengths
+            )
+        }
+    }
+
+    private static func linearIndex(dims: [Int], fortran: Bool, i0: Int, i1: Int, i2: Int) -> Int {
+        if fortran {
+            return i0 + dims[0] * (i1 + dims[1] * i2)
+        }
+        return i2 + dims[2] * (i1 + dims[1] * i0)
+    }
+}
+
+class CubeSpectralInterpolator {
+    static func interpolate(cube: HyperCube, parameters: SpectralInterpolationParameters, layout: CubeLayout) -> HyperCube? {
+        guard let wavelengths = cube.wavelengths, !wavelengths.isEmpty else { return cube }
+        guard let axes = cube.axes(for: layout) else { return cube }
+        
+        let dims = cube.dims
+        var dimsArray = [dims.0, dims.1, dims.2]
+        let channelCount = dimsArray[axes.channel]
+        guard channelCount > 0, wavelengths.count == channelCount else { return cube }
+        
+        let targetCount = parameters.targetChannelCount
+        guard targetCount > 0 else { return cube }
+        
+        let targetMin = parameters.targetMinLambda
+        let targetMax = parameters.targetMaxLambda
+        let targetWavelengths = buildTargetWavelengths(min: targetMin, max: targetMax, count: targetCount)
+        
+        let (sortedWavelengths, indexMap) = sortedWavelengthsIfNeeded(wavelengths)
+        let outputChannels = targetWavelengths.count
+        
+        dimsArray[axes.channel] = outputChannels
+        let totalElements = dimsArray[0] * dimsArray[1] * dimsArray[2]
+        
+        switch parameters.dataType {
+        case .float64:
+            var output = [Double](repeating: 0, count: totalElements)
+            fillOutput(
+                cube: cube,
+                axes: axes,
+                dims: dimsArray,
+                sortedWavelengths: sortedWavelengths,
+                indexMap: indexMap,
+                targetWavelengths: targetWavelengths,
+                method: parameters.method,
+                extrapolation: parameters.extrapolation,
+                into: &output
+            )
+            return HyperCube(
+                dims: (dimsArray[0], dimsArray[1], dimsArray[2]),
+                storage: .float64(output),
+                sourceFormat: cube.sourceFormat + " [Spectral]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: targetWavelengths
+            )
+        case .float32:
+            var output = [Float](repeating: 0, count: totalElements)
+            fillOutput(
+                cube: cube,
+                axes: axes,
+                dims: dimsArray,
+                sortedWavelengths: sortedWavelengths,
+                indexMap: indexMap,
+                targetWavelengths: targetWavelengths,
+                method: parameters.method,
+                extrapolation: parameters.extrapolation,
+                into: &output
+            )
+            return HyperCube(
+                dims: (dimsArray[0], dimsArray[1], dimsArray[2]),
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [Spectral]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: targetWavelengths
+            )
+        }
+    }
+    
+    private static func buildTargetWavelengths(min: Double, max: Double, count: Int) -> [Double] {
+        guard count > 1 else { return [min] }
+        let step = (max - min) / Double(count - 1)
+        return (0..<count).map { min + Double($0) * step }
+    }
+    
+    private static func sortedWavelengthsIfNeeded(_ wavelengths: [Double]) -> ([Double], [Int]) {
+        let isSorted = zip(wavelengths, wavelengths.dropFirst()).allSatisfy { $0 < $1 }
+        if isSorted {
+            return (wavelengths, Array(0..<wavelengths.count))
+        }
+        let indices = wavelengths.indices.sorted { wavelengths[$0] < wavelengths[$1] }
+        let sorted = indices.map { wavelengths[$0] }
+        return (sorted, indices)
+    }
+    
+    private static func fillOutput(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        dims: [Int],
+        sortedWavelengths: [Double],
+        indexMap: [Int],
+        targetWavelengths: [Double],
+        method: SpectralInterpolationMethod,
+        extrapolation: SpectralExtrapolationMode,
+        into output: inout [Double]
+    ) {
+        let height = dims[axes.height]
+        let width = dims[axes.width]
+        let outputChannels = targetWavelengths.count
+        let inputChannels = sortedWavelengths.count
+        
+        var spectrum = [Double](repeating: 0, count: inputChannels)
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                for (sortedIdx, originalIdx) in indexMap.enumerated() {
+                    var idx3 = [0, 0, 0]
+                    idx3[axes.channel] = originalIdx
+                    idx3[axes.height] = y
+                    idx3[axes.width] = x
+                    let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
+                    spectrum[sortedIdx] = cube.getValue(at: lin)
+                }
+                
+                for c in 0..<outputChannels {
+                    let lambda = targetWavelengths[c]
+                    let value = interpolate(
+                        x: lambda,
+                        xs: sortedWavelengths,
+                        ys: spectrum,
+                        method: method,
+                        extrapolation: extrapolation
+                    )
+                    
+                    var outIdx3 = [0, 0, 0]
+                    outIdx3[axes.channel] = c
+                    outIdx3[axes.height] = y
+                    outIdx3[axes.width] = x
+                    let outLin = linearIndex(dims: dims, fortran: cube.isFortranOrder, i0: outIdx3[0], i1: outIdx3[1], i2: outIdx3[2])
+                    output[outLin] = value
+                }
+            }
+        }
+    }
+    
+    private static func fillOutput(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        dims: [Int],
+        sortedWavelengths: [Double],
+        indexMap: [Int],
+        targetWavelengths: [Double],
+        method: SpectralInterpolationMethod,
+        extrapolation: SpectralExtrapolationMode,
+        into output: inout [Float]
+    ) {
+        let height = dims[axes.height]
+        let width = dims[axes.width]
+        let outputChannels = targetWavelengths.count
+        let inputChannels = sortedWavelengths.count
+        
+        let xs = sortedWavelengths.map { Float($0) }
+        let targets = targetWavelengths.map { Float($0) }
+        var spectrum = [Float](repeating: 0, count: inputChannels)
+        
+        for y in 0..<height {
+            for x in 0..<width {
+                for (sortedIdx, originalIdx) in indexMap.enumerated() {
+                    var idx3 = [0, 0, 0]
+                    idx3[axes.channel] = originalIdx
+                    idx3[axes.height] = y
+                    idx3[axes.width] = x
+                    let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
+                    spectrum[sortedIdx] = Float(cube.getValue(at: lin))
+                }
+                
+                for c in 0..<outputChannels {
+                    let lambda = targets[c]
+                    let value = interpolate(
+                        x: lambda,
+                        xs: xs,
+                        ys: spectrum,
+                        method: method,
+                        extrapolation: extrapolation
+                    )
+                    
+                    var outIdx3 = [0, 0, 0]
+                    outIdx3[axes.channel] = c
+                    outIdx3[axes.height] = y
+                    outIdx3[axes.width] = x
+                    let outLin = linearIndex(dims: dims, fortran: cube.isFortranOrder, i0: outIdx3[0], i1: outIdx3[1], i2: outIdx3[2])
+                    output[outLin] = value
+                }
+            }
+        }
+    }
+    
+    private static func linearIndex(dims: [Int], fortran: Bool, i0: Int, i1: Int, i2: Int) -> Int {
+        if fortran {
+            return i0 + dims[0] * (i1 + dims[1] * i2)
+        }
+        return i2 + dims[2] * (i1 + dims[1] * i0)
+    }
+    
+    private static func interpolate(
+        x: Double,
+        xs: [Double],
+        ys: [Double],
+        method: SpectralInterpolationMethod,
+        extrapolation: SpectralExtrapolationMode
+    ) -> Double {
+        guard xs.count == ys.count, !xs.isEmpty else { return 0 }
+        if xs.count == 1 { return ys[0] }
+        
+        switch method {
+        case .nearest:
+            return nearest(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        case .linear:
+            return linear(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        case .cubic:
+            return cubic(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        }
+    }
+    
+    private static func interpolate(
+        x: Float,
+        xs: [Float],
+        ys: [Float],
+        method: SpectralInterpolationMethod,
+        extrapolation: SpectralExtrapolationMode
+    ) -> Float {
+        guard xs.count == ys.count, !xs.isEmpty else { return 0 }
+        if xs.count == 1 { return ys[0] }
+        
+        switch method {
+        case .nearest:
+            return nearest(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        case .linear:
+            return linear(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        case .cubic:
+            return cubic(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        }
+    }
+    
+    private static func nearest(x: Double, xs: [Double], ys: [Double], extrapolation: SpectralExtrapolationMode) -> Double {
+        let n = xs.count
+        if x <= xs[0] { return ys[0] }
+        if x >= xs[n - 1] { return ys[n - 1] }
+        let i = lowerBound(x: x, xs: xs)
+        let left = max(0, min(i - 1, n - 1))
+        let right = max(0, min(i, n - 1))
+        return abs(xs[left] - x) <= abs(xs[right] - x) ? ys[left] : ys[right]
+    }
+    
+    private static func linear(x: Double, xs: [Double], ys: [Double], extrapolation: SpectralExtrapolationMode) -> Double {
+        let n = xs.count
+        if x <= xs[0] {
+            return extrapolation == .clamp ? ys[0] : linearSegment(x: x, x0: xs[0], x1: xs[1], y0: ys[0], y1: ys[1])
+        }
+        if x >= xs[n - 1] {
+            return extrapolation == .clamp ? ys[n - 1] : linearSegment(x: x, x0: xs[n - 2], x1: xs[n - 1], y0: ys[n - 2], y1: ys[n - 1])
+        }
+        let i = lowerBound(x: x, xs: xs)
+        let i0 = max(0, i - 1)
+        let i1 = min(n - 1, i)
+        return linearSegment(x: x, x0: xs[i0], x1: xs[i1], y0: ys[i0], y1: ys[i1])
+    }
+    
+    private static func cubic(x: Double, xs: [Double], ys: [Double], extrapolation: SpectralExtrapolationMode) -> Double {
+        let n = xs.count
+        if n < 4 {
+            return linear(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        }
+        
+        if x <= xs[0] {
+            if extrapolation == .clamp { return ys[0] }
+            return cubicLagrange(x: x, xs: xs, ys: ys, i0: 0, i1: 1, i2: 2, i3: 3)
+        }
+        if x >= xs[n - 1] {
+            if extrapolation == .clamp { return ys[n - 1] }
+            return cubicLagrange(x: x, xs: xs, ys: ys, i0: n - 4, i1: n - 3, i2: n - 2, i3: n - 1)
+        }
+        
+        let i = lowerBound(x: x, xs: xs)
+        let i1 = max(1, min(i, n - 2))
+        let i0 = max(0, i1 - 1)
+        let i2 = min(n - 1, i1 + 1)
+        let i3 = min(n - 1, i1 + 2)
+        if i0 == i1 || i2 == i3 {
+            return linear(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        }
+        return cubicLagrange(x: x, xs: xs, ys: ys, i0: i0, i1: i1, i2: i2, i3: i3)
+    }
+    
+    private static func lowerBound(x: Double, xs: [Double]) -> Int {
+        var low = 0
+        var high = xs.count
+        while low < high {
+            let mid = (low + high) / 2
+            if xs[mid] < x {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+    
+    private static func linearSegment(x: Double, x0: Double, x1: Double, y0: Double, y1: Double) -> Double {
+        let denom = x1 - x0
+        guard abs(denom) > 1e-12 else { return y0 }
+        let t = (x - x0) / denom
+        return y0 + t * (y1 - y0)
+    }
+    
+    private static func cubicLagrange(x: Double, xs: [Double], ys: [Double], i0: Int, i1: Int, i2: Int, i3: Int) -> Double {
+        let x0 = xs[i0], x1 = xs[i1], x2 = xs[i2], x3 = xs[i3]
+        let y0 = ys[i0], y1 = ys[i1], y2 = ys[i2], y3 = ys[i3]
+        let l0 = ((x - x1) * (x - x2) * (x - x3)) / ((x0 - x1) * (x0 - x2) * (x0 - x3))
+        let l1 = ((x - x0) * (x - x2) * (x - x3)) / ((x1 - x0) * (x1 - x2) * (x1 - x3))
+        let l2 = ((x - x0) * (x - x1) * (x - x3)) / ((x2 - x0) * (x2 - x1) * (x2 - x3))
+        let l3 = ((x - x0) * (x - x1) * (x - x2)) / ((x3 - x0) * (x3 - x1) * (x3 - x2))
+        return y0 * l0 + y1 * l1 + y2 * l2 + y3 * l3
+    }
+    
+    private static func nearest(x: Float, xs: [Float], ys: [Float], extrapolation: SpectralExtrapolationMode) -> Float {
+        let n = xs.count
+        if x <= xs[0] { return ys[0] }
+        if x >= xs[n - 1] { return ys[n - 1] }
+        let i = lowerBound(x: x, xs: xs)
+        let left = max(0, min(i - 1, n - 1))
+        let right = max(0, min(i, n - 1))
+        return abs(xs[left] - x) <= abs(xs[right] - x) ? ys[left] : ys[right]
+    }
+    
+    private static func linear(x: Float, xs: [Float], ys: [Float], extrapolation: SpectralExtrapolationMode) -> Float {
+        let n = xs.count
+        if x <= xs[0] {
+            return extrapolation == .clamp ? ys[0] : linearSegment(x: x, x0: xs[0], x1: xs[1], y0: ys[0], y1: ys[1])
+        }
+        if x >= xs[n - 1] {
+            return extrapolation == .clamp ? ys[n - 1] : linearSegment(x: x, x0: xs[n - 2], x1: xs[n - 1], y0: ys[n - 2], y1: ys[n - 1])
+        }
+        let i = lowerBound(x: x, xs: xs)
+        let i0 = max(0, i - 1)
+        let i1 = min(n - 1, i)
+        return linearSegment(x: x, x0: xs[i0], x1: xs[i1], y0: ys[i0], y1: ys[i1])
+    }
+    
+    private static func cubic(x: Float, xs: [Float], ys: [Float], extrapolation: SpectralExtrapolationMode) -> Float {
+        let n = xs.count
+        if n < 4 {
+            return linear(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        }
+        if x <= xs[0] {
+            if extrapolation == .clamp { return ys[0] }
+            return cubicLagrange(x: x, xs: xs, ys: ys, i0: 0, i1: 1, i2: 2, i3: 3)
+        }
+        if x >= xs[n - 1] {
+            if extrapolation == .clamp { return ys[n - 1] }
+            return cubicLagrange(x: x, xs: xs, ys: ys, i0: n - 4, i1: n - 3, i2: n - 2, i3: n - 1)
+        }
+        let i = lowerBound(x: x, xs: xs)
+        let i1 = max(1, min(i, n - 2))
+        let i0 = max(0, i1 - 1)
+        let i2 = min(n - 1, i1 + 1)
+        let i3 = min(n - 1, i1 + 2)
+        if i0 == i1 || i2 == i3 {
+            return linear(x: x, xs: xs, ys: ys, extrapolation: extrapolation)
+        }
+        return cubicLagrange(x: x, xs: xs, ys: ys, i0: i0, i1: i1, i2: i2, i3: i3)
+    }
+    
+    private static func lowerBound(x: Float, xs: [Float]) -> Int {
+        var low = 0
+        var high = xs.count
+        while low < high {
+            let mid = (low + high) / 2
+            if xs[mid] < x {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+    
+    private static func linearSegment(x: Float, x0: Float, x1: Float, y0: Float, y1: Float) -> Float {
+        let denom = x1 - x0
+        if abs(denom) < 1e-7 { return y0 }
+        let t = (x - x0) / denom
+        return y0 + t * (y1 - y0)
+    }
+    
+    private static func cubicLagrange(x: Float, xs: [Float], ys: [Float], i0: Int, i1: Int, i2: Int, i3: Int) -> Float {
+        let x0 = xs[i0], x1 = xs[i1], x2 = xs[i2], x3 = xs[i3]
+        let y0 = ys[i0], y1 = ys[i1], y2 = ys[i2], y3 = ys[i3]
+        let l0 = ((x - x1) * (x - x2) * (x - x3)) / ((x0 - x1) * (x0 - x2) * (x0 - x3))
+        let l1 = ((x - x0) * (x - x2) * (x - x3)) / ((x1 - x0) * (x1 - x2) * (x1 - x3))
+        let l2 = ((x - x0) * (x - x1) * (x - x3)) / ((x2 - x0) * (x2 - x1) * (x2 - x3))
+        let l3 = ((x - x0) * (x - x1) * (x - x2)) / ((x3 - x0) * (x3 - x1) * (x3 - x2))
+        return y0 * l0 + y1 * l1 + y2 * l2 + y3 * l3
     }
 }

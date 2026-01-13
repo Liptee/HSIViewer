@@ -344,6 +344,8 @@ struct OperationEditorView: View {
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
     @State private var localCalibrationParams: CalibrationParameters = .default
     @State private var localResizeParams: ResizeParameters = .default
+    @State private var localSpectralTrimParams: SpectralTrimParameters = SpectralTrimParameters(startChannel: 0, endChannel: 0)
+    @State private var localSpectralInterpolationParams: SpectralInterpolationParameters = .default
     @State private var resizeAspectRatio: Double = 1.0
     @State private var isAdjustingResize: Bool = false
     
@@ -386,6 +388,10 @@ struct OperationEditorView: View {
             return CGSize(width: 500, height: 600)
         case .resize:
             return CGSize(width: 500, height: 520)
+        case .spectralTrim:
+            return CGSize(width: 460, height: 420)
+        case .spectralInterpolation:
+            return CGSize(width: 520, height: 520)
         default:
             return CGSize(width: 420, height: 540)
         }
@@ -413,6 +419,10 @@ struct OperationEditorView: View {
         case .resize:
             localResizeParams = op.resizeParameters ?? .default
             resizeAspectRatio = deriveAspectRatio(for: op, params: localResizeParams)
+        case .spectralTrim:
+            localSpectralTrimParams = op.spectralTrimParams ?? SpectralTrimParameters(startChannel: 0, endChannel: 0)
+        case .spectralInterpolation:
+            localSpectralInterpolationParams = op.spectralInterpolationParams ?? .default
         }
     }
     
@@ -436,8 +446,12 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].resizeParameters = localResizeParams
         case .spatialCrop:
             state.pipelineOperations[index].cropParameters = localCropParameters
+        case .spectralTrim:
+            state.pipelineOperations[index].spectralTrimParams = localSpectralTrimParams
         case .calibration:
             state.pipelineOperations[index].calibrationParams = localCalibrationParams
+        case .spectralInterpolation:
+            state.pipelineOperations[index].spectralInterpolationParams = localSpectralInterpolationParams
         }
     }
     
@@ -466,8 +480,12 @@ struct OperationEditorView: View {
             resizeEditor(for: op)
         case .spatialCrop:
             cropEditor(for: op)
+        case .spectralTrim:
+            spectralTrimEditor(for: op)
         case .calibration:
             calibrationEditor(for: op)
+        case .spectralInterpolation:
+            spectralInterpolationEditor(for: op)
         }
     }
     
@@ -695,6 +713,187 @@ struct OperationEditorView: View {
         .onChange(of: localResizeParams.lockAspectRatio) { isLocked in
             guard isLocked else { return }
             resizeAspectRatio = deriveAspectRatio(for: op, params: localResizeParams)
+        }
+    }
+
+    private func spectralInterpolationEditor(for op: PipelineOperation) -> some View {
+        let wavelengths = state.cube?.wavelengths ?? state.wavelengths
+        let sourceMin = wavelengths?.min() ?? 0
+        let sourceMax = wavelengths?.max() ?? 0
+        let hasWavelengths = wavelengths != nil && !(wavelengths?.isEmpty ?? true)
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Спектральная интерполяция")
+                .font(.system(size: 11, weight: .medium))
+            
+            if hasWavelengths {
+                Text(String(format: "Исходный диапазон: %.2f – %.2f нм", sourceMin, sourceMax))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Длины волн не заданы — интерполяция невозможна")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Целевое число каналов")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Channels", value: $localSpectralInterpolationParams.targetChannelCount, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                        Stepper("", value: $localSpectralInterpolationParams.targetChannelCount, in: 1...8192)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Диапазон λ")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Min", value: $localSpectralInterpolationParams.targetMinLambda, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                        Text("–")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("Max", value: $localSpectralInterpolationParams.targetMaxLambda, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                    }
+                }
+            }
+            
+            Divider()
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Метод")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $localSpectralInterpolationParams.method) {
+                        ForEach(SpectralInterpolationMethod.allCases) { method in
+                            Text(method.rawValue).tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 140)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("За пределами")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $localSpectralInterpolationParams.extrapolation) {
+                        ForEach(SpectralExtrapolationMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 140)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Тип данных")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $localSpectralInterpolationParams.dataType) {
+                        ForEach(SpectralInterpolationDataType.allCases) { dt in
+                            Text(dt.rawValue).tag(dt)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 120)
+                }
+            }
+            
+            if localSpectralInterpolationParams.extrapolation == .extrapolate {
+                Text("Экстраполяция может давать нефизические значения за пределами диапазона.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .onAppear {
+            if hasWavelengths {
+                if localSpectralInterpolationParams.targetChannelCount <= 0 {
+                    let count = state.cube?.channelCount(for: op.layout) ?? 1
+                    localSpectralInterpolationParams.targetChannelCount = max(1, count)
+                }
+                if localSpectralInterpolationParams.targetMinLambda == 0 && localSpectralInterpolationParams.targetMaxLambda == 0 {
+                    localSpectralInterpolationParams.targetMinLambda = sourceMin
+                    localSpectralInterpolationParams.targetMaxLambda = sourceMax
+                }
+            }
+        }
+    }
+
+    private func spectralTrimEditor(for op: PipelineOperation) -> some View {
+        let channels = state.cube?.channelCount(for: op.layout) ?? state.channelCount
+        let maxIndex = max(channels - 1, 0)
+        let wavelengths = state.cube?.wavelengths ?? state.wavelengths
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Обрезка спектра")
+                .font(.system(size: 11, weight: .medium))
+            
+            if let wavelengths, !wavelengths.isEmpty,
+               localSpectralTrimParams.startChannel < wavelengths.count,
+               localSpectralTrimParams.endChannel < wavelengths.count {
+                Text("λ: \(String(format: "%.1f", wavelengths[localSpectralTrimParams.startChannel])) – \(String(format: "%.1f", wavelengths[localSpectralTrimParams.endChannel])) нм")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Начальный канал")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Stepper(value: $localSpectralTrimParams.startChannel, in: 0...maxIndex) {
+                        Text("\(localSpectralTrimParams.startChannel)")
+                            .font(.system(size: 11))
+                            .frame(minWidth: 36, alignment: .leading)
+                    }
+                    .controlSize(.small)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Конечный канал")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Stepper(value: $localSpectralTrimParams.endChannel, in: 0...maxIndex) {
+                        Text("\(localSpectralTrimParams.endChannel)")
+                            .font(.system(size: 11))
+                            .frame(minWidth: 36, alignment: .leading)
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+        .onAppear {
+            if localSpectralTrimParams.endChannel == 0 && maxIndex > 0 {
+                localSpectralTrimParams.endChannel = maxIndex
+            }
+            localSpectralTrimParams.startChannel = min(localSpectralTrimParams.startChannel, maxIndex)
+            localSpectralTrimParams.endChannel = min(localSpectralTrimParams.endChannel, maxIndex)
+            if localSpectralTrimParams.endChannel < localSpectralTrimParams.startChannel {
+                localSpectralTrimParams.endChannel = localSpectralTrimParams.startChannel
+            }
+        }
+        .onChange(of: localSpectralTrimParams.startChannel) { newValue in
+            if localSpectralTrimParams.endChannel < newValue {
+                localSpectralTrimParams.endChannel = newValue
+            }
+        }
+        .onChange(of: localSpectralTrimParams.endChannel) { newValue in
+            if newValue < localSpectralTrimParams.startChannel {
+                localSpectralTrimParams.startChannel = newValue
+            }
         }
     }
     
