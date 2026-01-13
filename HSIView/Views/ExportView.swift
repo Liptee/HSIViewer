@@ -109,7 +109,7 @@ struct ExportView: View {
             
             footerView
         }
-        .frame(width: 500, height: 500)
+        .frame(width: 640, height: 500)
         .onAppear {
             colorSynthesisMode = state.colorSynthesisConfig.mode
             if state.viewMode == .mask && hasMask {
