@@ -780,6 +780,33 @@ final class AppState: ObservableObject {
         sample.displayName = name?.isEmpty == true ? nil : name
         roiSamples[idx] = sample
     }
+
+    func updateROISampleRect(id: UUID, rect: SpectrumROIRect) -> Bool {
+        if let idx = roiSamples.firstIndex(where: { $0.id == id }) {
+            let existing = roiSamples[idx]
+            guard let updated = makeROISample(
+                rect: rect,
+                colorIndex: existing.colorIndex,
+                id: existing.id,
+                displayName: existing.displayName
+            ) else { return false }
+            roiSamples[idx] = updated
+            return true
+        }
+
+        if let pending = pendingROISample, pending.id == id {
+            guard let updated = makeROISample(
+                rect: rect,
+                colorIndex: pending.colorIndex,
+                id: pending.id,
+                displayName: pending.displayName
+            ) else { return false }
+            pendingROISample = updated
+            return true
+        }
+
+        return false
+    }
     
     func toggleGraphPanel() {
         isGraphPanelExpanded.toggle()

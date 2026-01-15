@@ -5,6 +5,7 @@ struct GraphPanel: View {
     @EnvironmentObject var state: AppState
     @State private var selectedSampleID: UUID?
     @State private var editingSampleID: UUID?
+    @State private var editingROISample: SpectrumROISample?
     @FocusState private var hasFocus: Bool
     let panelWidth: CGFloat = 400
     
@@ -68,6 +69,14 @@ struct GraphPanel: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: state.isGraphPanelExpanded)
+        .sheet(item: $editingROISample) { sample in
+            ROISampleEditor(
+                sample: sample,
+                imageSize: roiSpatialSize()
+            ) { updatedRect in
+                state.updateROISampleRect(id: sample.id, rect: updatedRect)
+            }
+        }
     }
     
     private var expandedPanel: some View {
@@ -433,6 +442,158 @@ private struct ROISampleRow: View {
     }
 }
 
+private struct ROISampleEditor: View {
+    let sample: SpectrumROISample
+    let imageSize: (width: Int, height: Int)?
+    let onApply: (SpectrumROIRect) -> Bool
+    
+    @Environment(\.dismiss) private var dismiss
+    @State private var x1: Int
+    @State private var y1: Int
+    @State private var x2: Int
+    @State private var y2: Int
+    @State private var errorMessage: String?
+    
+    init(
+        sample: SpectrumROISample,
+        imageSize: (width: Int, height: Int)?,
+        onApply: @escaping (SpectrumROIRect) -> Bool
+    ) {
+        self.sample = sample
+        self.imageSize = imageSize
+        self.onApply = onApply
+        _x1 = State(initialValue: sample.rect.minX)
+        _y1 = State(initialValue: sample.rect.minY)
+        _x2 = State(initialValue: sample.rect.maxX)
+        _y2 = State(initialValue: sample.rect.maxY)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Редактирование ROI")
+                .font(.system(size: 13, weight: .semibold))
+            
+            if let size = imageSize {
+                Text("Размер изображения: \(size.width) × \(size.height) px")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Размер изображения недоступен")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                roiFieldRow(label: "x1", value: $x1, range: xRange)
+                roiFieldRow(label: "y1", value: $y1, range: yRange)
+                roiFieldRow(label: "x2", value: $x2, range: xRange)
+                roiFieldRow(label: "y2", value: $y2, range: yRange)
+            }
+            .disabled(imageSize == nil)
+            
+            if let message = validationMessage {
+                Text(message)
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
+            }
+            
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 10))
+                    .foregroundColor(.red)
+            }
+            
+            Spacer()
+            
+            HStack {
+                Spacer()
+                Button("Отмена") {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Применить") {
+                    applyChanges()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isValid)
+            }
+        }
+        .padding(16)
+        .frame(width: 320, height: 300)
+    }
+    
+    private var xRange: ClosedRange<Int> {
+        let maxX = max((imageSize?.width ?? 1) - 1, 0)
+        return 0...maxX
+    }
+    
+    private var yRange: ClosedRange<Int> {
+        let maxY = max((imageSize?.height ?? 1) - 1, 0)
+        return 0...maxY
+    }
+    
+    private var validationMessage: String? {
+        guard let size = imageSize else {
+            return "Нужны данные изображения для проверки."
+        }
+        let maxX = max(size.width - 1, 0)
+        let maxY = max(size.height - 1, 0)
+        
+        if x1 > x2 {
+            return "x1 не может быть больше x2."
+        }
+        if y1 > y2 {
+            return "y1 не может быть больше y2."
+        }
+        if x1 < 0 || x2 < 0 || x1 > maxX || x2 > maxX {
+            return "x должен быть в диапазоне 0...\(maxX)."
+        }
+        if y1 < 0 || y2 < 0 || y1 > maxY || y2 > maxY {
+            return "y должен быть в диапазоне 0...\(maxY)."
+        }
+        return nil
+    }
+    
+    private var isValid: Bool {
+        validationMessage == nil && imageSize != nil
+    }
+    
+    private func applyChanges() {
+        guard isValid else { return }
+        errorMessage = nil
+        let rect = SpectrumROIRect(
+            minX: x1,
+            minY: y1,
+            width: x2 - x1 + 1,
+            height: y2 - y1 + 1
+        )
+        if onApply(rect) {
+            dismiss()
+        } else {
+            errorMessage = "Не удалось обновить ROI."
+        }
+    }
+    
+    private func roiFieldRow(
+        label: String,
+        value: Binding<Int>,
+        range: ClosedRange<Int>
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .frame(width: 20, alignment: .leading)
+            TextField("", value: value, format: .number)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 90)
+            Stepper("", value: value, in: range)
+                .labelsHidden()
+                .controlSize(.mini)
+        }
+    }
+}
+
 extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
@@ -569,6 +730,17 @@ extension GraphPanel {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+
+                        Button {
+                            editingROISample = sample
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.pencil")
+                                Text("Редактировать")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         
                         Button(role: .destructive) {
                             deleteROISamples([sample])
@@ -585,6 +757,14 @@ extension GraphPanel {
             }
         }
         .padding(12)
+    }
+
+    private func roiSpatialSize() -> (width: Int, height: Int)? {
+        guard let cube = state.cube else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: state.activeLayout) else { return nil }
+        return (dimsArray[axes.width], dimsArray[axes.height])
     }
     
     private func chartView(series: [SpectrumChartSeries], axisLabel: String) -> some View {
