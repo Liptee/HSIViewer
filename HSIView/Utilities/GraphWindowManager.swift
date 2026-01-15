@@ -13,7 +13,7 @@ final class GraphWindowManager: NSObject, NSWindowDelegate {
             return
         }
         
-        let content = GraphWindowView()
+        let content = GraphWindowView(spectrumCache: appState.librarySpectrumCache)
             .environmentObject(appState)
         
         let hosting = NSHostingController(rootView: content)

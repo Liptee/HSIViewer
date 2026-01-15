@@ -103,6 +103,7 @@ final class AppState: ObservableObject {
     @Published var pcaProgressMessage: String?
     
     @Published var maskEditorState = MaskEditorState()
+    @Published var librarySpectrumCache = LibrarySpectrumCache()
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
         .ndvi: (0, 0),
@@ -1656,7 +1657,17 @@ final class AppState: ObservableObject {
     private func persistCurrentSession() {
         guard let url = cubeURL?.standardizedFileURL else { return }
         guard let snapshot = makeSnapshot() else { return }
-        sessionSnapshots[canonicalURL(url)] = snapshot
+        let canonical = canonicalURL(url)
+        sessionSnapshots[canonical] = snapshot
+        
+        let libraryID = canonical.path
+        let fileName = url.lastPathComponent
+        librarySpectrumCache.updateEntry(
+            libraryID: libraryID,
+            fileName: fileName,
+            spectrumSamples: snapshot.spectrumSamples,
+            roiSamples: snapshot.roiSamples
+        )
     }
     
     private func resetSessionState() {
@@ -1723,7 +1734,9 @@ final class AppState: ObservableObject {
                 pixelX: $0.pixelX,
                 pixelY: $0.pixelY,
                 colorIndex: $0.colorIndex,
-                displayName: $0.displayName
+                displayName: $0.displayName,
+                values: $0.values,
+                wavelengths: $0.wavelengths
             )
         }
         let roiDescriptors = roiSamples.map {
@@ -1734,7 +1747,9 @@ final class AppState: ObservableObject {
                 width: $0.rect.width,
                 height: $0.rect.height,
                 colorIndex: $0.colorIndex,
-                displayName: $0.displayName
+                displayName: $0.displayName,
+                values: $0.values,
+                wavelengths: $0.wavelengths
             )
         }
         
