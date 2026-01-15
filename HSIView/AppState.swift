@@ -870,7 +870,7 @@ final class AppState: ObservableObject {
         if pipelineAutoApply {
             let isNoOp = operation.isNoOp(for: cube, layout: activeLayout)
             if !isNoOp {
-                applyPipeline()
+            applyPipeline()
             }
         }
     }
@@ -885,12 +885,20 @@ final class AppState: ObservableObject {
     
     func moveOperation(from source: Int, to destination: Int) {
         guard source >= 0 && source < pipelineOperations.count else { return }
-        guard destination >= 0 && destination < pipelineOperations.count else { return }
-        guard source != destination else { return }
+        guard destination >= 0 && destination <= pipelineOperations.count else { return }
         
-        let operation = pipelineOperations[source]
-        pipelineOperations.remove(at: source)
-        pipelineOperations.insert(operation, at: destination)
+        let adjustedDestination: Int
+        if source < destination {
+            adjustedDestination = destination - 1
+        } else {
+            adjustedDestination = destination
+        }
+        
+        guard source != adjustedDestination else { return }
+        
+        let operation = pipelineOperations.remove(at: source)
+        pipelineOperations.insert(operation, at: min(adjustedDestination, pipelineOperations.count))
+        
         if pipelineAutoApply {
             applyPipeline()
         }
@@ -939,13 +947,13 @@ final class AppState: ObservableObject {
             }
             
         } else {
-            beginBusy(message: "Применение пайплайна…")
-            
-            processingQueue.async { [weak self] in
-                guard let self else { return }
+        beginBusy(message: "Применение пайплайна…")
+        
+        processingQueue.async { [weak self] in
+            guard let self else { return }
                 let baseCube = self.cubeWithWavelengthsIfNeeded(original, layout: activeLayout)
                 let result = self.processPipeline(original: baseCube, operations: operations)
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
                     self.cube = result ?? baseCube
                     self.lastPipelineResult = self.cube
                     self.lastPipelineAppliedOperations = operations
@@ -953,7 +961,7 @@ final class AppState: ObservableObject {
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
-                    self.endBusy()
+                self.endBusy()
                 }
             }
         }
@@ -1512,8 +1520,8 @@ final class AppState: ObservableObject {
         pcaRenderedImage = nil
         pcaPendingConfig = nil
         busyMessage = "Восстановление настроек…"
-        applySnapshot(snapshot)
-        endBusy()
+            applySnapshot(snapshot)
+            endBusy()
     }
     
     private func applySnapshot(_ snapshot: CubeSessionSnapshot) {
@@ -1534,9 +1542,9 @@ final class AppState: ObservableObject {
         if let snapshotWavelengths = snapshot.wavelengths,
            snapshotWavelengths.count == baseChannelCount {
             wavelengths = snapshotWavelengths
-            lambdaStart = snapshot.lambdaStart
-            lambdaEnd = snapshot.lambdaEnd
-            lambdaStep = snapshot.lambdaStep
+        lambdaStart = snapshot.lambdaStart
+        lambdaEnd = snapshot.lambdaEnd
+        lambdaStep = snapshot.lambdaStep
         } else if let currentWavelengths = baseWavelengths, !currentWavelengths.isEmpty {
             updateLambdaRange(from: currentWavelengths)
         }
@@ -1571,8 +1579,6 @@ final class AppState: ObservableObject {
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         hasCustomColorSynthesisMapping = true
-        restoreSpectrumSamples(from: snapshot.spectrumSamples)
-        restoreROISamples(from: snapshot.roiSamples)
 
         if let range = snapshot.spectralTrimRange,
            !pipelineOperations.contains(where: { $0.type == .spectralTrim }) {
@@ -1600,9 +1606,18 @@ final class AppState: ObservableObject {
         updateResolvedLayout()
         clampColorSynthesisMapping()
         
-        if pipelineAutoApply && !pipelineOperations.isEmpty {
+        if !pipelineOperations.isEmpty {
+            spectrumRotationTurns = pipelineRotationTurns()
+            spectrumSpatialSize = nil
             applyPipeline()
         }
+        
+        spectrumRotationTurns = pipelineRotationTurns()
+        if let cube = cube {
+            spectrumSpatialSize = cubeSpatialSize(for: cube)
+        }
+        restoreSpectrumSamples(from: snapshot.spectrumSamples)
+        restoreROISamples(from: snapshot.roiSamples)
     }
     
     private func applySnapshotWithoutTrim(_ snapshot: CubeSessionSnapshot) {
