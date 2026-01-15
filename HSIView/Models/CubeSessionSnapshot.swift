@@ -75,6 +75,18 @@ struct SpectrumSampleDescriptor: Equatable {
     var pixelY: Int
     var colorIndex: Int
     var displayName: String?
+    var values: [Double]
+    var wavelengths: [Double]?
+    
+    init(id: UUID, pixelX: Int, pixelY: Int, colorIndex: Int, displayName: String? = nil, values: [Double] = [], wavelengths: [Double]? = nil) {
+        self.id = id
+        self.pixelX = pixelX
+        self.pixelY = pixelY
+        self.colorIndex = colorIndex
+        self.displayName = displayName
+        self.values = values
+        self.wavelengths = wavelengths
+    }
 }
 
 struct SpectrumROISampleDescriptor: Equatable {
@@ -85,8 +97,22 @@ struct SpectrumROISampleDescriptor: Equatable {
     var height: Int
     var colorIndex: Int
     var displayName: String?
+    var values: [Double]
+    var wavelengths: [Double]?
     
     var rect: SpectrumROIRect {
         SpectrumROIRect(minX: minX, minY: minY, width: width, height: height)
+    }
+    
+    init(id: UUID, minX: Int, minY: Int, width: Int, height: Int, colorIndex: Int, displayName: String? = nil, values: [Double] = [], wavelengths: [Double]? = nil) {
+        self.id = id
+        self.minX = minX
+        self.minY = minY
+        self.width = width
+        self.height = height
+        self.colorIndex = colorIndex
+        self.displayName = displayName
+        self.values = values
+        self.wavelengths = wavelengths
     }
 }

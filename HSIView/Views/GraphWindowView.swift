@@ -88,10 +88,21 @@ private struct GraphSeries: Identifiable, Equatable {
     let values: [Double]
     let wavelengths: [Double]?
     let defaultColor: Color
+    let sourceName: String?
+    
+    init(id: UUID, title: String, values: [Double], wavelengths: [Double]?, defaultColor: Color, sourceName: String? = nil) {
+        self.id = id
+        self.title = title
+        self.values = values
+        self.wavelengths = wavelengths
+        self.defaultColor = defaultColor
+        self.sourceName = sourceName
+    }
 }
 
 struct GraphWindowView: View {
     @EnvironmentObject var state: AppState
+    @ObservedObject private var spectrumCache: LibrarySpectrumCache
     
     @State private var dataset: GraphWindowDataset = .points
     @State private var style: GraphWindowStyle = .linesAndPoints
@@ -109,8 +120,25 @@ struct GraphWindowView: View {
     @State private var yMin: Double = 0
     @State private var yMax: Double = 1
     
+    @State private var showLibraryPanel: Bool = true
+    @State private var includeCurrentImage: Bool = true
+    
+    init(spectrumCache: LibrarySpectrumCache) {
+        self._spectrumCache = ObservedObject(wrappedValue: spectrumCache)
+    }
+    
     var body: some View {
         HStack(spacing: 0) {
+            if showLibraryPanel {
+                GlassEffectContainerWrapper {
+                    libraryPanel
+                        .frame(width: 220)
+                        .glassBackground(cornerRadius: 0)
+                }
+                
+                Divider()
+            }
+            
             GlassEffectContainerWrapper {
                 settingsPanel
                     .frame(width: 240)
@@ -131,7 +159,7 @@ struct GraphWindowView: View {
                     .padding(16)
             }
         }
-        .frame(minWidth: 900, minHeight: 560)
+        .frame(minWidth: showLibraryPanel ? 1100 : 900, minHeight: 560)
         .onAppear {
             applyPalette()
             updateAxisBounds()
@@ -148,10 +176,147 @@ struct GraphWindowView: View {
         }
     }
     
+    private var libraryPanel: some View {
+        GlassPanel(cornerRadius: 0, padding: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    Text("Источники")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Button {
+                        showLibraryPanel = false
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                
+                Divider()
+                
+                HStack(spacing: 8) {
+                    Button("Показать все") {
+                        spectrumCache.showAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button("Скрыть все") {
+                        spectrumCache.hideAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                
+                Divider()
+                
+                Toggle("Текущее изображение", isOn: $includeCurrentImage)
+                    .font(.system(size: 11))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                
+                Divider()
+                
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(spectrumCache.nonEmptyEntries) { entry in
+                            libraryEntryRow(entry: entry)
+                        }
+                        
+                        if spectrumCache.nonEmptyEntries.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "tray")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(.secondary)
+                                Text("Нет сохранённых спектров")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                                Text("Добавьте точки или ROI\nна изображениях библиотеки")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+        }
+    }
+    
+    private func libraryEntryRow(entry: LibrarySpectrumEntry) -> some View {
+        let isVisible = spectrumCache.visibleEntries.contains(entry.id)
+        let isCurrentImage = entry.libraryID == state.cubeURL?.standardizedFileURL.path
+        
+        return HStack(spacing: 8) {
+            Button {
+                spectrumCache.toggleVisibility(libraryID: entry.id)
+            } label: {
+                Image(systemName: isVisible ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14))
+                    .foregroundColor(isVisible ? .accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(entry.fileName)
+                        .font(.system(size: 11, weight: isCurrentImage ? .semibold : .regular))
+                        .lineLimit(1)
+                    
+                    if isCurrentImage {
+                        Text("•")
+                            .font(.system(size: 8))
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                
+                HStack(spacing: 8) {
+                    if !entry.spectrumSamples.isEmpty {
+                        Label("\(entry.spectrumSamples.count)", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                    if !entry.roiSamples.isEmpty {
+                        Label("\(entry.roiSamples.count)", systemImage: "rectangle.dashed")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(isVisible ? Color.accentColor.opacity(0.1) : Color.clear)
+        .cornerRadius(6)
+    }
+    
     private var settingsPanel: some View {
         GlassPanel(cornerRadius: 0, padding: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if !showLibraryPanel {
+                        Button {
+                            showLibraryPanel = true
+                        } label: {
+                            Label("Показать библиотеку", systemImage: "sidebar.left")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    
                     settingsSection("Данные") {
                         Picker("Источник", selection: $dataset) {
                             ForEach(GraphWindowDataset.allCases) { item in
@@ -279,7 +444,8 @@ struct GraphWindowView: View {
                     
                     Spacer()
                     
-                    Text("\(series.count) серий")
+                    let sourceCount = (includeCurrentImage ? 1 : 0) + spectrumCache.visibleEntries.count
+                    Text("\(series.count) серий из \(sourceCount) источн.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     
@@ -368,9 +534,20 @@ struct GraphWindowView: View {
                                         Text(item.title)
                                             .font(.system(size: 11))
                                             .lineLimit(1)
-                                        Text("\(item.values.count) точек")
-                                            .font(.system(size: 9, design: .monospaced))
-                                            .foregroundColor(.secondary)
+                                        HStack(spacing: 4) {
+                                            Text("\(item.values.count) точек")
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundColor(.secondary)
+                                            if let source = item.sourceName {
+                                                Text("•")
+                                                    .font(.system(size: 8))
+                                                    .foregroundColor(.secondary)
+                                                Text(source)
+                                                    .font(.system(size: 9))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                        }
                                     }
                                     Spacer()
                                 }
@@ -543,28 +720,68 @@ struct GraphWindowView: View {
     }
     
     private var series: [GraphSeries] {
+        var result: [GraphSeries] = []
+        let currentImageID = state.cubeURL?.standardizedFileURL.path
+        
+        if includeCurrentImage {
+            switch dataset {
+            case .points:
+                result += state.spectrumSamples.map {
+                    GraphSeries(
+                        id: $0.id,
+                        title: $0.displayName ?? "(\($0.pixelX), \($0.pixelY))",
+                        values: $0.values,
+                        wavelengths: $0.wavelengths,
+                        defaultColor: Color($0.nsColor),
+                        sourceName: state.cubeURL?.lastPathComponent
+                    )
+                }
+            case .roi:
+                result += state.roiSamples.map {
+                    GraphSeries(
+                        id: $0.id,
+                        title: $0.displayName ?? "ROI (\($0.rect.minX), \($0.rect.minY))",
+                        values: $0.values,
+                        wavelengths: $0.wavelengths,
+                        defaultColor: Color($0.nsColor),
+                        sourceName: state.cubeURL?.lastPathComponent
+                    )
+                }
+            }
+        }
+        
         switch dataset {
         case .points:
-            return state.spectrumSamples.map {
-                GraphSeries(
-                    id: $0.id,
-                    title: $0.displayName ?? "(\($0.pixelX), \($0.pixelY))",
-                    values: $0.values,
-                    wavelengths: $0.wavelengths,
-                    defaultColor: Color($0.nsColor)
+            let cached = spectrumCache.visibleSpectrumSamples()
+                .filter { $0.sourceLibraryID != currentImageID }
+            result += cached.map { sample in
+                let entry = spectrumCache.entries[sample.sourceLibraryID]
+                return GraphSeries(
+                    id: sample.id,
+                    title: sample.effectiveName,
+                    values: sample.values,
+                    wavelengths: sample.wavelengths,
+                    defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
+                    sourceName: entry?.fileName
                 )
             }
         case .roi:
-            return state.roiSamples.map {
-                GraphSeries(
-                    id: $0.id,
-                    title: $0.displayName ?? "ROI (\($0.rect.minX), \($0.rect.minY))",
-                    values: $0.values,
-                    wavelengths: $0.wavelengths,
-                    defaultColor: Color($0.nsColor)
+            let cached = spectrumCache.visibleROISamples()
+                .filter { $0.sourceLibraryID != currentImageID }
+            result += cached.map { sample in
+                let entry = spectrumCache.entries[sample.sourceLibraryID]
+                return GraphSeries(
+                    id: sample.id,
+                    title: sample.effectiveName,
+                    values: sample.values,
+                    wavelengths: sample.wavelengths,
+                    defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
+                    sourceName: entry?.fileName
                 )
             }
         }
+        
+        return result
     }
     
     private func color(for series: GraphSeries) -> Color {
