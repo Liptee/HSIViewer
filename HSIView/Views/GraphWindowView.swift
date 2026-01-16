@@ -108,6 +108,7 @@ struct GraphWindowView: View {
     @State private var style: GraphWindowStyle = .linesAndPoints
     @State private var palette: GraphPalette = .default
     @State private var customColors: [UUID: Color] = [:]
+    @State private var hiddenSeriesIDs: Set<UUID> = []
     @State private var showLegend: Bool = true
     @State private var showGrid: Bool = true
     @State private var lineWidth: Double = 1.5
@@ -168,6 +169,7 @@ struct GraphWindowView: View {
             applyPalette()
         }
         .onChange(of: series) { _ in
+            pruneHiddenSeries()
             pruneColors()
             applyPaletteIfNeeded()
             if autoScaleX || autoScaleY {
@@ -530,6 +532,12 @@ struct GraphWindowView: View {
                                     ColorPicker("", selection: colorBinding, supportsOpacity: false)
                                         .labelsHidden()
                                         .frame(width: 28)
+                                    Button(action: { toggleSeriesVisibility(id: item.id) }) {
+                                        Image(systemName: hiddenSeriesIDs.contains(item.id) ? "eye.slash" : "eye")
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(hiddenSeriesIDs.contains(item.id) ? .secondary : .primary)
+                                    }
+                                    .buttonStyle(.plain)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.title)
                                             .font(.system(size: 11))
@@ -564,7 +572,7 @@ struct GraphWindowView: View {
     
     private var chartView: some View {
         Chart {
-            ForEach(series) { item in
+            ForEach(visibleSeries) { item in
                 let seriesColor = color(for: item)
                 let seriesID = item.id.uuidString
                 
@@ -586,8 +594,8 @@ struct GraphWindowView: View {
         .chartXScale(domain: xDomain)
         .chartYScale(domain: yDomain)
         .chartForegroundStyleScale(
-            domain: series.map { $0.id.uuidString },
-            range: series.map { color(for: $0) }
+            domain: visibleSeries.map { $0.id.uuidString },
+            range: visibleSeries.map { color(for: $0) }
         )
         .padding(16)
         .chartXAxis {
@@ -681,7 +689,7 @@ struct GraphWindowView: View {
     }
     
     private var computedXMin: Double {
-        let allX = series.flatMap { s -> [Double] in
+        let allX = visibleSeries.flatMap { s -> [Double] in
             if let w = s.wavelengths { return w }
             return (0..<s.values.count).map { Double($0) }
         }
@@ -689,7 +697,7 @@ struct GraphWindowView: View {
     }
     
     private var computedXMax: Double {
-        let allX = series.flatMap { s -> [Double] in
+        let allX = visibleSeries.flatMap { s -> [Double] in
             if let w = s.wavelengths { return w }
             return (0..<s.values.count).map { Double($0) }
         }
@@ -698,12 +706,12 @@ struct GraphWindowView: View {
     }
     
     private var computedYMin: Double {
-        let allY = series.flatMap { $0.values }
+        let allY = visibleSeries.flatMap { $0.values }
         return allY.min() ?? 0
     }
     
     private var computedYMax: Double {
-        let allY = series.flatMap { $0.values }
+        let allY = visibleSeries.flatMap { $0.values }
         let m = allY.max() ?? 1
         return m == computedYMin ? m + 0.001 : m
     }
@@ -811,6 +819,23 @@ struct GraphWindowView: View {
     private func pruneColors() {
         let ids = Set(series.map(\.id))
         customColors = customColors.filter { ids.contains($0.key) }
+    }
+
+    private func toggleSeriesVisibility(id: UUID) {
+        if hiddenSeriesIDs.contains(id) {
+            hiddenSeriesIDs.remove(id)
+        } else {
+            hiddenSeriesIDs.insert(id)
+        }
+    }
+
+    private func pruneHiddenSeries() {
+        let ids = Set(series.map(\.id))
+        hiddenSeriesIDs = hiddenSeriesIDs.intersection(ids)
+    }
+
+    private var visibleSeries: [GraphSeries] {
+        series.filter { !hiddenSeriesIDs.contains($0.id) }
     }
     
     private func exportGraph(as format: GraphExportFormat, scale: CGFloat) {
