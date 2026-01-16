@@ -32,6 +32,33 @@ private enum GraphWindowStyle: String, CaseIterable, Identifiable {
     }
 }
 
+private enum SeriesLinePattern: String, CaseIterable, Identifiable {
+    case solid
+    case dotted
+    case dashed
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .solid: return "Сплошная"
+        case .dotted: return "Точечная"
+        case .dashed: return "Пунктирная"
+        }
+    }
+    
+    func strokeStyle(lineWidth: Double) -> StrokeStyle {
+        switch self {
+        case .solid:
+            return StrokeStyle(lineWidth: lineWidth)
+        case .dotted:
+            return StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [1, 4])
+        case .dashed:
+            return StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [6, 4])
+        }
+    }
+}
+
 private enum GraphPalette: String, CaseIterable, Identifiable {
     case `default`
     case warm
@@ -60,6 +87,25 @@ private enum GraphPalette: String, CaseIterable, Identifiable {
         case .mono:
             return [.gray, .black, .secondary, .primary]
         }
+    }
+}
+
+private struct SeriesStyleOverride: Equatable {
+    var linePattern: SeriesLinePattern
+    var lineWidth: Double
+    var opacity: Double
+    var showPoints: Bool
+    
+    init(
+        linePattern: SeriesLinePattern = .solid,
+        lineWidth: Double = 1.5,
+        opacity: Double = 1.0,
+        showPoints: Bool = false
+    ) {
+        self.linePattern = linePattern
+        self.lineWidth = lineWidth
+        self.opacity = opacity
+        self.showPoints = showPoints
     }
 }
 
@@ -109,6 +155,7 @@ struct GraphWindowView: View {
     @State private var palette: GraphPalette = .default
     @State private var customColors: [UUID: Color] = [:]
     @State private var hiddenSeriesIDs: Set<UUID> = []
+    @State private var seriesOverrides: [UUID: SeriesStyleOverride] = [:]
     @State private var showLegend: Bool = true
     @State private var showGrid: Bool = true
     @State private var lineWidth: Double = 1.5
@@ -171,6 +218,7 @@ struct GraphWindowView: View {
         .onChange(of: series) { _ in
             pruneHiddenSeries()
             pruneColors()
+            pruneOverrides()
             applyPaletteIfNeeded()
             if autoScaleX || autoScaleY {
                 updateAxisBounds()
@@ -538,6 +586,16 @@ struct GraphWindowView: View {
                                             .foregroundColor(hiddenSeriesIDs.contains(item.id) ? .secondary : .primary)
                                     }
                                     .buttonStyle(.plain)
+                                    SeriesStyleButton(
+                                        title: item.title,
+                                        initialStyle: effectiveStyle(for: item),
+                                        onSave: { newStyle in
+                                            seriesOverrides[item.id] = newStyle
+                                        },
+                                        onReset: {
+                                            seriesOverrides[item.id] = nil
+                                        }
+                                    )
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.title)
                                             .font(.system(size: 11))
@@ -570,20 +628,156 @@ struct GraphWindowView: View {
         }
     }
     
+    private struct SeriesStyleButton: View {
+        let title: String
+        let initialStyle: SeriesStyleOverride
+        let onSave: (SeriesStyleOverride) -> Void
+        let onReset: () -> Void
+        
+        @State private var isPresented: Bool = false
+        @State private var linePattern: SeriesLinePattern
+        @State private var lineWidth: Double
+        @State private var opacity: Double
+        @State private var showPoints: Bool
+        
+        init(
+            title: String,
+            initialStyle: SeriesStyleOverride,
+            onSave: @escaping (SeriesStyleOverride) -> Void,
+            onReset: @escaping () -> Void
+        ) {
+            self.title = title
+            self.initialStyle = initialStyle
+            self.onSave = onSave
+            self.onReset = onReset
+            _linePattern = State(initialValue: initialStyle.linePattern)
+            _lineWidth = State(initialValue: initialStyle.lineWidth)
+            _opacity = State(initialValue: initialStyle.opacity)
+            _showPoints = State(initialValue: initialStyle.showPoints)
+        }
+        
+        var body: some View {
+            Button(action: {
+                resetFromInitial()
+                isPresented = true
+            }) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $isPresented, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Форма линии")
+                            .font(.system(size: 10, weight: .medium))
+                        Picker("", selection: $linePattern) {
+                            ForEach(SeriesLinePattern.allCases) { pattern in
+                                Text(pattern.title).tag(pattern)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Толщина")
+                            Spacer()
+                            Text(String(format: "%.1f", lineWidth))
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 10, design: .monospaced))
+                        }
+                        Slider(value: $lineWidth, in: 0.5...6, step: 0.5)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Прозрачность")
+                            Spacer()
+                            Text(String(format: "%.0f%%", opacity * 100))
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 10, design: .monospaced))
+                        }
+                        Slider(value: $opacity, in: 0.1...1.0, step: 0.05)
+                    }
+                    
+                    Toggle("Показывать точки", isOn: $showPoints)
+                        .font(.system(size: 11))
+                    
+                    Divider()
+                    
+                    HStack {
+                        Button("Сбросить") {
+                            onReset()
+                            isPresented = false
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Spacer()
+                        
+                        Button("Применить") {
+                            let updated = SeriesStyleOverride(
+                                linePattern: linePattern,
+                                lineWidth: lineWidth,
+                                opacity: opacity,
+                                showPoints: showPoints
+                            )
+                            onSave(updated)
+                            isPresented = false
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+                .padding(12)
+                .frame(minWidth: 260, idealWidth: 280, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .onChange(of: initialStyle) { _ in
+                resetFromInitial()
+            }
+        }
+        
+        private func resetFromInitial() {
+            linePattern = initialStyle.linePattern
+            lineWidth = initialStyle.lineWidth
+            opacity = initialStyle.opacity
+            showPoints = initialStyle.showPoints
+        }
+    }
+    
     private var chartView: some View {
         Chart {
             ForEach(visibleSeries) { item in
                 let seriesColor = color(for: item)
                 let seriesID = item.id.uuidString
+                let seriesStyle = effectiveStyle(for: item)
                 
             if let wavelengths = item.wavelengths {
                 ForEach(Array(wavelengths.enumerated()), id: \.offset) { idx, lambda in
                     let value = item.values[safe: idx] ?? 0
-                        chartMarks(x: lambda, y: value, seriesID: seriesID, color: seriesColor)
+                        chartMarks(
+                            x: lambda,
+                            y: value,
+                            seriesID: seriesID,
+                            color: seriesColor,
+                            style: seriesStyle
+                        )
                 }
             } else {
                 ForEach(Array(item.values.enumerated()), id: \.offset) { idx, value in
-                        chartMarks(x: Double(idx), y: value, seriesID: seriesID, color: seriesColor)
+                        chartMarks(
+                            x: Double(idx),
+                            y: value,
+                            seriesID: seriesID,
+                            color: seriesColor,
+                            style: seriesStyle
+                        )
                     }
                 }
             }
@@ -623,16 +817,31 @@ struct GraphWindowView: View {
     }
     
     @ChartContentBuilder
-    private func chartMarks(x: Double, y: Double, seriesID: String, color: Color) -> some ChartContent {
-        switch style {
+    private func chartMarks(
+        x: Double,
+        y: Double,
+        seriesID: String,
+        color: Color,
+        style: SeriesStyleOverride
+    ) -> some ChartContent {
+        switch self.style {
         case .lines:
             LineMark(
                 x: .value("X", x),
                 y: .value("Y", y),
                 series: .value("Series", seriesID)
             )
-            .foregroundStyle(color)
-            .lineStyle(StrokeStyle(lineWidth: lineWidth))
+            .foregroundStyle(color.opacity(style.opacity))
+            .lineStyle(style.linePattern.strokeStyle(lineWidth: style.lineWidth))
+            
+            if style.showPoints {
+                PointMark(
+                    x: .value("X", x),
+                    y: .value("Y", y)
+                )
+                .foregroundStyle(color.opacity(style.opacity))
+                .symbolSize(pointSize)
+            }
             
         case .linesAndPoints:
             LineMark(
@@ -640,15 +849,17 @@ struct GraphWindowView: View {
                 y: .value("Y", y),
                 series: .value("Series", seriesID)
             )
-            .foregroundStyle(color)
-            .lineStyle(StrokeStyle(lineWidth: lineWidth))
+            .foregroundStyle(color.opacity(style.opacity))
+            .lineStyle(style.linePattern.strokeStyle(lineWidth: style.lineWidth))
             
-            PointMark(
-                x: .value("X", x),
-                y: .value("Y", y)
-            )
-            .foregroundStyle(color)
-            .symbolSize(pointSize)
+            if style.showPoints {
+                PointMark(
+                    x: .value("X", x),
+                    y: .value("Y", y)
+                )
+                .foregroundStyle(color.opacity(style.opacity))
+                .symbolSize(pointSize)
+            }
             
         case .area:
             AreaMark(
@@ -657,15 +868,24 @@ struct GraphWindowView: View {
                 yEnd: .value("YEnd", y),
                 series: .value("Series", seriesID)
             )
-            .foregroundStyle(color.opacity(0.25))
+            .foregroundStyle(color.opacity(style.opacity * 0.25))
             
             LineMark(
                 x: .value("X", x),
                 y: .value("Y", y),
                 series: .value("Series", seriesID)
             )
-            .foregroundStyle(color)
-            .lineStyle(StrokeStyle(lineWidth: lineWidth))
+            .foregroundStyle(color.opacity(style.opacity))
+            .lineStyle(style.linePattern.strokeStyle(lineWidth: style.lineWidth))
+            
+            if style.showPoints {
+                PointMark(
+                    x: .value("X", x),
+                    y: .value("Y", y)
+                )
+                .foregroundStyle(color.opacity(style.opacity))
+                .symbolSize(pointSize)
+            }
         }
     }
     
@@ -833,9 +1053,26 @@ struct GraphWindowView: View {
         let ids = Set(series.map(\.id))
         hiddenSeriesIDs = hiddenSeriesIDs.intersection(ids)
     }
+    
+    private func pruneOverrides() {
+        let ids = Set(series.map(\.id))
+        seriesOverrides = seriesOverrides.filter { ids.contains($0.key) }
+    }
 
     private var visibleSeries: [GraphSeries] {
         series.filter { !hiddenSeriesIDs.contains($0.id) }
+    }
+    
+    private func effectiveStyle(for series: GraphSeries) -> SeriesStyleOverride {
+        if let override = seriesOverrides[series.id] {
+            return override
+        }
+        return SeriesStyleOverride(
+            linePattern: .solid,
+            lineWidth: lineWidth,
+            opacity: 1.0,
+            showPoints: style == .linesAndPoints
+        )
     }
     
     private func exportGraph(as format: GraphExportFormat, scale: CGFloat) {
