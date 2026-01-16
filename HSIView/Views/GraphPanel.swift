@@ -6,6 +6,7 @@ struct GraphPanel: View {
     @State private var selectedSampleID: UUID?
     @State private var editingSampleID: UUID?
     @State private var editingROISample: SpectrumROISample?
+    @State private var hiddenSampleIDs: Set<UUID> = []
     @FocusState private var hasFocus: Bool
     let panelWidth: CGFloat = 400
     
@@ -123,12 +124,14 @@ struct GraphPanel: View {
         .onAppear { hasFocus = true }
         .onDeleteCommand(perform: deleteSelectedSamples)
         .onChange(of: state.displayedSpectrumSamples) { samples in
+            pruneHiddenIDs(validIDs: samples.map(\.id))
             guard selectedSampleID != nil, graphMode == .points else { return }
             if !samples.contains(where: { $0.id == selectedSampleID }) {
                 selectedSampleID = nil
             }
         }
         .onChange(of: state.displayedROISamples) { samples in
+            pruneHiddenIDs(validIDs: samples.map(\.id))
             guard selectedSampleID != nil, graphMode == .roi else { return }
             if !samples.contains(where: { $0.id == selectedSampleID }) {
                 selectedSampleID = nil
@@ -193,11 +196,13 @@ struct GraphPanel: View {
                 SampleRow(
                     sample: sample,
                     isSelected: selectedSampleID == sample.id,
+                    isHidden: hiddenSampleIDs.contains(sample.id),
                     title: sample.displayName ?? "\(cubeName): (\(sample.pixelX), \(sample.pixelY))",
                     onSelect: {
                         selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
                         hasFocus = true
                     },
+                    onToggleHidden: { toggleHidden(id: sample.id) },
                     onRename: { newName in
                         state.renameSpectrumSample(id: sample.id, to: newName)
                     },
@@ -216,11 +221,13 @@ struct GraphPanel: View {
                 ROISampleRow(
                     sample: sample,
                     isSelected: selectedSampleID == sample.id,
+                    isHidden: hiddenSampleIDs.contains(sample.id),
                     title: sample.displayName ?? "\(cubeName): (\(sample.rect.minX), \(sample.rect.minY)) – (\(sample.rect.maxX), \(sample.rect.maxY))",
                     onSelect: {
                         selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
                         hasFocus = true
                     },
+                    onToggleHidden: { toggleHidden(id: sample.id) },
                     onRename: { newName in
                         state.renameROISample(id: sample.id, to: newName)
                     },
@@ -309,8 +316,10 @@ private struct SpectrumChartSeries: Identifiable {
 private struct SampleRow: View {
     let sample: SpectrumSample
     let isSelected: Bool
+    let isHidden: Bool
     let title: String
     let onSelect: () -> Void
+    let onToggleHidden: () -> Void
     let onRename: (String?) -> Void
     @Binding var editingSampleID: UUID?
     
@@ -336,6 +345,12 @@ private struct SampleRow: View {
                     .font(.system(size: 10))
             }
             Spacer()
+            Button(action: onToggleHidden) {
+                Image(systemName: isHidden ? "eye.slash" : "eye")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(isHidden ? .secondary : .primary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(6)
         .background(
@@ -377,8 +392,10 @@ private struct SampleRow: View {
 private struct ROISampleRow: View {
     let sample: SpectrumROISample
     let isSelected: Bool
+    let isHidden: Bool
     let title: String
     let onSelect: () -> Void
+    let onToggleHidden: () -> Void
     let onRename: (String?) -> Void
     @Binding var editingSampleID: UUID?
     
@@ -404,6 +421,12 @@ private struct ROISampleRow: View {
                     .font(.system(size: 10))
             }
             Spacer()
+            Button(action: onToggleHidden) {
+                Image(systemName: isHidden ? "eye.slash" : "eye")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(isHidden ? .secondary : .primary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(6)
         .background(
@@ -603,10 +626,11 @@ extension Collection {
 extension GraphPanel {
     @ViewBuilder
     private func pointChartSection(_ samples: [SpectrumSample]) -> some View {
+        let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
         let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
         let cubeName = state.cubeURL?.lastPathComponent ?? "Куб"
-        let series = samples.map {
+        let series = visibleSamples.map {
             SpectrumChartSeries(
                 id: $0.id,
                 values: $0.values,
@@ -672,10 +696,11 @@ extension GraphPanel {
     
     @ViewBuilder
     private func roiChartSection(_ samples: [SpectrumROISample]) -> some View {
+        let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
         let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
         let cubeName = state.cubeURL?.lastPathComponent ?? "Куб"
-        let series = samples.map {
+        let series = visibleSamples.map {
             SpectrumChartSeries(
                 id: $0.id,
                 values: $0.values,
@@ -765,6 +790,19 @@ extension GraphPanel {
         let dimsArray = [dims.0, dims.1, dims.2]
         guard let axes = cube.axes(for: state.activeLayout) else { return nil }
         return (dimsArray[axes.width], dimsArray[axes.height])
+    }
+
+    private func toggleHidden(id: UUID) {
+        if hiddenSampleIDs.contains(id) {
+            hiddenSampleIDs.remove(id)
+        } else {
+            hiddenSampleIDs.insert(id)
+        }
+    }
+
+    private func pruneHiddenIDs(validIDs: [UUID]) {
+        let valid = Set(validIDs)
+        hiddenSampleIDs = hiddenSampleIDs.intersection(valid)
     }
     
     private func chartView(series: [SpectrumChartSeries], axisLabel: String) -> some View {
