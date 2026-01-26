@@ -1285,7 +1285,7 @@ final class AppState: ObservableObject {
                 layout = .auto
             } else if ext == "tif" || ext == "tiff" {
                 layout = .hwc
-            } else if ext == "dat" || ext == "hdr" {
+            } else if ext == "dat" || ext == "hdr" || ext == "raw" || ext == "img" || ext == "bsq" || ext == "bil" || ext == "bip" {
                 layout = .hwc
             } else {
                 layout = .auto

@@ -85,7 +85,7 @@ class EnviImageLoader: ImageLoader {
         }
         
         guard let data = try? Data(contentsOf: datURL) else {
-            return .failure(.readError("Не удалось прочитать .dat файл"))
+            return .failure(.readError("Не удалось прочитать бинарный файл: \(datURL.lastPathComponent)"))
         }
         
         let expectedSize = header.height * header.width * header.channels * header.bytesPerPixel + header.headerOffset
@@ -100,10 +100,13 @@ class EnviImageLoader: ImageLoader {
             return .failure(.corruptedData)
         }
         
+        let dataFileExt = datURL.pathExtension.uppercased()
+        let formatName = dataFileExt == "RAW" ? "SpecIM RAW" : "ENVI"
+        
         let cube = HyperCube(
             dims: (header.height, header.width, header.channels),
             storage: storage,
-            sourceFormat: "ENVI (\(header.interleave.uppercased()))",
+            sourceFormat: "\(formatName) (\(header.interleave.uppercased()))",
             isFortranOrder: false,
             wavelengths: header.wavelength
         )
