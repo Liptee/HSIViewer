@@ -61,7 +61,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>con.hsiview.hdr</string>
+				<string>com.hsiview.hdr</string>
 			</array>
 		</dict>
 		<dict>
