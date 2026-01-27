@@ -54,6 +54,14 @@ final class AppState: ObservableObject {
     
     @Published var pipelineOperations: [PipelineOperation] = []
     @Published var pipelineAutoApply: Bool = true
+    @Published var showAlignmentVisualization: Bool = false {
+        didSet {
+            if !showAlignmentVisualization {
+                alignmentPointsEditable = false
+            }
+        }
+    }
+    @Published var alignmentPointsEditable: Bool = false
     
     @Published var showExportView: Bool = false
     @Published var pendingExport: PendingExportInfo? = nil
@@ -65,6 +73,29 @@ final class AppState: ObservableObject {
     
     @Published var isBusy: Bool = false
     @Published var busyMessage: String?
+    @Published var alignmentProgress: Double = 0.0
+    @Published var alignmentProgressMessage: String = ""
+    @Published var alignmentCurrentChannel: Int = 0
+    @Published var alignmentTotalChannels: Int = 0
+    @Published var alignmentStartTime: Date?
+    @Published var alignmentElapsedTime: String = ""
+    @Published var alignmentEstimatedTimeRemaining: String = ""
+    @Published var alignmentStage: String = ""
+    @Published var isAlignmentInProgress: Bool = false
+    
+    func formatTimeInterval(_ interval: TimeInterval) -> String {
+        if interval < 60 {
+            return "\(Int(interval)) сек"
+        } else if interval < 3600 {
+            let minutes = Int(interval / 60)
+            let seconds = Int(interval.truncatingRemainder(dividingBy: 60))
+            return "\(minutes) мин \(seconds) сек"
+        } else {
+            let hours = Int(interval / 3600)
+            let minutes = Int((interval.truncatingRemainder(dividingBy: 3600)) / 60)
+            return "\(hours) ч \(minutes) мин"
+        }
+    }
     
     @Published var pendingMatSelection: MatSelectionRequest?
     @Published var libraryEntries: [CubeLibraryEntry] = []
@@ -143,6 +174,54 @@ final class AppState: ObservableObject {
             result.append(pending)
         }
         return result
+    }
+    
+    var activeAlignmentResult: SpectralAlignmentResult? {
+        guard showAlignmentVisualization else { return nil }
+        for op in pipelineOperations {
+            if op.type == .spectralAlignment,
+               let params = op.spectralAlignmentParams,
+               let result = params.alignmentResult {
+                return result
+            }
+        }
+        return nil
+    }
+    
+    var activeAlignmentParams: SpectralAlignmentParameters? {
+        guard showAlignmentVisualization else { return nil }
+        for op in pipelineOperations {
+            if op.type == .spectralAlignment,
+               let params = op.spectralAlignmentParams {
+                return params
+            }
+        }
+        return nil
+    }
+    
+    func updateAlignmentPoint(at index: Int, to point: AlignmentPoint) {
+        guard index >= 0, index < 4 else { return }
+        for i in 0..<pipelineOperations.count {
+            if pipelineOperations[i].type == .spectralAlignment {
+                pipelineOperations[i].spectralAlignmentParams?.referencePoints[index] = point
+                pipelineOperations[i].spectralAlignmentParams?.isComputed = false
+                pipelineOperations[i].spectralAlignmentParams?.cachedHomographies = nil
+                pipelineOperations[i].spectralAlignmentParams?.alignmentResult = nil
+                break
+            }
+        }
+    }
+    
+    func resetAlignmentPoints() {
+        for i in 0..<pipelineOperations.count {
+            if pipelineOperations[i].type == .spectralAlignment {
+                pipelineOperations[i].spectralAlignmentParams?.referencePoints = AlignmentPoint.defaultCorners()
+                pipelineOperations[i].spectralAlignmentParams?.isComputed = false
+                pipelineOperations[i].spectralAlignmentParams?.cachedHomographies = nil
+                pipelineOperations[i].spectralAlignmentParams?.alignmentResult = nil
+                break
+            }
+        }
     }
     
     var displayedSpectrumSamples: [SpectrumSample] {
@@ -934,7 +1013,107 @@ final class AppState: ObservableObject {
     
     func clearPipeline() {
         pipelineOperations.removeAll()
+        showAlignmentVisualization = false
         applyPipeline()
+    }
+    
+    func startAlignmentComputation(operationId: UUID) {
+        guard let opIndex = pipelineOperations.firstIndex(where: { $0.id == operationId }),
+              var params = pipelineOperations[opIndex].spectralAlignmentParams else { return }
+        
+        params.shouldCompute = true
+        params.isComputed = false
+        params.cachedHomographies = nil
+        params.alignmentResult = nil
+        pipelineOperations[opIndex].spectralAlignmentParams = params
+        
+        isAlignmentInProgress = true
+        alignmentProgress = 0.0
+        alignmentProgressMessage = "Подготовка…"
+        alignmentStartTime = Date()
+        alignmentElapsedTime = "0 сек"
+        alignmentEstimatedTimeRemaining = ""
+        alignmentStage = "init"
+        alignmentCurrentChannel = 0
+        alignmentTotalChannels = 0
+        
+        applyPipelineWithAlignmentProgress(targetOperationId: operationId)
+    }
+    
+    private func applyPipelineWithAlignmentProgress(targetOperationId: UUID) {
+        guard let original = originalCube else { return }
+        
+        beginBusy(message: "Вычисление выравнивания…")
+        
+        var progressTimer: Timer?
+        DispatchQueue.main.async { [weak self] in
+            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+                guard let self, let startTime = self.alignmentStartTime else { return }
+                let elapsed = Date().timeIntervalSince(startTime)
+                self.alignmentElapsedTime = self.formatTimeInterval(elapsed)
+                
+                if self.alignmentProgress > 0.05 {
+                    let estimatedTotal = elapsed / self.alignmentProgress
+                    let remaining = estimatedTotal - elapsed
+                    if remaining > 0 {
+                        self.alignmentEstimatedTimeRemaining = "~" + self.formatTimeInterval(remaining)
+                    }
+                }
+            }
+        }
+        
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            
+            let baseCube = self.cubeWithWavelengthsIfNeeded(original, layout: self.activeLayout)
+            var currentCube = baseCube
+            var mutableOperations = self.pipelineOperations
+            
+            for i in 0..<mutableOperations.count {
+                if mutableOperations[i].type == .spectralAlignment && mutableOperations[i].id == targetOperationId {
+                    let layout = mutableOperations[i].layout
+                    let opCube = self.cubeWithWavelengthsIfNeeded(currentCube, layout: layout)
+                    
+                    let result = mutableOperations[i].applyWithUpdateDetailed(to: opCube) { info in
+                        DispatchQueue.main.async {
+                            self.alignmentProgress = info.progress
+                            self.alignmentProgressMessage = info.message
+                            self.alignmentCurrentChannel = info.currentChannel
+                            self.alignmentTotalChannels = info.totalChannels
+                            self.alignmentStage = info.stage
+                        }
+                    }
+                    currentCube = result ?? opCube
+                } else {
+                    let layout = mutableOperations[i].layout
+                    let opCube = self.cubeWithWavelengthsIfNeeded(currentCube, layout: layout)
+                    let result = mutableOperations[i].apply(to: opCube)
+                    currentCube = result ?? opCube
+                }
+            }
+            
+            DispatchQueue.main.async {
+                progressTimer?.invalidate()
+                self.cube = currentCube
+                self.pipelineOperations = mutableOperations
+                self.lastPipelineResult = currentCube
+                self.lastPipelineAppliedOperations = mutableOperations
+                self.lastPipelineBaseCubeID = original.id
+                self.updateWavelengthsFromPipelineResult()
+                self.updateSpectralTrimRangeFromPipeline()
+                self.updateChannelCount()
+                self.isAlignmentInProgress = false
+                self.alignmentProgress = 0.0
+                self.alignmentProgressMessage = ""
+                self.alignmentCurrentChannel = 0
+                self.alignmentTotalChannels = 0
+                self.alignmentStartTime = nil
+                self.alignmentElapsedTime = ""
+                self.alignmentEstimatedTimeRemaining = ""
+                self.alignmentStage = ""
+                self.endBusy()
+            }
+        }
     }
     
     func applyPipeline() {
@@ -957,15 +1136,18 @@ final class AppState: ObservableObject {
            let cachedResult = lastPipelineResult {
             
             beginBusy(message: "Применение последней операции…")
-            let newOp = operations.last!
+            var newOp = operations.last!
             processingQueue.async { [weak self] in
                 guard let self else { return }
                 let baseCube = self.cubeWithWavelengthsIfNeeded(cachedResult, layout: newOp.layout)
-                let result = newOp.apply(to: baseCube)
+                let result = newOp.applyWithUpdate(to: baseCube)
                 DispatchQueue.main.async {
                     self.cube = result ?? baseCube
                     self.lastPipelineResult = self.cube
-                    self.lastPipelineAppliedOperations = operations
+                    var updatedOperations = operations
+                    updatedOperations[updatedOperations.count - 1] = newOp
+                    self.lastPipelineAppliedOperations = updatedOperations
+                    self.pipelineOperations = updatedOperations
                     self.lastPipelineBaseCubeID = original.id
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
@@ -980,12 +1162,14 @@ final class AppState: ObservableObject {
         processingQueue.async { [weak self] in
             guard let self else { return }
                 let baseCube = self.cubeWithWavelengthsIfNeeded(original, layout: activeLayout)
-                let result = self.processPipeline(original: baseCube, operations: operations)
+                var mutableOperations = operations
+                let result = self.processPipeline(original: baseCube, operations: &mutableOperations)
             DispatchQueue.main.async {
                     self.cube = result ?? baseCube
                     self.lastPipelineResult = self.cube
-                    self.lastPipelineAppliedOperations = operations
+                    self.lastPipelineAppliedOperations = mutableOperations
                     self.lastPipelineBaseCubeID = original.id
+                    self.pipelineOperations = mutableOperations
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
@@ -1242,14 +1426,14 @@ final class AppState: ObservableObject {
         }
     }
     
-    private func processPipeline(original: HyperCube, operations: [PipelineOperation]) -> HyperCube? {
+    private func processPipeline(original: HyperCube, operations: inout [PipelineOperation]) -> HyperCube? {
         guard !operations.isEmpty else { return original }
         
         var result: HyperCube? = original
         
-        for operation in operations {
+        for i in 0..<operations.count {
             guard let current = result else { break }
-            result = operation.apply(to: current)
+            result = operations[i].applyWithUpdate(to: current)
         }
         
         return result ?? original
@@ -1673,6 +1857,8 @@ final class AppState: ObservableObject {
     private func resetSessionState() {
         pipelineOperations.removeAll()
         pipelineAutoApply = true
+        showAlignmentVisualization = false
+        alignmentPointsEditable = false
         wavelengths = nil
         lambdaStart = "400"
         lambdaEnd = "1000"
@@ -1832,7 +2018,8 @@ final class AppState: ObservableObject {
         if !snapshot.pipelineOperations.isEmpty {
             let baseWavelengths = snapshot.baseWavelengths ?? wavelengths
             let baseCube = cubeWithWavelengthsIfNeeded(workingCube, layout: layout, baseWavelengths: baseWavelengths)
-            workingCube = processPipeline(original: baseCube, operations: snapshot.pipelineOperations) ?? baseCube
+            var ops = snapshot.pipelineOperations
+            workingCube = processPipeline(original: baseCube, operations: &ops) ?? baseCube
         }
         
         let resolvedLayout = resolveLayout(for: workingCube, preferred: layout)

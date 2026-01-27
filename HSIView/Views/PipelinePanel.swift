@@ -404,8 +404,11 @@ struct OperationEditorView: View {
     @State private var localResizeParams: ResizeParameters = .default
     @State private var localSpectralTrimParams: SpectralTrimParameters = SpectralTrimParameters(startChannel: 0, endChannel: 0)
     @State private var localSpectralInterpolationParams: SpectralInterpolationParameters = .default
+    @State private var localSpectralAlignmentParams: SpectralAlignmentParameters = .default
     @State private var resizeAspectRatio: Double = 1.0
     @State private var isAdjustingResize: Bool = false
+    @State private var isComputingAlignment: Bool = false
+    @State private var showAlignmentDetails: Bool = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -450,6 +453,8 @@ struct OperationEditorView: View {
             return CGSize(width: 460, height: 420)
         case .spectralInterpolation:
             return CGSize(width: 520, height: 520)
+        case .spectralAlignment:
+            return CGSize(width: 520, height: 720)
         default:
             return CGSize(width: 420, height: 540)
         }
@@ -481,6 +486,8 @@ struct OperationEditorView: View {
             localSpectralTrimParams = op.spectralTrimParams ?? SpectralTrimParameters(startChannel: 0, endChannel: 0)
         case .spectralInterpolation:
             localSpectralInterpolationParams = op.spectralInterpolationParams ?? .default
+        case .spectralAlignment:
+            localSpectralAlignmentParams = op.spectralAlignmentParams ?? .default
         }
     }
     
@@ -510,6 +517,8 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].calibrationParams = localCalibrationParams
         case .spectralInterpolation:
             state.pipelineOperations[index].spectralInterpolationParams = localSpectralInterpolationParams
+        case .spectralAlignment:
+            state.pipelineOperations[index].spectralAlignmentParams = localSpectralAlignmentParams
         }
     }
     
@@ -544,6 +553,8 @@ struct OperationEditorView: View {
             calibrationEditor(for: op)
         case .spectralInterpolation:
             spectralInterpolationEditor(for: op)
+        case .spectralAlignment:
+            spectralAlignmentEditor(for: op)
         }
     }
     
@@ -887,6 +898,471 @@ struct OperationEditorView: View {
                     localSpectralInterpolationParams.targetMaxLambda = sourceMax
                 }
             }
+        }
+    }
+    
+    private func spectralAlignmentEditor(for op: PipelineOperation) -> some View {
+        let channels = state.cube?.channelCount(for: op.layout) ?? state.channelCount
+        let maxIndex = max(channels - 1, 0)
+        let wavelengths = state.cube?.wavelengths ?? state.wavelengths
+        
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Спектральное выравнивание")
+                .font(.system(size: 11, weight: .medium))
+            
+            Text("Выравнивает все каналы относительно эталонного канала, оптимизируя целевую метрику.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            
+            Divider()
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Эталонный канал")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Канал", value: $localSpectralAlignmentParams.referenceChannel, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                        Stepper("", value: $localSpectralAlignmentParams.referenceChannel, in: 0...maxIndex)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                    if let wavelengths, localSpectralAlignmentParams.referenceChannel < wavelengths.count {
+                        Text("λ = \(String(format: "%.1f", wavelengths[localSpectralAlignmentParams.referenceChannel])) нм")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Метод оптимизации")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $localSpectralAlignmentParams.method) {
+                        ForEach(SpectralAlignmentMethod.allCases) { method in
+                            Text(method.rawValue).tag(method)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 160)
+                }
+            }
+            
+            Divider()
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Диапазон смещений")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Min", value: $localSpectralAlignmentParams.offsetMin, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 60)
+                        Text("до")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("Max", value: $localSpectralAlignmentParams.offsetMax, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 60)
+                        Text("px")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Шаг поиска")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        TextField("Шаг", value: $localSpectralAlignmentParams.step, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 50)
+                        Stepper("", value: $localSpectralAlignmentParams.step, in: 1...10)
+                            .labelsHidden()
+                            .controlSize(.small)
+                    }
+                }
+            }
+            
+            Divider()
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Итерации оптимизации")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 8) {
+                        Stepper(value: $localSpectralAlignmentParams.iterations, in: 1...5) {
+                            Text("\(localSpectralAlignmentParams.iterations)")
+                                .font(.system(size: 11))
+                                .frame(minWidth: 20, alignment: .trailing)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Целевая метрика")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $localSpectralAlignmentParams.metric) {
+                        ForEach(SpectralAlignmentMetric.allCases) { metric in
+                            Text(metric.rawValue).tag(metric)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 120)
+                }
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Дополнительные опции")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                
+                HStack(spacing: 16) {
+                    Toggle(isOn: $localSpectralAlignmentParams.enableMultiscale) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Многомасштабный поиск")
+                                .font(.system(size: 10))
+                            Text("Ускоряет вычисление")
+                                .font(.system(size: 8))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    
+                    Toggle(isOn: $localSpectralAlignmentParams.enableSubpixel) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Субпиксельное уточнение")
+                                .font(.system(size: 10))
+                            Text("Повышает точность")
+                                .font(.system(size: 8))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                }
+            }
+            
+            Divider()
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    let currentParams = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams
+                    let isActuallyComputed = (currentParams?.isComputed ?? false) || localSpectralAlignmentParams.isComputed
+                    let currentResult = currentParams?.alignmentResult ?? localSpectralAlignmentParams.alignmentResult
+                    
+                    if isActuallyComputed {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("Вычислено")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                        }
+                        if let result = currentResult {
+                            Text("Ср. \(result.metricName): \(String(format: "%.4f", result.averageScore))")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                    } else if state.isAlignmentInProgress {
+                        HStack(spacing: 4) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Вычисление…")
+                                .font(.system(size: 10))
+                                .foregroundColor(.blue)
+                        }
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .foregroundColor(.orange)
+                            Text("Не вычислено")
+                                .font(.system(size: 10))
+                                .foregroundColor(.orange)
+                        }
+                        
+                        Text("Ожидаемое время: \(localSpectralAlignmentParams.formattedEstimatedTime(channelCount: channels))")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 6) {
+                    let currentParams = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams
+                    let hasResult = (currentParams?.alignmentResult != nil) || (localSpectralAlignmentParams.alignmentResult != nil)
+                    let isComputed = (currentParams?.isComputed ?? false) || localSpectralAlignmentParams.isComputed
+                    
+                    Button(action: {
+                        showAlignmentDetails = true
+                    }) {
+                        Text("Подробнее")
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!hasResult)
+                    
+                    Button(action: {
+                        localSpectralAlignmentParams.cachedHomographies = nil
+                        localSpectralAlignmentParams.alignmentResult = nil
+                        localSpectralAlignmentParams.isComputed = false
+                        localSpectralAlignmentParams.shouldCompute = false
+                        saveLocalState()
+                    }) {
+                        Text("Сбросить")
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!isComputed)
+                }
+            }
+            
+            if state.isAlignmentInProgress {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(state.alignmentProgressMessage)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(Int(state.alignmentProgress * 100))%")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(.blue)
+                    }
+                    
+                    ProgressView(value: state.alignmentProgress)
+                        .progressViewStyle(.linear)
+                    
+                    HStack(spacing: 16) {
+                        if state.alignmentTotalChannels > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.stack.3d.up")
+                                    .font(.system(size: 9))
+                                Text("Канал \(state.alignmentCurrentChannel)/\(state.alignmentTotalChannels)")
+                                    .font(.system(size: 9))
+                            }
+                            .foregroundColor(.secondary)
+                        }
+                        
+                        if !state.alignmentElapsedTime.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 9))
+                                Text("Прошло: \(state.alignmentElapsedTime)")
+                                    .font(.system(size: 9))
+                            }
+                            .foregroundColor(.secondary)
+                        }
+                        
+                        if !state.alignmentEstimatedTimeRemaining.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "hourglass")
+                                    .font(.system(size: 9))
+                                Text("Осталось: \(state.alignmentEstimatedTimeRemaining)")
+                                    .font(.system(size: 9))
+                            }
+                            .foregroundColor(.cyan)
+                        }
+                        
+                        Spacer()
+                    }
+                    
+                    if !state.alignmentStage.isEmpty {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(stageColor(for: state.alignmentStage))
+                                .frame(width: 6, height: 6)
+                            Text(stageName(for: state.alignmentStage))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color.blue.opacity(0.08))
+                .cornerRadius(8)
+            } else {
+                let currentParams = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams
+                let isActuallyComputed = (currentParams?.isComputed ?? false) || localSpectralAlignmentParams.isComputed
+                
+                if !isActuallyComputed {
+                    Button(action: {
+                        saveLocalState()
+                        state.startAlignmentComputation(operationId: op.id)
+                    }) {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Вычислить выравнивание")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                }
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Toggle(isOn: $state.showAlignmentVisualization) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "scope")
+                            Text("Показать точки на изображении")
+                                .font(.system(size: 10))
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    
+                    Spacer()
+                }
+                
+                if state.showAlignmentVisualization {
+                    HStack(spacing: 12) {
+                        Toggle(isOn: $state.alignmentPointsEditable) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "hand.point.up.left")
+                                Text("Редактировать точки")
+                                    .font(.system(size: 10))
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .controlSize(.small)
+                        
+                        Button(action: {
+                            state.resetAlignmentPoints()
+                            localSpectralAlignmentParams.referencePoints = AlignmentPoint.defaultCorners()
+                        }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.counterclockwise")
+                                Text("По умолчанию")
+                            }
+                            .font(.system(size: 9))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        
+                        Spacer()
+                    }
+                    
+                    if state.alignmentPointsEditable {
+                        Text("Перетащите точки на изображении для настройки области выравнивания")
+                            .font(.system(size: 9))
+                            .foregroundColor(.cyan)
+                    }
+                }
+            }
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 4) {
+                let currentParams = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams
+                let isActuallyComputed = (currentParams?.isComputed ?? false) || localSpectralAlignmentParams.isComputed
+                let cachedCount = (currentParams?.cachedHomographies?.count ?? 0) > 0 
+                    ? (currentParams?.cachedHomographies?.count ?? 0) 
+                    : (localSpectralAlignmentParams.cachedHomographies?.count ?? 0)
+                
+                if isActuallyComputed {
+                    if cachedCount == channels {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundColor(.green)
+                            Text("Кэшированные гомографии готовы к применению")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.green)
+                        }
+                        Text("При применении к изображению с \(channels) каналами будут использованы сохранённые параметры без пересчёта.")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    } else if cachedCount > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("Несовпадение числа каналов")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.orange)
+                        }
+                        Text("Кэш содержит \(cachedCount) гомографий, а изображение имеет \(channels) каналов. При применении будет выполнен пересчёт.")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Text("При копировании обработки в другое изображение будут применены сохранённые параметры гомографии без пересчёта.")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(8)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .cornerRadius(6)
+        }
+        .onAppear {
+            if localSpectralAlignmentParams.referenceChannel > maxIndex {
+                localSpectralAlignmentParams.referenceChannel = maxIndex / 2
+            }
+        }
+        .onChange(of: localSpectralAlignmentParams.enableMultiscale) { _ in
+            saveLocalState()
+        }
+        .onChange(of: localSpectralAlignmentParams.enableSubpixel) { _ in
+            saveLocalState()
+        }
+        .onChange(of: localSpectralAlignmentParams.iterations) { _ in
+            saveLocalState()
+        }
+        .onChange(of: state.isAlignmentInProgress) { inProgress in
+            if !inProgress {
+                if let opIndex = state.pipelineOperations.firstIndex(where: { $0.id == op.id }),
+                   let updatedParams = state.pipelineOperations[opIndex].spectralAlignmentParams {
+                    localSpectralAlignmentParams = updatedParams
+                }
+            }
+        }
+        .sheet(isPresented: $showAlignmentDetails) {
+            let currentResult = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams?.alignmentResult ?? localSpectralAlignmentParams.alignmentResult
+            SpectralAlignmentDetailsView(
+                result: currentResult,
+                wavelengths: wavelengths
+            )
+        }
+    }
+    
+    private func stageColor(for stage: String) -> Color {
+        switch stage {
+        case "init", "extract_ref": return .orange
+        case "extract": return .yellow
+        case "homography": return .blue
+        case "apply": return .purple
+        case "done", "complete": return .green
+        default: return .gray
+        }
+    }
+    
+    private func stageName(for stage: String) -> String {
+        switch stage {
+        case "init": return "Инициализация"
+        case "extract_ref": return "Извлечение референса"
+        case "extract": return "Извлечение канала"
+        case "homography": return "Поиск гомографии"
+        case "apply": return "Применение преобразования"
+        case "done": return "Канал обработан"
+        case "complete": return "Завершено"
+        default: return stage
         }
     }
 
@@ -1699,5 +2175,178 @@ private struct CropOverlayView: View {
     
     private enum CropEdge {
         case left, right, top, bottom
+    }
+}
+
+struct SpectralAlignmentDetailsView: View {
+    let result: SpectralAlignmentResult?
+    let wavelengths: [Double]?
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "chart.bar.doc.horizontal")
+                    .font(.system(size: 16))
+                Text("Результаты выравнивания")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+            .background(Color(NSColor.controlBackgroundColor))
+            
+            Divider()
+            
+            if let result = result {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 20) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Метрика")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Text(result.metricName)
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Среднее значение")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Text(String(format: "%.6f", result.averageScore))
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundColor(.green)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Эталонный канал")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            if let wavelengths, result.referenceChannel < wavelengths.count {
+                                Text("\(result.referenceChannel) (λ=\(String(format: "%.1f", wavelengths[result.referenceChannel])) нм)")
+                                    .font(.system(size: 12, weight: .medium))
+                            } else {
+                                Text("\(result.referenceChannel)")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    
+                    Divider()
+                        .padding(.horizontal, 16)
+                    
+                    Text("Результаты по каналам")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, 16)
+                    
+                    ScrollView {
+                        LazyVStack(spacing: 2) {
+                            HStack {
+                                Text("Канал")
+                                    .frame(width: 50, alignment: .leading)
+                                Text("λ (нм)")
+                                    .frame(width: 70, alignment: .trailing)
+                                Text("dx")
+                                    .frame(width: 40, alignment: .trailing)
+                                Text("dy")
+                                    .frame(width: 40, alignment: .trailing)
+                                Text(result.metricName)
+                                    .frame(width: 80, alignment: .trailing)
+                                Spacer()
+                            }
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 4)
+                            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                            
+                            ForEach(0..<result.channelScores.count, id: \.self) { idx in
+                                let isRef = idx == result.referenceChannel
+                                let score = result.channelScores[idx]
+                                let offset = idx < result.channelOffsets.count ? result.channelOffsets[idx] : (dx: 0, dy: 0)
+                                
+                                HStack {
+                                    Text("\(idx)")
+                                        .frame(width: 50, alignment: .leading)
+                                    
+                                    if let wavelengths, idx < wavelengths.count {
+                                        Text(String(format: "%.1f", wavelengths[idx]))
+                                            .frame(width: 70, alignment: .trailing)
+                                    } else {
+                                        Text("-")
+                                            .frame(width: 70, alignment: .trailing)
+                                    }
+                                    
+                                    Text("\(offset.dx)")
+                                        .frame(width: 40, alignment: .trailing)
+                                        .foregroundColor(offset.dx != 0 ? .orange : .primary)
+                                    
+                                    Text("\(offset.dy)")
+                                        .frame(width: 40, alignment: .trailing)
+                                        .foregroundColor(offset.dy != 0 ? .orange : .primary)
+                                    
+                                    Text(String(format: "%.4f", score))
+                                        .frame(width: 80, alignment: .trailing)
+                                        .foregroundColor(scoreColor(score, isRef: isRef))
+                                    
+                                    if isRef {
+                                        Text("(эталон)")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(.blue)
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                .font(.system(size: 10, design: .monospaced))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 3)
+                                .background(isRef ? Color.blue.opacity(0.1) : Color.clear)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 300)
+                }
+            } else {
+                VStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    Text("Нет данных о результатах")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(40)
+            }
+            
+            Divider()
+            
+            HStack {
+                Spacer()
+                Button("Закрыть") {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 500, height: 450)
+    }
+    
+    private func scoreColor(_ score: Double, isRef: Bool) -> Color {
+        if isRef { return .blue }
+        if score >= 0.95 { return .green }
+        if score >= 0.85 { return .primary }
+        if score >= 0.7 { return .orange }
+        return .red
     }
 }

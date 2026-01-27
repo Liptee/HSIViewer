@@ -26,17 +26,17 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { proxy in
             GlassEffectContainerWrapper {
-                ZStack {
-                    mainContent
-                        .disabled(state.isBusy)
-                    
-                    if state.isBusy {
-                        ZStack {
-                            Color.black.opacity(0.25)
-                                .ignoresSafeArea()
-                            BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
-                        }
-                        .transition(.opacity)
+            ZStack {
+                mainContent
+                    .disabled(state.isBusy)
+                
+                if state.isBusy {
+                    ZStack {
+                        Color.black.opacity(0.25)
+                            .ignoresSafeArea()
+                        BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
+                    }
+                    .transition(.opacity)
                     }
                     
                     if let exportInfo = state.libraryExportProgressState {
@@ -98,6 +98,23 @@ struct ContentView: View {
                                     .foregroundColor(.secondary)
                             }
                         }
+                        
+                            if state.showAlignmentVisualization && state.alignmentPointsEditable && currentImageSize.width > 0 {
+                                let fittedSize = fittingSize(imageSize: currentImageSize, in: geo.size)
+                                AlignmentPointsOverlay(
+                                    result: state.activeAlignmentResult,
+                                    params: state.activeAlignmentParams,
+                                    currentChannel: Int(state.currentChannel),
+                                    originalSize: currentImageSize,
+                                    displaySize: fittedSize
+                                )
+                                .frame(width: fittedSize.width, height: fittedSize.height)
+                                .scaleEffect(state.zoomScale * tempZoomScale)
+                                .offset(
+                                    x: state.imageOffset.width + dragOffset.width,
+                                    y: state.imageOffset.height + dragOffset.height
+                                )
+                            }
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
@@ -113,16 +130,18 @@ struct ContentView: View {
                                                 tempZoomScale = 1.0
                                             }
                                     )
-                    .highPriorityGesture(
+                    .gesture(
                         DragGesture(minimumDistance: 1)
                             .onChanged { value in
+                                guard !state.alignmentPointsEditable else { return }
                                 if state.activeAnalysisTool == .spectrumGraphROI {
                                     handleROIDrag(value: value, geoSize: geo.size)
-                        } else {
+                                } else {
                                     dragOffset = value.translation
                                 }
                             }
                             .onEnded { value in
+                                guard !state.alignmentPointsEditable else { return }
                                 if state.activeAnalysisTool == .spectrumGraphROI {
                                     handleROIDragEnd(value: value, geoSize: geo.size)
                                 } else {
@@ -189,8 +208,8 @@ struct ContentView: View {
                 .coordinateSpace(name: imageCoordinateSpaceName)
                 
                 if let cube = state.cube {
-                    Divider()
-                    
+                        Divider()
+                        
                     ZStack(alignment: .trailing) {
                         ScrollView {
                             VStack(spacing: 12) {
@@ -217,7 +236,7 @@ struct ContentView: View {
                     if state.viewMode == .mask {
                         maskModeBottomControls(cube: cube)
                     } else {
-                        bottomControls(cube: cube)
+                bottomControls(cube: cube)
                     }
                 }
             }
@@ -513,23 +532,23 @@ struct ContentView: View {
     private var topBar: some View {
         HStack(alignment: .center) {
             HStack(spacing: 8) {
-                if let url = state.cubeURL {
-                    Text(url.lastPathComponent)
+            if let url = state.cubeURL {
+                Text(url.lastPathComponent)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } else {
-                    Text("Файл не выбран")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text("Файл не выбран")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                
-                if let error = state.loadError {
+                    .foregroundColor(.secondary)
+            }
+            
+            if let error = state.loadError {
                     Text("•")
                         .foregroundColor(.secondary)
-                    Text(error)
+                Text(error)
                         .font(.system(size: 10))
-                        .foregroundColor(.red)
+                    .foregroundColor(.red)
                         .lineLimit(1)
                 }
             }
@@ -560,23 +579,23 @@ struct ContentView: View {
     
     private func cubeView(cube: HyperCube, geoSize: CGSize) -> some View {
         let view: AnyView
-        switch state.viewMode {
-        case .gray:
-            let chIdx = Int(state.currentChannel)
-            if let nsImage = ImageRenderer.renderGrayscale(
-                cube: cube,
-                layout: state.activeLayout,
-                channelIndex: chIdx
-            ) {
+            switch state.viewMode {
+            case .gray:
+                let chIdx = Int(state.currentChannel)
+                if let nsImage = ImageRenderer.renderGrayscale(
+                    cube: cube,
+                    layout: state.activeLayout,
+                    channelIndex: chIdx
+                ) {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
-            } else {
+                } else {
                 view = AnyView(
                     Text("Не удалось построить изображение")
                         .foregroundColor(.red)
                 )
-            }
-            
-        case .rgb:
+                }
+                
+            case .rgb:
             let config = state.colorSynthesisConfig
             let image: NSImage?
             switch config.mode {
@@ -652,6 +671,16 @@ struct ContentView: View {
                 SpectrumROIsOverlay(
                     samples: state.activeROISamples,
                     temporaryRect: roiPreviewRect,
+                    originalSize: nsImage.size,
+                    displaySize: fittedSize
+                )
+            }
+            
+            if state.showAlignmentVisualization && !state.alignmentPointsEditable {
+                AlignmentPointsOverlay(
+                    result: state.activeAlignmentResult,
+                    params: state.activeAlignmentParams,
+                    currentChannel: Int(state.currentChannel),
                     originalSize: nsImage.size,
                     displaySize: fittedSize
                 )
@@ -907,8 +936,8 @@ struct ContentView: View {
                         trimControlButtons
                     }
                 }
-    }
-    
+            }
+            
     @ViewBuilder
     private func colorSynthesisControls(cube: HyperCube) -> some View {
         switch state.colorSynthesisConfig.mode {
@@ -961,7 +990,7 @@ struct ContentView: View {
             Text("ND индексы")
                 .font(.system(size: 11, weight: .medium))
             
-            HStack(spacing: 12) {
+                HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Пресет")
                         .font(.system(size: 10))
@@ -1052,7 +1081,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(" ")
                             .font(.system(size: 10))
-                        Button {
+                    Button {
                             let roiIDs = Set(state.roiSamples.map { $0.id })
                             wdviAutoConfig = WDVIAutoEstimationConfig(
                                 selectedROIIDs: roiIDs,
@@ -1062,8 +1091,8 @@ struct ContentView: View {
                                 method: wdviAutoConfig.method
                             )
                             showWDVIAutoSheet = true
-                        } label: {
-                            HStack(spacing: 4) {
+                    } label: {
+                        HStack(spacing: 4) {
                                 Image(systemName: "wand.and.stars")
                                 Text("Автооценка почвы…")
                             }
@@ -1073,7 +1102,7 @@ struct ContentView: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Палитра")
-                        .font(.system(size: 10))
+                                .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $state.ndPalette) {
                         ForEach(NDPalette.allCases) { palette in
@@ -1113,7 +1142,7 @@ struct ContentView: View {
             
             if rois.isEmpty {
                 Text("Сохранённых ROI нет — добавьте области на изображении и повторите.")
-                    .font(.system(size: 11))
+                                .font(.system(size: 11))
                     .foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1162,8 +1191,8 @@ struct ContentView: View {
                 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Обрезка по перцентилям")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
                     HStack(spacing: 12) {
                         Text("Нижний")
                             .font(.system(size: 10))
@@ -1193,8 +1222,8 @@ struct ContentView: View {
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Отсечение по z-score")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
                         HStack(spacing: 12) {
                             Slider(value: $wdviAutoConfig.zScoreThreshold, in: 0...5, step: 0.1)
                                 .frame(width: 220)
@@ -1936,6 +1965,203 @@ struct BusyOverlayView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(NSColor.windowBackgroundColor))
                 .shadow(color: Color.black.opacity(0.25), radius: 20, x: 0, y: 10)
+        )
+    }
+}
+
+struct AlignmentPointsOverlay: View {
+    @EnvironmentObject var state: AppState
+    let result: SpectralAlignmentResult?
+    let params: SpectralAlignmentParameters?
+    let currentChannel: Int
+    let originalSize: CGSize
+    let displaySize: CGSize
+    
+    @State private var draggingIndex: Int? = nil
+    
+    var body: some View {
+        let points = params?.referencePoints ?? AlignmentPoint.defaultCorners()
+        let isEditable = state.alignmentPointsEditable
+        
+        let offset: (dx: Int, dy: Int) = {
+            if let result = result, currentChannel < result.channelOffsets.count {
+                return result.channelOffsets[currentChannel]
+            }
+            return (dx: 0, dy: 0)
+        }()
+        
+        let isReference = result != nil && currentChannel == result!.referenceChannel
+        let scaleX = displaySize.width / originalSize.width
+        let scaleY = displaySize.height / originalSize.height
+        let offsetDx = CGFloat(offset.dx) * scaleX
+        let offsetDy = CGFloat(offset.dy) * scaleY
+        
+        return ZStack {
+            if points.count == 4 {
+                Path { path in
+                    for i in 0..<4 {
+                        let pt = points[i]
+                        let x = CGFloat(pt.x) * displaySize.width
+                        let y = CGFloat(pt.y) * displaySize.height
+                        if i == 0 {
+                            path.move(to: CGPoint(x: x, y: y))
+                        } else {
+                            path.addLine(to: CGPoint(x: x, y: y))
+                        }
+                    }
+                    path.closeSubpath()
+                }
+                .stroke(Color.cyan.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 3]))
+            }
+            
+            ForEach(0..<points.count, id: \.self) { idx in
+                let pt = points[idx]
+                let baseX = CGFloat(pt.x) * displaySize.width
+                let baseY = CGFloat(pt.y) * displaySize.height
+                let targetX = baseX + offsetDx
+                let targetY = baseY + offsetDy
+                
+                if result != nil && !isReference && (offset.dx != 0 || offset.dy != 0) {
+                    Path { path in
+                        path.move(to: CGPoint(x: baseX, y: baseY))
+                        path.addLine(to: CGPoint(x: targetX, y: targetY))
+                    }
+                    .stroke(Color.orange.opacity(0.8), style: StrokeStyle(lineWidth: 2, dash: [4, 2]))
+                }
+                
+                if result != nil && !isReference {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 14, height: 14)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white, lineWidth: 2)
+                        )
+                        .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
+                        .position(x: targetX, y: targetY)
+                }
+                
+                DraggableAlignmentPoint(
+                    index: idx,
+                    position: CGPoint(x: baseX, y: baseY),
+                    displaySize: displaySize,
+                    isEditable: isEditable,
+                    isDragging: draggingIndex == idx,
+                    isReference: result != nil && isReference,
+                    onDrag: { newPos in
+                        draggingIndex = idx
+                        let normalizedX = max(0.0, min(1.0, Double(newPos.x / displaySize.width)))
+                        let normalizedY = max(0.0, min(1.0, Double(newPos.y / displaySize.height)))
+                        state.updateAlignmentPoint(at: idx, to: AlignmentPoint(x: normalizedX, y: normalizedY))
+                    },
+                    onDragEnd: {
+                        draggingIndex = nil
+                    }
+                )
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Канал \(currentChannel)")
+                    .font(.system(size: 10, weight: .semibold))
+                if result != nil && isReference {
+                    Text("(эталон)")
+                        .font(.system(size: 9))
+                        .foregroundColor(.blue)
+                } else if result != nil {
+                    Text("dx: \(offset.dx), dy: \(offset.dy)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.orange)
+                }
+                if isEditable {
+                    Text("Перетащите точки")
+                        .font(.system(size: 8))
+                        .foregroundColor(.cyan)
+                }
+            }
+            .padding(6)
+            .background(Color.black.opacity(0.7))
+            .cornerRadius(4)
+            .foregroundColor(.white)
+            .position(x: 70, y: 40)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+struct DraggableAlignmentPoint: View {
+    let index: Int
+    let position: CGPoint
+    let displaySize: CGSize
+    let isEditable: Bool
+    let isDragging: Bool
+    let isReference: Bool
+    let onDrag: (CGPoint) -> Void
+    let onDragEnd: () -> Void
+    
+    @State private var isHovering: Bool = false
+    @GestureState private var dragState: CGSize = .zero
+    
+    var body: some View {
+        let pointColor: Color = isReference ? .blue : .cyan
+        let size: CGFloat = isEditable ? 18 : 12
+        let hitAreaSize: CGFloat = 40
+        
+        ZStack {
+            Circle()
+                .fill(Color.clear)
+                .frame(width: hitAreaSize, height: hitAreaSize)
+                .contentShape(Circle())
+            
+            if isEditable && (isHovering || isDragging) {
+                Circle()
+                    .fill(pointColor.opacity(0.3))
+                    .frame(width: 32, height: 32)
+            }
+            
+            Circle()
+                .fill(pointColor)
+                .frame(width: size, height: size)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white, lineWidth: 2)
+                )
+                .overlay(
+                    Text("\(index + 1)")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white)
+                )
+                .shadow(color: Color.black.opacity(0.4), radius: 2, x: 0, y: 1)
+        }
+        .scaleEffect(isDragging ? 1.2 : (isHovering && isEditable ? 1.1 : 1.0))
+        .animation(.easeInOut(duration: 0.1), value: isDragging)
+        .animation(.easeInOut(duration: 0.1), value: isHovering)
+        .position(x: position.x, y: position.y)
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering && isEditable {
+                NSCursor.openHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .highPriorityGesture(
+            isEditable ?
+            DragGesture(minimumDistance: 1, coordinateSpace: .local)
+                .updating($dragState) { value, state, _ in
+                    state = value.translation
+                }
+                .onChanged { value in
+                    let newX = position.x + value.translation.width
+                    let newY = position.y + value.translation.height
+                    onDrag(CGPoint(x: newX, y: newY))
+                }
+                .onEnded { value in
+                    let newX = position.x + value.translation.width
+                    let newY = position.y + value.translation.height
+                    onDrag(CGPoint(x: newX, y: newY))
+                    onDragEnd()
+                }
+            : nil
         )
     }
 }
