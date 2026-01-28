@@ -986,15 +986,17 @@ struct ContentView: View {
     }
     
     private func ndControls() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let menuLabelInset: CGFloat = 6
+        return VStack(alignment: .leading, spacing: 8) {
             Text("ND индексы")
                 .font(.system(size: 11, weight: .medium))
             
-                HStack(spacing: 12) {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Пресет")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .padding(.leading, menuLabelInset)
                     Picker("", selection: $state.ndPreset) {
                         ForEach(NDIndexPreset.allCases) { preset in
                             Text(preset.title).tag(preset)
@@ -1102,16 +1104,18 @@ struct ContentView: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Палитра")
-                                .font(.system(size: 10))
+                        .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .padding(.leading, menuLabelInset)
                     Picker("", selection: $state.ndPalette) {
                         ForEach(NDPalette.allCases) { palette in
                             Text(palette.rawValue).tag(palette)
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 200)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(width: 200, alignment: .leading)
                 
                 if state.ndPalette == .binaryVegetation {
                     VStack(alignment: .leading, spacing: 4) {
