@@ -2,170 +2,76 @@
 
 ## Обзор
 
-HSIView - нативный просмотрщик гиперспектральных изображений для macOS (Apple Silicon).
+HSIView — нативный просмотрщик гиперспектральных изображений для macOS (Apple Silicon). Основные цели: быстрый просмотр, удобная обработка и экспорт без лишней подготовки данных.
 
-## Структура проекта
+---
 
-```
-HSIView/
-├── Models/                      # Модели данных
-│   ├── HyperCubeModel.swift    # Структура гиперкуба и енумы
-│   └── ImageLoadError.swift    # Типы ошибок
-├── Services/                    # Сервисы
-│   ├── ImageLoader.swift       # Протокол и фабрика загрузчиков
-│   ├── MatImageLoader.swift    # Загрузчик .mat файлов
-│   └── TiffImageLoader.swift   # Загрузчик .tiff файлов
-├── Utilities/                   # Утилиты
-│   ├── DataNormalization.swift # Нормализация данных
-│   ├── ImageRenderer.swift     # Рендеринг изображений
-│   └── WavelengthManager.swift # Работа с длинами волн
-├── Views/
-│   └── ContentView.swift       # Главный UI
-├── AppState.swift              # State management
-└── ImageViewerApp.swift        # Entry point
-```
+## Ключевые компоненты
 
-## Основные компоненты
+### AppState и поток данных
+`AppState` хранит текущий куб, состояние UI, параметры визуализации и пайплайн обработки. Все изменения UI и пайплайна проходят через него.
 
-### 1. Models
+### Models
+- `HyperCubeModel.swift` — модель куба, layout, метаданные
+- `CubeNormalization.swift` — типы нормализации
+- `PipelineOperation.swift` — операции пайплайна
+- `CubeSessionSnapshot.swift` — снимки сессии
+- `CubeExportPayload.swift` — данные для экспорта
 
-**HyperCube**
-- Хранит 3D данные гиперспектрального изображения
-- Поддерживает различные layout'ы (CHW, HWC, Auto)
-- Методы для вычисления индексов и размерностей
+### Services (загрузка)
+- `ImageLoader.swift` — протокол загрузчика и фабрика
+- `MatImageLoader.swift`, `NpyImageLoader.swift`, `TiffImageLoader.swift`, `EnviImageLoader.swift`
 
-**CubeLayout**
-- `.auto` - автоматическое определение (минимальная ось = каналы)
-- `.chw` - Channels × Height × Width
-- `.hwc` - Height × Width × Channels
+### Exporters (экспорт)
+- `MatExporter.swift`, `NpyExporter.swift`
+- `PngChannelsExporter.swift`, `QuickPNGExporter.swift`
+- `TiffExporter.swift`
 
-**ViewMode**
-- `.gray` - поканальный просмотр (grayscale)
-- `.rgb` - RGB синтез по длинам волн
+### Utilities
+- `ImageRenderer.swift` — рендеринг Gray/RGB
+- `DataTypeConverter.swift` — конвертация типов
+- `DataNormalization.swift` — нормализация данных
+- `WavelengthManager.swift` — управление длинами волн
 
-### 2. Services
+### Views (UI)
+- `ContentView.swift` — основной интерфейс
+- Панели: `PipelinePanel.swift`, `ImageInfoPanel.swift`, `ExportView.swift`, `LibraryPanel.swift`
 
-**ImageLoader Protocol**
-```swift
-protocol ImageLoader {
-    static var supportedExtensions: [String] { get }
-    static func load(from url: URL) -> Result<HyperCube, ImageLoadError>
-}
-```
+### C Helpers
+- `MatHelper.h/.c` (libmatio)
+- `TiffHelper.h/.c` (libtiff)
 
-**ImageLoaderFactory**
-- Автоматически выбирает нужный загрузчик по расширению файла
-- Легко расширяется для новых форматов (просто добавьте класс в `loaders`)
+---
 
-**Поддерживаемые форматы:**
-- `.mat` - MATLAB файлы через libmatio
-- `.tif/.tiff` - TIFF файлы через libtiff
+## Поток обработки
 
-### 3. Utilities
+1. **Открытие файла** → `ImageLoaderFactory` выбирает loader по расширению → `HyperCubeModel`.
+2. **Визуализация** → `ImageRenderer` строит изображение (Gray/RGB).
+3. **Пайплайн** → операции нормализации, конвертации типов, поворота и обрезки применяются последовательно.
+4. **Экспорт** → `Exporters` сохраняют данные и изображения.
 
-**DataNormalizer**
-- Нормализация Min-Max
-- Z-Score нормализация
-- Percentile нормализация
-- Конвертация в UInt8 для отображения
+---
 
-**ImageRenderer**
-- Рендеринг grayscale изображений
-- RGB синтез по длинам волн (630nm, 530nm, 450nm)
-- Оптимизированная обработка данных
+## Расширяемость
 
-**WavelengthManager**
-- Загрузка длин волн из файлов
-- Генерация равномерных диапазонов
-- Валидация данных
+### Добавление нового формата
+1. Создайте новый loader в `HSIView/Services/`.
+2. Зарегистрируйте его в `ImageLoaderFactory`.
+3. Обновите список типов файлов в UI (file picker).
 
-## Преимущества новой архитектуры
+### Новая операция пайплайна
+1. Добавьте новый case в `PipelineOperation`.
+2. Реализуйте применение в месте обработки пайплайна.
+3. Добавьте UI конфигурацию операции.
 
-### 1. Разделение ответственности (Separation of Concerns)
-- Модели отделены от логики
-- UI отделен от обработки данных
-- Каждый компонент имеет одну ответственность
+---
 
-### 2. Расширяемость
-**Добавление нового формата** (например, .npy):
+## Зависимости
 
-```swift
-class NpyImageLoader: ImageLoader {
-    static let supportedExtensions = ["npy"]
-    
-    static func load(from url: URL) -> Result<HyperCube, ImageLoadError> {
-        // Реализация загрузки .npy
-    }
-}
-```
+- **libmatio** — чтение/запись `.mat`
+- **libtiff** — чтение TIFF
 
-Затем просто добавьте его в `ImageLoaderFactory.loaders`
-
-### 3. Обработка ошибок
-- Использование `Result<T, Error>` вместо опционалов
-- Подробные сообщения об ошибках
-- Централизованная обработка через `ImageLoadError`
-
-### 4. Производительность
-- Использование `UnsafeBufferPointer` для работы с C-данными
-- Минимальное копирование данных
-- Эффективная нормализация
-
-### 5. Тестируемость
-- Протоколы позволяют создавать mock'и
-- Чистые функции без side effects
-- Легко писать unit тесты
-
-## Planned Features
-
-### Ближайшие планы:
-- [ ] Поддержка .npy формата
-- [ ] Поддержка .hdr/.img формата (ENVI)
-- [ ] Экспорт в различные форматы
-- [ ] Графики спектра (выбор пикселя → график)
-- [ ] Приведение к разным типам данных (float32/16/64, int8/16)
-- [ ] Histogram equalization
-- [ ] Zoom и Pan для изображений
-- [ ] Keyboard shortcuts
-
-### Долгосрочные:
-- [ ] PCA визуализация
-- [ ] False color композиты
-- [ ] ROI (Region of Interest) выделение
-- [ ] Batch processing
-- [ ] Плагинная система для фильтров
-
-## Как добавить новую функциональность
-
-### Новый метод нормализации:
-1. Добавьте case в `NormalizationType`
-2. Реализуйте метод в `DataNormalizer`
-
-### Новый режим отображения:
-1. Добавьте case в `ViewMode`
-2. Добавьте метод в `ImageRenderer`
-3. Обновите switch в `ContentView.cubeView`
-
-### Новая утилита для работы с данными:
-1. Создайте файл в `Utilities/`
-2. Используйте в `AppState` или `ImageRenderer`
-
-## C Interop
-
-Проект использует C библиотеки для работы с форматами:
-- **libmatio** - для .mat файлов
-- **libtiff** - для .tiff файлов
-
-Bridge headers: `Header.h`, `ImageViewer-Bridging-Header.h`
-
-## Dependencies
-
-- libmatio (для .mat)
-- libtiff (для .tiff)
-
-Установка через Homebrew:
+Установка:
 ```bash
 brew install libmatio libtiff
 ```
-
-
