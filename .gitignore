@@ -1,6 +1,53 @@
-test_data
-python_tests
-test_npy_files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+*.xcuserdatad/
+*.moved-aside
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.dSYM.tar
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods / Carthage
+Pods/
+Carthage/Build/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+dist/
+python/build/
+*.egg-info/
+
+# Project-specific test artifacts
+test_data/
+python_tests/
+test_npy_files/
 test_*.npy
 test_*.mat
 test_*.tiff
@@ -9,11 +56,3 @@ npy_file_reader.py
 tiff_file_reader.py
 debug_npy.py
 HSIView/Assets.xcassets/AppIcon.appiconset/HSIViewer.icns
-
-//
-//  .gitignore
-//  HSIView
-//
-//  Created by mac on 26.11.2025.
-//
-
