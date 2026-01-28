@@ -128,6 +128,8 @@ final class AppState: ObservableObject {
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
+    private var spectrumSpatialOps: [PipelineOperation] = []
+    private var spectrumSpatialBaseSize: (width: Int, height: Int)?
     @Published var pcaPendingConfig: PCAVisualizationConfig?
     @Published var pcaRenderedImage: NSImage?
     @Published var isPCAApplying: Bool = false
@@ -1898,6 +1900,8 @@ final class AppState: ObservableObject {
         resetSpectrumSelections()
         spectrumSpatialSize = nil
         spectrumRotationTurns = pipelineRotationTurns()
+        spectrumSpatialOps = []
+        spectrumSpatialBaseSize = nil
         updateResolvedLayout()
     }
     
@@ -2239,26 +2243,476 @@ final class AppState: ObservableObject {
     
     private func adjustSpectrumGeometry(previousCube: HyperCube?, newCube: HyperCube?) {
         let currentTurns = pipelineRotationTurns()
+        let currentSpatialOps = spatialOperations(from: pipelineOperations)
+        let currentBaseSize = spectrumSpatialBaseSize ?? spatialBaseSize()
         
         guard let newCube else {
             spectrumSpatialSize = nil
             spectrumRotationTurns = currentTurns
+            spectrumSpatialOps = currentSpatialOps
+            spectrumSpatialBaseSize = currentBaseSize
             return
         }
         
         let newSize = cubeSpatialSize(for: newCube)
         
-        if let previousSize = spectrumSpatialSize,
-           previousCube != nil {
-            let delta = normalizedTurns(currentTurns - spectrumRotationTurns)
-            if delta != 0 {
-                rotateSpectrumSamples(by: delta, previousSize: previousSize)
-                rotateROISamples(by: delta, previousSize: previousSize)
-            }
+        let hasSamples = !spectrumSamples.isEmpty
+            || pendingSpectrumSample != nil
+            || !roiSamples.isEmpty
+            || pendingROISample != nil
+        
+        if !hasSamples {
+            spectrumSpatialOps = currentSpatialOps
+            spectrumSpatialBaseSize = currentBaseSize
+        } else if let previousBaseSize = spectrumSpatialBaseSize ?? spatialBaseSize(),
+                  let nextBaseSize = currentBaseSize,
+                  currentSpatialOps != spectrumSpatialOps || previousBaseSize != nextBaseSize {
+            transformSpectrumSamples(
+                fromOps: spectrumSpatialOps,
+                fromBaseSize: previousBaseSize,
+                toOps: currentSpatialOps,
+                toBaseSize: nextBaseSize
+            )
+            spectrumSpatialOps = currentSpatialOps
+            spectrumSpatialBaseSize = nextBaseSize
         }
         
         spectrumSpatialSize = newSize ?? spectrumSpatialSize
         spectrumRotationTurns = currentTurns
+    }
+
+    private func spatialOperations(from operations: [PipelineOperation]) -> [PipelineOperation] {
+        operations.filter {
+            switch $0.type {
+            case .rotation, .resize, .spatialCrop:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private func spatialBaseSize() -> (width: Int, height: Int)? {
+        if let originalCube {
+            return cubeSpatialSize(for: originalCube)
+        }
+        if let cube {
+            return cubeSpatialSize(for: cube)
+        }
+        return nil
+    }
+
+    private func transformSpectrumSamples(
+        fromOps: [PipelineOperation],
+        fromBaseSize: (width: Int, height: Int),
+        toOps: [PipelineOperation],
+        toBaseSize: (width: Int, height: Int)
+    ) {
+        let oldBase = SpatialSize(width: fromBaseSize.width, height: fromBaseSize.height)
+        let newBase = SpatialSize(width: toBaseSize.width, height: toBaseSize.height)
+        
+        spectrumSamples = spectrumSamples.compactMap { sample in
+            guard let mapped = transformPoint(
+                x: sample.pixelX,
+                y: sample.pixelY,
+                fromOps: fromOps,
+                fromBaseSize: oldBase,
+                toOps: toOps,
+                toBaseSize: newBase
+            ) else { return nil }
+            
+            return SpectrumSample(
+                id: sample.id,
+                pixelX: mapped.x,
+                pixelY: mapped.y,
+                values: sample.values,
+                wavelengths: sample.wavelengths,
+                colorIndex: sample.colorIndex,
+                displayName: sample.displayName
+            )
+        }
+        
+        if let pending = pendingSpectrumSample {
+            if let mapped = transformPoint(
+                x: pending.pixelX,
+                y: pending.pixelY,
+                fromOps: fromOps,
+                fromBaseSize: oldBase,
+                toOps: toOps,
+                toBaseSize: newBase
+            ) {
+                pendingSpectrumSample = SpectrumSample(
+                    id: pending.id,
+                    pixelX: mapped.x,
+                    pixelY: mapped.y,
+                    values: pending.values,
+                    wavelengths: pending.wavelengths,
+                    colorIndex: pending.colorIndex,
+                    displayName: pending.displayName
+                )
+            } else {
+                pendingSpectrumSample = nil
+            }
+        }
+        
+        roiSamples = roiSamples.compactMap { sample in
+            guard let mapped = transformRect(
+                sample.rect,
+                fromOps: fromOps,
+                fromBaseSize: oldBase,
+                toOps: toOps,
+                toBaseSize: newBase
+            ) else { return nil }
+            
+            return SpectrumROISample(
+                id: sample.id,
+                rect: mapped,
+                values: sample.values,
+                wavelengths: sample.wavelengths,
+                colorIndex: sample.colorIndex,
+                displayName: sample.displayName
+            )
+        }
+        
+        if let pending = pendingROISample {
+            if let mapped = transformRect(
+                pending.rect,
+                fromOps: fromOps,
+                fromBaseSize: oldBase,
+                toOps: toOps,
+                toBaseSize: newBase
+            ) {
+                pendingROISample = SpectrumROISample(
+                    id: pending.id,
+                    rect: mapped,
+                    values: pending.values,
+                    wavelengths: pending.wavelengths,
+                    colorIndex: pending.colorIndex,
+                    displayName: pending.displayName
+                )
+            } else {
+                pendingROISample = nil
+            }
+        }
+    }
+
+    private enum SpatialTransformDirection {
+        case forward
+        case inverse
+    }
+
+    private struct SpatialSize: Equatable {
+        let width: Int
+        let height: Int
+    }
+
+    private struct SpatialPoint {
+        let x: Int
+        let y: Int
+    }
+
+    private func spatialSizes(from base: SpatialSize, ops: [PipelineOperation]) -> [SpatialSize] {
+        var sizes: [SpatialSize] = [base]
+        var current = base
+        
+        for op in ops {
+            current = applySpatialOpToSize(op, size: current)
+            sizes.append(current)
+        }
+        
+        return sizes
+    }
+
+    private func applySpatialOpToSize(_ op: PipelineOperation, size: SpatialSize) -> SpatialSize {
+        switch op.type {
+        case .rotation:
+            guard let angle = op.rotationAngle else { return size }
+            if angle.quarterTurns % 2 == 1 {
+                return SpatialSize(width: size.height, height: size.width)
+            }
+            return size
+        case .resize:
+            guard let params = op.resizeParameters else { return size }
+            let targetWidth = params.targetWidth
+            let targetHeight = params.targetHeight
+            guard targetWidth > 0, targetHeight > 0 else { return size }
+            return SpatialSize(width: targetWidth, height: targetHeight)
+        case .spatialCrop:
+            guard var params = op.cropParameters else { return size }
+            params.clamp(maxWidth: size.width, maxHeight: size.height)
+            guard params.width > 0, params.height > 0 else { return size }
+            return SpatialSize(width: params.width, height: params.height)
+        default:
+            return size
+        }
+    }
+
+    private func transformPoint(
+        x: Int,
+        y: Int,
+        fromOps: [PipelineOperation],
+        fromBaseSize: SpatialSize,
+        toOps: [PipelineOperation],
+        toBaseSize: SpatialSize
+    ) -> SpatialPoint? {
+        guard let original = applySpatialOpsToPoint(
+            SpatialPoint(x: x, y: y),
+            base: fromBaseSize,
+            ops: fromOps,
+            direction: .inverse
+        ) else { return nil }
+        
+        return applySpatialOpsToPoint(
+            original,
+            base: toBaseSize,
+            ops: toOps,
+            direction: .forward
+        )
+    }
+
+    private func transformRect(
+        _ rect: SpectrumROIRect,
+        fromOps: [PipelineOperation],
+        fromBaseSize: SpatialSize,
+        toOps: [PipelineOperation],
+        toBaseSize: SpatialSize
+    ) -> SpectrumROIRect? {
+        guard let original = applySpatialOpsToRect(
+            rect,
+            base: fromBaseSize,
+            ops: fromOps,
+            direction: .inverse
+        ) else { return nil }
+        
+        return applySpatialOpsToRect(
+            original,
+            base: toBaseSize,
+            ops: toOps,
+            direction: .forward
+        )
+    }
+
+    private func applySpatialOpsToPoint(
+        _ point: SpatialPoint,
+        base: SpatialSize,
+        ops: [PipelineOperation],
+        direction: SpatialTransformDirection
+    ) -> SpatialPoint? {
+        let sizes = spatialSizes(from: base, ops: ops)
+        var current = point
+        
+        switch direction {
+        case .forward:
+            for (index, op) in ops.enumerated() {
+                let srcSize = sizes[index]
+                let dstSize = sizes[index + 1]
+                guard let mapped = applySpatialOpToPoint(
+                    current,
+                    op: op,
+                    srcSize: srcSize,
+                    dstSize: dstSize,
+                    direction: .forward
+                ) else { return nil }
+                current = mapped
+            }
+        case .inverse:
+            for index in (0..<ops.count).reversed() {
+                let op = ops[index]
+                let srcSize = sizes[index]
+                let dstSize = sizes[index + 1]
+                guard let mapped = applySpatialOpToPoint(
+                    current,
+                    op: op,
+                    srcSize: srcSize,
+                    dstSize: dstSize,
+                    direction: .inverse
+                ) else { return nil }
+                current = mapped
+            }
+        }
+        
+        return current
+    }
+
+    private func applySpatialOpToPoint(
+        _ point: SpatialPoint,
+        op: PipelineOperation,
+        srcSize: SpatialSize,
+        dstSize: SpatialSize,
+        direction: SpatialTransformDirection
+    ) -> SpatialPoint? {
+        switch op.type {
+        case .rotation:
+            guard let angle = op.rotationAngle else { return point }
+            let turns = angle.quarterTurns
+            let size = direction == .forward ? srcSize : dstSize
+            let rotated = rotatePoint(
+                x: point.x,
+                y: point.y,
+                turns: direction == .forward ? turns : -turns,
+                size: (width: size.width, height: size.height)
+            )
+            return SpatialPoint(x: rotated.x, y: rotated.y)
+        case .resize:
+            guard srcSize.width > 0, srcSize.height > 0, dstSize.width > 0, dstSize.height > 0 else {
+                return point
+            }
+            let fromSize = direction == .forward ? srcSize : dstSize
+            let toSize = direction == .forward ? dstSize : srcSize
+            let mappedX = mapCoordinate(point.x, from: fromSize.width, to: toSize.width)
+            let mappedY = mapCoordinate(point.y, from: fromSize.height, to: toSize.height)
+            return SpatialPoint(x: mappedX, y: mappedY)
+        case .spatialCrop:
+            guard var params = op.cropParameters else { return point }
+            params.clamp(maxWidth: srcSize.width, maxHeight: srcSize.height)
+            if direction == .forward {
+                guard point.x >= params.left,
+                      point.x <= params.right,
+                      point.y >= params.top,
+                      point.y <= params.bottom else {
+                    return nil
+                }
+                return SpatialPoint(x: point.x - params.left, y: point.y - params.top)
+            }
+            let x = point.x + params.left
+            let y = point.y + params.top
+            let clampedX = max(0, min(x, max(srcSize.width - 1, 0)))
+            let clampedY = max(0, min(y, max(srcSize.height - 1, 0)))
+            return SpatialPoint(x: clampedX, y: clampedY)
+        default:
+            return point
+        }
+    }
+
+    private func applySpatialOpsToRect(
+        _ rect: SpectrumROIRect,
+        base: SpatialSize,
+        ops: [PipelineOperation],
+        direction: SpatialTransformDirection
+    ) -> SpectrumROIRect? {
+        let sizes = spatialSizes(from: base, ops: ops)
+        var current = rect
+        
+        switch direction {
+        case .forward:
+            for (index, op) in ops.enumerated() {
+                let srcSize = sizes[index]
+                let dstSize = sizes[index + 1]
+                guard let mapped = applySpatialOpToRect(
+                    current,
+                    op: op,
+                    srcSize: srcSize,
+                    dstSize: dstSize,
+                    direction: .forward
+                ) else { return nil }
+                current = mapped
+            }
+        case .inverse:
+            for index in (0..<ops.count).reversed() {
+                let op = ops[index]
+                let srcSize = sizes[index]
+                let dstSize = sizes[index + 1]
+                guard let mapped = applySpatialOpToRect(
+                    current,
+                    op: op,
+                    srcSize: srcSize,
+                    dstSize: dstSize,
+                    direction: .inverse
+                ) else { return nil }
+                current = mapped
+            }
+        }
+        
+        return current
+    }
+
+    private func applySpatialOpToRect(
+        _ rect: SpectrumROIRect,
+        op: PipelineOperation,
+        srcSize: SpatialSize,
+        dstSize: SpatialSize,
+        direction: SpatialTransformDirection
+    ) -> SpectrumROIRect? {
+        switch op.type {
+        case .rotation:
+            guard let angle = op.rotationAngle else { return rect }
+            let turns = angle.quarterTurns
+            let size = direction == .forward ? srcSize : dstSize
+            return rotateRect(
+                rect,
+                turns: direction == .forward ? turns : -turns,
+                size: (width: size.width, height: size.height)
+            )
+        case .resize:
+            guard srcSize.width > 0, srcSize.height > 0, dstSize.width > 0, dstSize.height > 0 else {
+                return rect
+            }
+            let fromSize = direction == .forward ? srcSize : dstSize
+            let toSize = direction == .forward ? dstSize : srcSize
+            let minX = mapCoordinate(rect.minX, from: fromSize.width, to: toSize.width)
+            let maxX = mapCoordinate(rect.maxX, from: fromSize.width, to: toSize.width)
+            let minY = mapCoordinate(rect.minY, from: fromSize.height, to: toSize.height)
+            let maxY = mapCoordinate(rect.maxY, from: fromSize.height, to: toSize.height)
+            let lowerX = min(minX, maxX)
+            let upperX = max(minX, maxX)
+            let lowerY = min(minY, maxY)
+            let upperY = max(minY, maxY)
+            return SpectrumROIRect(
+                minX: lowerX,
+                minY: lowerY,
+                width: upperX - lowerX + 1,
+                height: upperY - lowerY + 1
+            ).clamped(maxWidth: toSize.width, maxHeight: toSize.height)
+        case .spatialCrop:
+            guard var params = op.cropParameters else { return rect }
+            params.clamp(maxWidth: srcSize.width, maxHeight: srcSize.height)
+            if direction == .forward {
+                let cropRect = SpectrumROIRect(
+                    minX: params.left,
+                    minY: params.top,
+                    width: params.width,
+                    height: params.height
+                )
+                guard let intersected = intersectRect(rect, with: cropRect) else { return nil }
+                let shifted = SpectrumROIRect(
+                    minX: intersected.minX - params.left,
+                    minY: intersected.minY - params.top,
+                    width: intersected.width,
+                    height: intersected.height
+                )
+                return shifted.clamped(maxWidth: dstSize.width, maxHeight: dstSize.height)
+            }
+            let shifted = SpectrumROIRect(
+                minX: rect.minX + params.left,
+                minY: rect.minY + params.top,
+                width: rect.width,
+                height: rect.height
+            )
+            return shifted.clamped(maxWidth: srcSize.width, maxHeight: srcSize.height)
+        default:
+            return rect
+        }
+    }
+
+    private func mapCoordinate(_ value: Int, from srcSize: Int, to dstSize: Int) -> Int {
+        guard srcSize > 0, dstSize > 0 else { return value }
+        let scaled = (Double(value) + 0.5) * Double(dstSize) / Double(srcSize) - 0.5
+        let rounded = Int(round(scaled))
+        return max(0, min(rounded, max(dstSize - 1, 0)))
+    }
+
+    private func intersectRect(_ lhs: SpectrumROIRect, with rhs: SpectrumROIRect) -> SpectrumROIRect? {
+        let minX = max(lhs.minX, rhs.minX)
+        let minY = max(lhs.minY, rhs.minY)
+        let maxX = min(lhs.maxX, rhs.maxX)
+        let maxY = min(lhs.maxY, rhs.maxY)
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return SpectrumROIRect(
+            minX: minX,
+            minY: minY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1
+        )
     }
     
     private func cubeSpatialSize(for cube: HyperCube) -> (width: Int, height: Int)? {
