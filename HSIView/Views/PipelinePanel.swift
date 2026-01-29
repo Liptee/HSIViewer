@@ -409,6 +409,7 @@ struct OperationEditorView: View {
     @State private var isAdjustingResize: Bool = false
     @State private var isComputingAlignment: Bool = false
     @State private var showAlignmentDetails: Bool = false
+    @State private var calibrationRefError: String?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1631,12 +1632,15 @@ struct OperationEditorView: View {
                 displayName: sample.displayName
             )
         }
+        let channelCount = state.cube?.channelCount(for: op.layout) ?? 0
+        let spatial = spatialSize(for: op)
+        let scanAxisSize = spatial?.width
         
         return VStack(alignment: .leading, spacing: 16) {
             Text("Калибровка изображения")
                 .font(.system(size: 11, weight: .medium))
             
-            Text("Выберите спектры для белой и/или чёрной точки калибровки из сохранённых в \"Графике спектра\" или \"Графике спектра ROI\".")
+            Text("Выберите спектры или REF файлы для белой и/или чёрной точки калибровки.")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1651,7 +1655,13 @@ struct OperationEditorView: View {
                         .font(.system(size: 11, weight: .semibold))
                 }
                 
-                if let white = localCalibrationParams.whiteSpectrum {
+                if let whiteRef = localCalibrationParams.whiteRef {
+                    calibrationRefRow(
+                        ref: whiteRef,
+                        tint: .yellow,
+                        onClear: { localCalibrationParams.whiteRef = nil }
+                    )
+                } else if let white = localCalibrationParams.whiteSpectrum {
                     HStack {
                         Text(white.sourceName)
                             .font(.system(size: 10))
@@ -1667,12 +1677,26 @@ struct OperationEditorView: View {
                     .background(Color.yellow.opacity(0.1))
                     .cornerRadius(6)
                 } else {
-                    spectrumPickerMenu(
-                        label: "Выбрать белую точку",
-                        pointSamples: pointSamples,
-                        roiSamples: roiSamples
-                    ) { spectrum in
-                        localCalibrationParams.whiteSpectrum = spectrum
+                    HStack(spacing: 8) {
+                        spectrumPickerMenu(
+                            label: "Выбрать белую точку",
+                            pointSamples: pointSamples,
+                            roiSamples: roiSamples
+                        ) { spectrum in
+                            localCalibrationParams.whiteSpectrum = spectrum
+                            localCalibrationParams.whiteRef = nil
+                            calibrationRefError = nil
+                        }
+                        
+                        Button("Выбрать файл REF") {
+                            selectCalibrationRef(
+                                forWhite: true,
+                                expectedChannels: channelCount
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(channelCount == 0)
                     }
                 }
             }
@@ -1687,7 +1711,13 @@ struct OperationEditorView: View {
                         .font(.system(size: 11, weight: .semibold))
                 }
                 
-                if let black = localCalibrationParams.blackSpectrum {
+                if let blackRef = localCalibrationParams.blackRef {
+                    calibrationRefRow(
+                        ref: blackRef,
+                        tint: .gray,
+                        onClear: { localCalibrationParams.blackRef = nil }
+                    )
+                } else if let black = localCalibrationParams.blackSpectrum {
                     HStack {
                         Text(black.sourceName)
                             .font(.system(size: 10))
@@ -1703,17 +1733,54 @@ struct OperationEditorView: View {
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(6)
                 } else {
-                    spectrumPickerMenu(
-                        label: "Выбрать чёрную точку",
-                        pointSamples: pointSamples,
-                        roiSamples: roiSamples
-                    ) { spectrum in
-                        localCalibrationParams.blackSpectrum = spectrum
+                    HStack(spacing: 8) {
+                        spectrumPickerMenu(
+                            label: "Выбрать чёрную точку",
+                            pointSamples: pointSamples,
+                            roiSamples: roiSamples
+                        ) { spectrum in
+                            localCalibrationParams.blackSpectrum = spectrum
+                            localCalibrationParams.blackRef = nil
+                            calibrationRefError = nil
+                        }
+                        
+                        Button("Выбрать файл REF") {
+                            selectCalibrationRef(
+                                forWhite: false,
+                                expectedChannels: channelCount
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(channelCount == 0)
                     }
                 }
             }
             
             Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Направление сканирования:")
+                    .font(.system(size: 11, weight: .medium))
+                
+                Picker("", selection: $localCalibrationParams.scanDirection) {
+                    ForEach(CalibrationScanDirection.allCases) { direction in
+                        Text(direction.rawValue).tag(direction)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 420)
+                
+                if let scanAxisSize,
+                   (localCalibrationParams.whiteRef?.scanLength != nil || localCalibrationParams.blackRef?.scanLength != nil) {
+                    if localCalibrationParams.whiteRef?.scanLength != nil && localCalibrationParams.whiteRef?.scanLength != scanAxisSize {
+                        calibrationRefWarning(text: "REF белого не совпадает с размером скана (\(scanAxisSize) px).")
+                    }
+                    if localCalibrationParams.blackRef?.scanLength != nil && localCalibrationParams.blackRef?.scanLength != scanAxisSize {
+                        calibrationRefWarning(text: "REF чёрного не совпадает с размером скана (\(scanAxisSize) px).")
+                    }
+                }
+            }
             
             VStack(alignment: .leading, spacing: 8) {
                 Text("Целевой диапазон:")
@@ -1740,12 +1807,25 @@ struct OperationEditorView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundColor(.orange)
-                    Text("Выберите хотя бы одну точку калибровки")
+                    Text("Выберите хотя бы одну точку или REF для калибровки")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
                 .padding(8)
                 .background(Color.orange.opacity(0.1))
+                .cornerRadius(6)
+            }
+            
+            if let error = calibrationRefError {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.octagon.fill")
+                        .foregroundColor(.red)
+                    Text(error)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                }
+                .padding(8)
+                .background(Color.red.opacity(0.08))
                 .cornerRadius(6)
             }
         }
@@ -1792,6 +1872,88 @@ struct OperationEditorView: View {
         }
         .menuStyle(.borderlessButton)
         .disabled(pointSamples.isEmpty && roiSamples.isEmpty)
+    }
+
+    private func calibrationRefRow(ref: CalibrationRefData, tint: Color, onClear: @escaping () -> Void) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ref.sourceName)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Text("REF \(ref.channels)×\(ref.scanLength)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Button("Убрать") {
+                onClear()
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+        }
+        .padding(8)
+        .background(tint.opacity(0.1))
+        .cornerRadius(6)
+    }
+    
+    private func calibrationRefWarning(text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            Text(text)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+        .padding(8)
+        .background(Color.orange.opacity(0.08))
+        .cornerRadius(6)
+    }
+    
+    private func selectCalibrationRef(forWhite: Bool, expectedChannels: Int) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Выберите REF файл (HDR/RAW)"
+        
+        let hdrType = UTType(filenameExtension: "hdr") ?? .data
+        let rawType = UTType(filenameExtension: "raw") ?? .data
+        let datType = UTType(filenameExtension: "dat") ?? .data
+        let imgType = UTType(filenameExtension: "img") ?? .data
+        let bsqType = UTType(filenameExtension: "bsq") ?? .data
+        let bilType = UTType(filenameExtension: "bil") ?? .data
+        let bipType = UTType(filenameExtension: "bip") ?? .data
+        panel.allowedContentTypes = [hdrType, rawType, datType, imgType, bsqType, bilType, bipType]
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        
+        calibrationRefError = nil
+        let loadResult = EnviImageLoader.load(from: url)
+        
+        switch loadResult {
+        case .failure(let error):
+            calibrationRefError = error.localizedDescription
+        case .success(let refCube):
+            let sourceName = url.lastPathComponent
+            let refResult = CalibrationRefData.from(
+                refCube: refCube,
+                expectedChannels: expectedChannels,
+                sourceName: sourceName
+            )
+            
+            switch refResult {
+            case .failure(let error):
+                calibrationRefError = error.localizedDescription
+            case .success(let refData):
+                if forWhite {
+                    localCalibrationParams.whiteRef = refData
+                    localCalibrationParams.whiteSpectrum = nil
+                } else {
+                    localCalibrationParams.blackRef = refData
+                    localCalibrationParams.blackSpectrum = nil
+                }
+            }
+        }
     }
     
     private func currentPreviewImage() -> NSImage? {
