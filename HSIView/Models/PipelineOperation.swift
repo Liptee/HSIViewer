@@ -220,6 +220,94 @@ struct CalibrationSpectrum: Equatable, Identifiable {
     }
 }
 
+enum CalibrationScanDirection: String, CaseIterable, Identifiable {
+    case leftToRight = "Слева направо"
+    case rightToLeft = "Справа налево"
+    case bottomToTop = "Снизу вверх"
+    case topToBottom = "Сверху вниз"
+    
+    var id: String { rawValue }
+}
+
+struct CalibrationRefData: Equatable {
+    let values: [Double]
+    let channels: Int
+    let scanLength: Int
+    let sourceName: String
+    
+    func value(channel: Int, scanIndex: Int) -> Double {
+        values[scanIndex * channels + channel]
+    }
+    
+    static func from(refCube: HyperCube, expectedChannels: Int, sourceName: String) -> Result<CalibrationRefData, CalibrationRefError> {
+        let dims = [refCube.dims.0, refCube.dims.1, refCube.dims.2]
+        guard expectedChannels > 0 else {
+            return .failure(CalibrationRefError("Неизвестное число каналов"))
+        }
+        
+        let channelAxes = dims.enumerated().compactMap { index, value in
+            value == expectedChannels ? index : nil
+        }
+        
+        guard let channelAxis = channelAxes.first else {
+            return .failure(CalibrationRefError("REF не совпадает с числом каналов (\(expectedChannels))"))
+        }
+        
+        let remainingAxes = [0, 1, 2].filter { $0 != channelAxis }
+        let scanAxisCandidates = remainingAxes.filter { dims[$0] > 1 }
+        
+        guard scanAxisCandidates.count == 1 else {
+            return .failure(CalibrationRefError("REF должен быть 2D (B×W). Проверьте размеры файла."))
+        }
+        
+        let scanAxis = scanAxisCandidates[0]
+        let otherAxis = remainingAxes.first { $0 != scanAxis } ?? channelAxis
+        
+        if dims[otherAxis] != 1 {
+            return .failure(CalibrationRefError("REF должен быть 2D (B×W) с третьей размерностью = 1"))
+        }
+        
+        let scanLength = dims[scanAxis]
+        guard scanLength > 0 else {
+            return .failure(CalibrationRefError("REF имеет пустую ширину"))
+        }
+        
+        var values = [Double](repeating: 0, count: expectedChannels * scanLength)
+        
+        for scan in 0..<scanLength {
+            for ch in 0..<expectedChannels {
+                var indices = [0, 0, 0]
+                indices[channelAxis] = ch
+                indices[scanAxis] = scan
+                indices[otherAxis] = 0
+                let idx = refCube.linearIndex(i0: indices[0], i1: indices[1], i2: indices[2])
+                values[scan * expectedChannels + ch] = refCube.getValue(at: idx)
+            }
+        }
+        
+        return .success(
+            CalibrationRefData(
+                values: values,
+                channels: expectedChannels,
+                scanLength: scanLength,
+                sourceName: sourceName
+            )
+        )
+    }
+}
+
+struct CalibrationRefError: Error, LocalizedError {
+    let message: String
+    
+    init(_ message: String) {
+        self.message = message
+    }
+    
+    var errorDescription: String? {
+        message
+    }
+}
+
 struct SpectrumSampleSnapshot: Equatable, Identifiable {
     let id: UUID
     let pixelX: Int
@@ -251,17 +339,22 @@ struct SpectrumROISampleSnapshot: Equatable, Identifiable {
 struct CalibrationParameters: Equatable {
     var whiteSpectrum: CalibrationSpectrum?
     var blackSpectrum: CalibrationSpectrum?
+    var whiteRef: CalibrationRefData?
+    var blackRef: CalibrationRefData?
+    var scanDirection: CalibrationScanDirection = .leftToRight
     var targetMin: Double = 0.0
     var targetMax: Double = 1.0
     
     var isConfigured: Bool {
-        whiteSpectrum != nil || blackSpectrum != nil
+        whiteSpectrum != nil || blackSpectrum != nil || whiteRef != nil || blackRef != nil
     }
     
     var summaryText: String {
         var parts: [String] = []
-        if whiteSpectrum != nil { parts.append("белая") }
-        if blackSpectrum != nil { parts.append("чёрная") }
+        if whiteRef != nil { parts.append("белая REF") }
+        if whiteRef == nil && whiteSpectrum != nil { parts.append("белая") }
+        if blackRef != nil { parts.append("чёрная REF") }
+        if blackRef == nil && blackSpectrum != nil { parts.append("чёрная") }
         if parts.isEmpty { return "Не настроено" }
         return parts.joined(separator: " + ")
     }
@@ -1455,26 +1548,67 @@ class CubeCalibrator {
         
         let whiteSpectrum = parameters.whiteSpectrum?.values
         let blackSpectrum = parameters.blackSpectrum?.values
+        let whiteRef = parameters.whiteRef
+        let blackRef = parameters.blackRef
         
-        guard whiteSpectrum != nil || blackSpectrum != nil else { return cube }
+        guard whiteSpectrum != nil || blackSpectrum != nil || whiteRef != nil || blackRef != nil else { return cube }
         
         if let white = whiteSpectrum, white.count != channels { return cube }
         if let black = blackSpectrum, black.count != channels { return cube }
         
+        let scanAxisSize = width
+        let canUseWhiteRef = whiteRef?.channels == channels && whiteRef?.scanLength == scanAxisSize
+        let canUseBlackRef = blackRef?.channels == channels && blackRef?.scanLength == scanAxisSize
+        
         let targetMin = parameters.targetMin
         let targetMax = parameters.targetMax
         
-        let totalElements = dims.0 * dims.1 * dims.2
+        let swapSpatial = parameters.scanDirection == .leftToRight || parameters.scanDirection == .rightToLeft
+        var newDims = [dims.0, dims.1, dims.2]
+        if swapSpatial {
+            newDims[axes.height] = width
+            newDims[axes.width] = height
+        }
+        
+        let totalElements = newDims[0] * newDims[1] * newDims[2]
         var resultData = [Double](repeating: 0, count: totalElements)
         
-        for ch in 0..<channels {
-            let whiteVal = whiteSpectrum?[ch] ?? 1.0
-            let blackVal = blackSpectrum?[ch] ?? 0.0
-            let range = whiteVal - blackVal
-            let scale = range != 0 ? (targetMax - targetMin) / range : 1.0
-            
-            for h in 0..<height {
-                for w in 0..<width {
+        for h in 0..<height {
+            for w in 0..<width {
+                let destH: Int
+                let destW: Int
+                switch parameters.scanDirection {
+                case .topToBottom:
+                    destH = h
+                    destW = w
+                case .bottomToTop:
+                    destH = height - 1 - h
+                    destW = w
+                case .leftToRight:
+                    destH = w
+                    destW = h
+                case .rightToLeft:
+                    destH = w
+                    destW = height - 1 - h
+                }
+                
+                for ch in 0..<channels {
+                    let whiteVal: Double
+                    if canUseWhiteRef, let ref = whiteRef {
+                        whiteVal = ref.value(channel: ch, scanIndex: w)
+                    } else {
+                        whiteVal = whiteSpectrum?[ch] ?? 1.0
+                    }
+                    
+                    let blackVal: Double
+                    if canUseBlackRef, let ref = blackRef {
+                        blackVal = ref.value(channel: ch, scanIndex: w)
+                    } else {
+                        blackVal = blackSpectrum?[ch] ?? 0.0
+                    }
+                    
+                    let range = whiteVal - blackVal
+                    
                     var indices = [0, 0, 0]
                     indices[axes.channel] = ch
                     indices[axes.height] = h
@@ -1483,27 +1617,35 @@ class CubeCalibrator {
                     let srcIndex = cube.linearIndex(i0: indices[0], i1: indices[1], i2: indices[2])
                     let value = cube.getValue(at: srcIndex)
                     
-                    let calibrated: Double
-                    if range != 0 {
-                        calibrated = targetMin + (value - blackVal) * scale
+                    let normalized: Double
+                    if range > 0 {
+                        normalized = (value - blackVal) / range
                     } else {
-                        calibrated = value
+                        normalized = 0.0
                     }
                     
+                    let scaled = targetMin + normalized * (targetMax - targetMin)
+                    let clamped = max(targetMin, min(targetMax, scaled))
+                    
+                    var dstIndices = [0, 0, 0]
+                    dstIndices[axes.channel] = ch
+                    dstIndices[axes.height] = destH
+                    dstIndices[axes.width] = destW
+                    
                     let dstIndex = linearIndex(
-                        i0: indices[0],
-                        i1: indices[1],
-                        i2: indices[2],
-                        dims: dims,
+                        i0: dstIndices[0],
+                        i1: dstIndices[1],
+                        i2: dstIndices[2],
+                        dims: (newDims[0], newDims[1], newDims[2]),
                         fortran: cube.isFortranOrder
                     )
-                    resultData[dstIndex] = calibrated
+                    resultData[dstIndex] = clamped
                 }
             }
         }
         
         return HyperCube(
-            dims: dims,
+            dims: (newDims[0], newDims[1], newDims[2]),
             storage: .float64(resultData),
             sourceFormat: cube.sourceFormat,
             isFortranOrder: cube.isFortranOrder,
