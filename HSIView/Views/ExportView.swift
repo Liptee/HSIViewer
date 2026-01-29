@@ -8,6 +8,7 @@ struct PendingExportInfo: Equatable {
     let matVariableName: String?
     let matWavelengthsAsVariable: Bool
     let colorSynthesisConfig: ColorSynthesisConfig?
+    let tiffEnviCompatible: Bool
 }
 
 enum ExportFormat: String, CaseIterable, Identifiable {
@@ -68,6 +69,7 @@ struct ExportView: View {
     @State private var exportError: String?
     @State private var maskExportColored: Bool = false
     @State private var maskVariableName: String = "mask"
+    @State private var tiffEnviCompatible: Bool = false
     
     private var defaultExportBaseName: String {
         state.defaultExportBaseName
@@ -135,6 +137,10 @@ struct ExportView: View {
             matOptionsSection
         }
         
+        if selectedFormat == .tiff {
+            tiffOptionsSection
+        }
+        
         if selectedFormat == .quickPNG {
             colorSynthesisSection
         }
@@ -144,6 +150,32 @@ struct ExportView: View {
         }
         
         cubeInfoSection
+    }
+    
+    private var tiffOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Параметры TIFF:")
+                .font(.system(size: 11, weight: .semibold))
+            
+            Toggle(isOn: $tiffEnviCompatible) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 11))
+                    Text("Совместимость с ENVI (многоканальный TIFF)")
+                        .font(.system(size: 11, weight: .medium))
+                }
+            }
+            
+            infoBox(
+                icon: "info.circle",
+                text: tiffEnviCompatible
+                    ? "Файл будет сохранён как один TIFF с interleaved каналами (Photometric: minisblack, PlanarConfig: contig)."
+                    : "По умолчанию каждый канал экспортируется отдельным кадром TIFF."
+            )
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(8)
     }
     
     @ViewBuilder
@@ -654,7 +686,8 @@ struct ExportView: View {
                 mapping: state.colorSynthesisConfig.mapping,
                 pcaConfig: state.colorSynthesisConfig.pcaConfig
             )
-            : nil
+            : nil,
+            tiffEnviCompatible: selectedFormat == .tiff ? tiffEnviCompatible : false
         )
         dismiss()
         // Даем модальному окну закрыться, прежде чем показывать системную панель выбора пути

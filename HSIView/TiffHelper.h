@@ -17,6 +17,7 @@ typedef struct {
 
 bool load_tiff_cube(const char *path, TiffCube3D *outCube);
 void free_tiff_cube(TiffCube3D *cube);
+bool write_tiff_cube_contig(const char *path, const void *data, size_t width, size_t height, size_t samplesPerPixel, int bitsPerSample);
 
 #ifdef __cplusplus
 }

@@ -229,3 +229,52 @@ void free_tiff_cube(TiffCube3D *cube) {
         cube->data = NULL;
     }
 }
+
+bool write_tiff_cube_contig(const char *path, const void *data, size_t width, size_t height, size_t samplesPerPixel, int bitsPerSample) {
+    if (!path || !data || width == 0 || height == 0 || samplesPerPixel == 0) {
+        return false;
+    }
+    
+    if (bitsPerSample != 8 && bitsPerSample != 16) {
+        return false;
+    }
+    
+    if (samplesPerPixel > 65535) {
+        return false;
+    }
+    
+    TIFF *tif = TIFFOpen(path, "w");
+    if (!tif) {
+        return false;
+    }
+    
+    TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, (uint32)width);
+    TIFFSetField(tif, TIFFTAG_IMAGELENGTH, (uint32)height);
+    TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, (uint16)samplesPerPixel);
+    TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, (uint16)bitsPerSample);
+    TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+    TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+    TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT);
+    TIFFSetField(tif, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+    
+    tsize_t rowBytes = (tsize_t)(width * samplesPerPixel * (size_t)(bitsPerSample / 8));
+    if (rowBytes <= 0) {
+        TIFFClose(tif);
+        return false;
+    }
+    
+    uint32 rowsPerStrip = TIFFDefaultStripSize(tif, rowBytes);
+    TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, rowsPerStrip);
+    
+    const uint8 *bytes = (const uint8 *)data;
+    for (uint32 row = 0; row < (uint32)height; ++row) {
+        const uint8 *rowPtr = bytes + (tsize_t)row * rowBytes;
+        if (TIFFWriteScanline(tif, (tdata_t)rowPtr, row, 0) < 0) {
+            TIFFClose(tif);
+            return false;
+        }
+    }
+    
+    TIFFClose(tif);
+    return true;
+}
