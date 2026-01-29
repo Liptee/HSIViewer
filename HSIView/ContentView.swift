@@ -262,7 +262,8 @@ struct ContentView: View {
                     wavelengths: exportInfo.wavelengths,
                     matVariableName: exportInfo.matVariableName,
                     matWavelengthsAsVariable: exportInfo.matWavelengthsAsVariable,
-                    colorSynthesisConfig: exportInfo.colorSynthesisConfig
+                    colorSynthesisConfig: exportInfo.colorSynthesisConfig,
+                    tiffEnviCompatible: exportInfo.tiffEnviCompatible
                 )
                 state.pendingExport = nil
             }
@@ -290,7 +291,7 @@ struct ContentView: View {
         }
     }
     
-    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?) {
+    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?, tiffEnviCompatible: Bool) {
         if state.exportEntireLibrary {
             guard !state.libraryEntries.isEmpty else { return }
             
@@ -312,7 +313,8 @@ struct ContentView: View {
                 wavelengths: wavelengths,
                 matVariableName: matVariableName,
                 matWavelengthsAsVariable: matWavelengthsAsVariable,
-                colorSynthesisConfig: colorSynthesisConfig
+                colorSynthesisConfig: colorSynthesisConfig,
+                tiffEnviCompatible: tiffEnviCompatible
             )
             return
         }
@@ -418,7 +420,13 @@ struct ContentView: View {
                         wavelengthsAsVariable: matWavelengthsAsVariable
                     )
                 case .tiff:
-                    result = TiffExporter.export(cube: cube, to: saveURL, wavelengths: wavelengthsToExport, layout: currentLayout)
+                    result = TiffExporter.export(
+                        cube: cube,
+                        to: saveURL,
+                        wavelengths: wavelengthsToExport,
+                        layout: currentLayout,
+                        enviCompatible: tiffEnviCompatible
+                    )
                 case .quickPNG:
                     result = QuickPNGExporter.export(
                         cube: cube,
@@ -445,7 +453,7 @@ struct ContentView: View {
         }
     }
     
-    private func exportLibraryEntries(to destinationFolder: URL, format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?) {
+    private func exportLibraryEntries(to destinationFolder: URL, format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?, tiffEnviCompatible: Bool) {
         let entries = state.libraryEntries
         guard !entries.isEmpty else { return }
         let includeWavelengths = wavelengths
@@ -485,7 +493,13 @@ struct ContentView: View {
                         )
                     case .tiff:
                         let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension("tiff")
-                        result = TiffExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)
+                        result = TiffExporter.export(
+                            cube: payload.cube,
+                            to: target,
+                            wavelengths: wavelengthsToExport,
+                            layout: payload.layout,
+                            enviCompatible: tiffEnviCompatible
+                        )
                     case .pngChannels:
                         let target = destinationFolder.appendingPathComponent(baseName)
                         result = PngChannelsExporter.export(cube: payload.cube, to: target, wavelengths: wavelengthsToExport, layout: payload.layout)

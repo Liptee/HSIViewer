@@ -3,7 +3,7 @@ import CoreGraphics
 import ImageIO
 
 class TiffExporter {
-    static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?, layout: CubeLayout = .auto) -> Result<Void, Error> {
+    static func export(cube: HyperCube, to url: URL, wavelengths: [Double]?, layout: CubeLayout = .auto, enviCompatible: Bool = false) -> Result<Void, Error> {
         print("TiffExporter: Starting export to \(url.path)")
         print("TiffExporter: Cube dims: \(cube.dims), dataType: \(cube.originalDataType), layout: \(layout)")
         
@@ -15,7 +15,11 @@ class TiffExporter {
         print("TiffExporter: Cube prepared, storage type: \(type(of: preparedCube.storage))")
         
         do {
-            try exportAsTIFF(cube: preparedCube, to: url, layout: layout)
+            if enviCompatible {
+                try exportAsENVICompatibleTIFF(cube: preparedCube, to: url, layout: layout)
+            } else {
+                try exportAsTIFF(cube: preparedCube, to: url, layout: layout)
+            }
             print("TiffExporter: Export completed successfully")
             
             if let wavelengths = wavelengths, !wavelengths.isEmpty {
@@ -143,6 +147,106 @@ class TiffExporter {
         
         guard CGImageDestinationFinalize(destination) else {
             throw ExportError.writeError("Не удалось записать TIFF")
+        }
+    }
+
+    private static func exportAsENVICompatibleTIFF(cube: HyperCube, to url: URL, layout: CubeLayout) throws {
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: layout) else {
+            print("TiffExporter: Failed to get axes for layout \(layout)")
+            throw ExportError.invalidData
+        }
+        
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        
+        print("TiffExporter: ENVI export \(channels) channels, size: \(width)x\(height)")
+        
+        func linearIndex(channel: Int, row: Int, col: Int) -> Int {
+            var i0 = 0
+            var i1 = 0
+            var i2 = 0
+            
+            switch axes.channel {
+            case 0: i0 = channel
+            case 1: i1 = channel
+            default: i2 = channel
+            }
+            
+            switch axes.height {
+            case 0: i0 = row
+            case 1: i1 = row
+            default: i2 = row
+            }
+            
+            switch axes.width {
+            case 0: i0 = col
+            case 1: i1 = col
+            default: i2 = col
+            }
+            
+            return cube.linearIndex(i0: i0, i1: i1, i2: i2)
+        }
+        
+        switch cube.storage {
+        case .uint8(let arr):
+            var interleaved = [UInt8](repeating: 0, count: width * height * channels)
+            for row in 0..<height {
+                for col in 0..<width {
+                    let base = (row * width + col) * channels
+                    for channel in 0..<channels {
+                        let idx = linearIndex(channel: channel, row: row, col: col)
+                        interleaved[base + channel] = arr[idx]
+                    }
+                }
+            }
+            
+            let ok = interleaved.withUnsafeBytes { rawBuffer -> Bool in
+                guard let baseAddress = rawBuffer.baseAddress else { return false }
+                return write_tiff_cube_contig(
+                    url.path,
+                    baseAddress,
+                    width,
+                    height,
+                    channels,
+                    Int32(8)
+                )
+            }
+            
+            if !ok {
+                throw ExportError.writeError("Не удалось записать TIFF (ENVI)")
+            }
+        case .uint16(let arr):
+            var interleaved = [UInt16](repeating: 0, count: width * height * channels)
+            for row in 0..<height {
+                for col in 0..<width {
+                    let base = (row * width + col) * channels
+                    for channel in 0..<channels {
+                        let idx = linearIndex(channel: channel, row: row, col: col)
+                        interleaved[base + channel] = arr[idx]
+                    }
+                }
+            }
+            
+            let ok = interleaved.withUnsafeBytes { rawBuffer -> Bool in
+                guard let baseAddress = rawBuffer.baseAddress else { return false }
+                return write_tiff_cube_contig(
+                    url.path,
+                    baseAddress,
+                    width,
+                    height,
+                    channels,
+                    Int32(16)
+                )
+            }
+            
+            if !ok {
+                throw ExportError.writeError("Не удалось записать TIFF (ENVI)")
+            }
+        default:
+            throw ExportError.unsupportedDataType
         }
     }
     
