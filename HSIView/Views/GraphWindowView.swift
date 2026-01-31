@@ -169,7 +169,6 @@ struct GraphWindowView: View {
     @State private var yMax: Double = 1
     
     @State private var showLibraryPanel: Bool = true
-    @State private var includeCurrentImage: Bool = true
     
     init(spectrumCache: LibrarySpectrumCache) {
         self._spectrumCache = ObservedObject(wrappedValue: spectrumCache)
@@ -224,6 +223,9 @@ struct GraphWindowView: View {
                 updateAxisBounds()
             }
         }
+        .onChange(of: state.libraryEntries) { _ in
+            pruneVisibleEntries()
+        }
     }
     
     private var libraryPanel: some View {
@@ -252,13 +254,13 @@ struct GraphWindowView: View {
                 
                 HStack(spacing: 8) {
                     Button("Показать все") {
-                        spectrumCache.showAll()
+                        showAllSources()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     
                     Button("Скрыть все") {
-                        spectrumCache.hideAll()
+                        hideAllSources()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -268,20 +270,13 @@ struct GraphWindowView: View {
                 
                 Divider()
                 
-                Toggle("Текущее изображение", isOn: $includeCurrentImage)
-                    .font(.system(size: 11))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                
-                Divider()
-                
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(spectrumCache.nonEmptyEntries) { entry in
+                        ForEach(state.libraryEntries) { entry in
                             libraryEntryRow(entry: entry)
                         }
                         
-                        if spectrumCache.nonEmptyEntries.isEmpty {
+                        if state.libraryEntries.isEmpty {
                             VStack(spacing: 8) {
                                 Image(systemName: "tray")
                                     .font(.system(size: 24))
@@ -304,12 +299,15 @@ struct GraphWindowView: View {
         }
     }
     
-    private func libraryEntryRow(entry: LibrarySpectrumEntry) -> some View {
+    private func libraryEntryRow(entry: CubeLibraryEntry) -> some View {
+        let counts = sampleCounts(for: entry)
+        let hasSamples = counts.spectrum > 0 || counts.roi > 0
         let isVisible = spectrumCache.visibleEntries.contains(entry.id)
-        let isCurrentImage = entry.libraryID == state.cubeURL?.standardizedFileURL.path
+        let isCurrentImage = entry.canonicalPath == state.cubeURL?.standardizedFileURL.path
         
         return HStack(spacing: 8) {
             Button {
+                guard hasSamples else { return }
                 spectrumCache.toggleVisibility(libraryID: entry.id)
             } label: {
                 Image(systemName: isVisible ? "checkmark.circle.fill" : "circle")
@@ -317,6 +315,7 @@ struct GraphWindowView: View {
                     .foregroundColor(isVisible ? .accentColor : .secondary)
             }
             .buttonStyle(.plain)
+            .disabled(!hasSamples)
             
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -332,13 +331,18 @@ struct GraphWindowView: View {
                 }
                 
                 HStack(spacing: 8) {
-                    if !entry.spectrumSamples.isEmpty {
-                        Label("\(entry.spectrumSamples.count)", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    if counts.spectrum > 0 {
+                        Label("\(counts.spectrum)", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
-                    if !entry.roiSamples.isEmpty {
-                        Label("\(entry.roiSamples.count)", systemImage: "rectangle.dashed")
+                    if counts.roi > 0 {
+                        Label("\(counts.roi)", systemImage: "rectangle.dashed")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                    if !hasSamples {
+                        Text("Нет данных")
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
@@ -349,7 +353,7 @@ struct GraphWindowView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(isVisible ? Color.accentColor.opacity(0.1) : Color.clear)
+        .background(isVisible && hasSamples ? Color.accentColor.opacity(0.1) : Color.clear)
         .cornerRadius(6)
     }
     
@@ -494,8 +498,7 @@ struct GraphWindowView: View {
                     
                     Spacer()
                     
-                    let sourceCount = (includeCurrentImage ? 1 : 0) + spectrumCache.visibleEntries.count
-                    Text("\(series.count) серий из \(sourceCount) источн.")
+                    Text("\(series.count) серий из \(visibleSourceCount) источн.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     
@@ -950,66 +953,93 @@ struct GraphWindowView: View {
     private var series: [GraphSeries] {
         var result: [GraphSeries] = []
         let currentImageID = state.cubeURL?.standardizedFileURL.path
+        let visibleIDs = spectrumCache.visibleEntries
         
-        if includeCurrentImage {
+        for entry in state.libraryEntries where visibleIDs.contains(entry.id) {
+            let isCurrent = entry.canonicalPath == currentImageID
             switch dataset {
             case .points:
-                result += state.spectrumSamples.map {
-                    GraphSeries(
-                        id: $0.id,
-                        title: $0.displayName ?? "(\($0.pixelX), \($0.pixelY))",
-                        values: $0.values,
-                        wavelengths: $0.wavelengths,
-                        defaultColor: Color($0.nsColor),
-                        sourceName: state.cubeURL?.lastPathComponent
-                    )
+                if isCurrent {
+                    result += state.spectrumSamples.map {
+                        GraphSeries(
+                            id: $0.id,
+                            title: $0.displayName ?? "(\($0.pixelX), \($0.pixelY))",
+                            values: $0.values,
+                            wavelengths: $0.wavelengths,
+                            defaultColor: Color($0.nsColor),
+                            sourceName: entry.fileName
+                        )
+                    }
+                } else if let cached = spectrumCache.entries[entry.id]?.spectrumSamples {
+                    result += cached.map { sample in
+                        GraphSeries(
+                            id: sample.id,
+                            title: sample.effectiveName,
+                            values: sample.values,
+                            wavelengths: sample.wavelengths,
+                            defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
+                            sourceName: entry.fileName
+                        )
+                    }
                 }
             case .roi:
-                result += state.roiSamples.map {
-                    GraphSeries(
-                        id: $0.id,
-                        title: $0.displayName ?? "ROI (\($0.rect.minX), \($0.rect.minY))",
-                        values: $0.values,
-                        wavelengths: $0.wavelengths,
-                        defaultColor: Color($0.nsColor),
-                        sourceName: state.cubeURL?.lastPathComponent
-                    )
+                if isCurrent {
+                    result += state.roiSamples.map {
+                        GraphSeries(
+                            id: $0.id,
+                            title: $0.displayName ?? "ROI (\($0.rect.minX), \($0.rect.minY))",
+                            values: $0.values,
+                            wavelengths: $0.wavelengths,
+                            defaultColor: Color($0.nsColor),
+                            sourceName: entry.fileName
+                        )
+                    }
+                } else if let cached = spectrumCache.entries[entry.id]?.roiSamples {
+                    result += cached.map { sample in
+                        GraphSeries(
+                            id: sample.id,
+                            title: sample.effectiveName,
+                            values: sample.values,
+                            wavelengths: sample.wavelengths,
+                            defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
+                            sourceName: entry.fileName
+                        )
+                    }
                 }
-            }
-        }
-        
-        switch dataset {
-        case .points:
-            let cached = spectrumCache.visibleSpectrumSamples()
-                .filter { $0.sourceLibraryID != currentImageID }
-            result += cached.map { sample in
-                let entry = spectrumCache.entries[sample.sourceLibraryID]
-                return GraphSeries(
-                    id: sample.id,
-                    title: sample.effectiveName,
-                    values: sample.values,
-                    wavelengths: sample.wavelengths,
-                    defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
-                    sourceName: entry?.fileName
-                )
-            }
-        case .roi:
-            let cached = spectrumCache.visibleROISamples()
-                .filter { $0.sourceLibraryID != currentImageID }
-            result += cached.map { sample in
-                let entry = spectrumCache.entries[sample.sourceLibraryID]
-                return GraphSeries(
-                    id: sample.id,
-                    title: sample.effectiveName,
-                    values: sample.values,
-                    wavelengths: sample.wavelengths,
-                    defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
-                    sourceName: entry?.fileName
-                )
             }
         }
         
         return result
+    }
+
+    private func sampleCounts(for entry: CubeLibraryEntry) -> (spectrum: Int, roi: Int) {
+        let isCurrent = entry.canonicalPath == state.cubeURL?.standardizedFileURL.path
+        if isCurrent {
+            return (state.spectrumSamples.count, state.roiSamples.count)
+        }
+        if let cached = spectrumCache.entries[entry.id] {
+            return (cached.spectrumSamples.count, cached.roiSamples.count)
+        }
+        return (0, 0)
+    }
+    
+    private var visibleSourceCount: Int {
+        let visible = spectrumCache.visibleEntries
+        return state.libraryEntries.filter { entry in
+            visible.contains(entry.id) && (sampleCounts(for: entry).spectrum > 0 || sampleCounts(for: entry).roi > 0)
+        }.count
+    }
+    
+    private func showAllSources() {
+        let ids = state.libraryEntries.compactMap { entry -> String? in
+            let counts = sampleCounts(for: entry)
+            return (counts.spectrum > 0 || counts.roi > 0) ? entry.id : nil
+        }
+        spectrumCache.visibleEntries = Set(ids)
+    }
+    
+    private func hideAllSources() {
+        spectrumCache.visibleEntries.removeAll()
     }
     
     private func color(for series: GraphSeries) -> Color {
@@ -1039,6 +1069,11 @@ struct GraphWindowView: View {
     private func pruneColors() {
         let ids = Set(series.map(\.id))
         customColors = customColors.filter { ids.contains($0.key) }
+    }
+
+    private func pruneVisibleEntries() {
+        let existingIDs = Set(state.libraryEntries.map(\.id))
+        spectrumCache.visibleEntries = spectrumCache.visibleEntries.intersection(existingIDs)
     }
 
     private func toggleSeriesVisibility(id: UUID) {
