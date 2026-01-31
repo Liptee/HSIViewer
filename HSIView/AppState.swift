@@ -986,7 +986,11 @@ final class AppState: ObservableObject {
     
     func removeOperation(at index: Int) {
         guard index >= 0 && index < pipelineOperations.count else { return }
+        let removedType = pipelineOperations[index].type
         pipelineOperations.remove(at: index)
+        if removedType == .spectralTrim {
+            updateSpectralTrimRangeFromPipeline()
+        }
         if pipelineAutoApply {
             applyPipeline()
         }
@@ -1126,6 +1130,9 @@ final class AppState: ObservableObject {
             lastPipelineAppliedOperations = []
             lastPipelineResult = original
             lastPipelineBaseCubeID = original.id
+            updateWavelengthsFromPipelineResult()
+            updateSpectralTrimRangeFromPipeline()
+            updateChannelCount()
             return
         }
         
@@ -1275,7 +1282,7 @@ final class AppState: ObservableObject {
         if let index = pipelineOperations.firstIndex(where: { $0.type == .spectralTrim }) {
             pipelineOperations[index] = trimOp
         } else {
-            pipelineOperations.insert(trimOp, at: 0)
+            pipelineOperations.append(trimOp)
         }
         
         spectralTrimRange = absoluteRange
@@ -1802,7 +1809,7 @@ final class AppState: ObservableObject {
                 startChannel: range.lowerBound,
                 endChannel: range.upperBound
             )
-            pipelineOperations.insert(trimOp, at: 0)
+            pipelineOperations.append(trimOp)
             spectralTrimRange = range
         }
         
