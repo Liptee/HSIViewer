@@ -1226,219 +1226,220 @@ class CubeRotator {
         newDimsArray[axes.width] = newWidth
         let resultingDims = (newDimsArray[0], newDimsArray[1], newDimsArray[2])
         let totalElements = resultingDims.0 * resultingDims.1 * resultingDims.2
+        if totalElements == 0 {
+            return HyperCube(dims: resultingDims, storage: cube.storage, sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        }
         
         switch cube.storage {
         case .float64(let arr):
-            var newData = [Double](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
             
         case .float32(let arr):
-            var newData = [Float](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
             
         case .uint16(let arr):
-            var newData = [UInt16](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
             
         case .uint8(let arr):
-            var newData = [UInt8](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
             
         case .int16(let arr):
-            var newData = [Int16](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
             
         case .int32(let arr):
-            var newData = [Int32](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
             
         case .int8(let arr):
-            var newData = [Int8](repeating: 0, count: totalElements)
-            fillBuffer(
-                cube: cube,
+            let newData = rotateBuffer(
                 source: arr,
-                into: &newData,
                 axes: axes,
                 angle: angle,
                 channels: channels,
-                newDims: resultingDims,
+                oldHeight: oldHeight,
+                oldWidth: oldWidth,
                 newHeight: newHeight,
                 newWidth: newWidth,
-                oldHeight: oldHeight,
-                oldWidth: oldWidth
+                oldDims: (dims.0, dims.1, dims.2),
+                newDims: resultingDims,
+                fortran: cube.isFortranOrder
             )
             return HyperCube(dims: resultingDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
         }
     }
     
-    private static func fillBuffer<T>(
-        cube: HyperCube,
+    private static func rotateBuffer<T>(
         source: [T],
-        into buffer: inout [T],
         axes: (channel: Int, height: Int, width: Int),
         angle: RotationAngle,
         channels: Int,
-        newDims: (Int, Int, Int),
+        oldHeight: Int,
+        oldWidth: Int,
         newHeight: Int,
         newWidth: Int,
-        oldHeight: Int,
-        oldWidth: Int
-    ) {
-        for ch in 0..<channels {
-            for newY in 0..<newHeight {
-                for newX in 0..<newWidth {
-                    let (src0, src1, src2) = rotatedSourceCoords(
-                        channel: ch,
-                        newY: newY,
-                        newX: newX,
-                        axes: axes,
-                        angle: angle,
-                        oldHeight: oldHeight,
-                        oldWidth: oldWidth
-                    )
-                    
-                    var dstCoord = [0, 0, 0]
-                    dstCoord[axes.channel] = ch
-                    dstCoord[axes.height] = newY
-                    dstCoord[axes.width] = newX
-                    
-                    let srcIndex = cube.linearIndex(i0: src0, i1: src1, i2: src2)
-                    let dstIndex = linearIndex(
-                        i0: dstCoord[0],
-                        i1: dstCoord[1],
-                        i2: dstCoord[2],
-                        dims: newDims,
-                        fortran: cube.isFortranOrder
-                    )
-                    
-                    buffer[dstIndex] = source[srcIndex]
+        oldDims: (Int, Int, Int),
+        newDims: (Int, Int, Int),
+        fortran: Bool
+    ) -> [T] {
+        let totalElements = newDims.0 * newDims.1 * newDims.2
+        if totalElements == 0 { return [] }
+        guard let first = source.first else { return [] }
+        var buffer = [T](repeating: first, count: totalElements)
+        
+        let oldStrides = strides(for: oldDims, fortran: fortran)
+        let newStrides = strides(for: newDims, fortran: fortran)
+        
+        let channelStrideOld = oldStrides[axes.channel]
+        let heightStrideOld = oldStrides[axes.height]
+        let widthStrideOld = oldStrides[axes.width]
+        
+        let channelStrideNew = newStrides[axes.channel]
+        let heightStrideNew = newStrides[axes.height]
+        let widthStrideNew = newStrides[axes.width]
+        
+        source.withUnsafeBufferPointer { src in
+            buffer.withUnsafeMutableBufferPointer { dst in
+                switch angle {
+                case .degree180:
+                    for ch in 0..<channels {
+                        let srcChannelBase = ch * channelStrideOld
+                        let dstChannelBase = ch * channelStrideNew
+                        for newY in 0..<newHeight {
+                            let oldY = oldHeight - 1 - newY
+                            let srcRowBase = srcChannelBase + oldY * heightStrideOld + (oldWidth - 1) * widthStrideOld
+                            let dstRowBase = dstChannelBase + newY * heightStrideNew
+                            var srcIndex = srcRowBase
+                            var dstIndex = dstRowBase
+                            for _ in 0..<newWidth {
+                                dst[dstIndex] = src[srcIndex]
+                                srcIndex -= widthStrideOld
+                                dstIndex += widthStrideNew
+                            }
+                        }
+                    }
+                case .degree90:
+                    for ch in 0..<channels {
+                        let srcChannelBase = ch * channelStrideOld
+                        let dstChannelBase = ch * channelStrideNew
+                        for newY in 0..<newHeight {
+                            let oldX = newY
+                            let srcRowBase = srcChannelBase + oldX * widthStrideOld + (oldHeight - 1) * heightStrideOld
+                            let dstRowBase = dstChannelBase + newY * heightStrideNew
+                            var srcIndex = srcRowBase
+                            var dstIndex = dstRowBase
+                            for _ in 0..<newWidth {
+                                dst[dstIndex] = src[srcIndex]
+                                srcIndex -= heightStrideOld
+                                dstIndex += widthStrideNew
+                            }
+                        }
+                    }
+                case .degree270:
+                    for ch in 0..<channels {
+                        let srcChannelBase = ch * channelStrideOld
+                        let dstChannelBase = ch * channelStrideNew
+                        for newY in 0..<newHeight {
+                            let oldX = oldWidth - 1 - newY
+                            let srcRowBase = srcChannelBase + oldX * widthStrideOld
+                            let dstRowBase = dstChannelBase + newY * heightStrideNew
+                            var srcIndex = srcRowBase
+                            var dstIndex = dstRowBase
+                            for _ in 0..<newWidth {
+                                dst[dstIndex] = src[srcIndex]
+                                srcIndex += heightStrideOld
+                                dstIndex += widthStrideNew
+                            }
+                        }
+                    }
                 }
             }
         }
+        
+        return buffer
     }
     
-    private static func rotatedSourceCoords(
-        channel: Int,
-        newY: Int,
-        newX: Int,
-        axes: (channel: Int, height: Int, width: Int),
-        angle: RotationAngle,
-        oldHeight: Int,
-        oldWidth: Int
-    ) -> (Int, Int, Int) {
-        let oldY: Int
-        let oldX: Int
-        
-        switch angle {
-        case .degree90:
-            oldY = oldHeight - 1 - newX
-            oldX = newY
-        case .degree180:
-            oldY = oldHeight - 1 - newY
-            oldX = oldWidth - 1 - newX
-        case .degree270:
-            oldY = newX
-            oldX = oldWidth - 1 - newY
-        }
-        
-        var coord = [0, 0, 0]
-        coord[axes.channel] = channel
-        coord[axes.height] = oldY
-        coord[axes.width] = oldX
-        
-        return (coord[0], coord[1], coord[2])
-    }
-    
-    private static func linearIndex(
-        i0: Int,
-        i1: Int,
-        i2: Int,
-        dims: (Int, Int, Int),
-        fortran: Bool
-    ) -> Int {
+    private static func strides(for dims: (Int, Int, Int), fortran: Bool) -> [Int] {
         if fortran {
-            return i0 + dims.0 * (i1 + dims.1 * i2)
-        } else {
-            return i2 + dims.2 * (i1 + dims.1 * i0)
+            return [1, dims.0, dims.0 * dims.1]
         }
+        return [dims.1 * dims.2, dims.2, 1]
     }
 }
 
