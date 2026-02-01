@@ -96,6 +96,11 @@ struct HSIViewApp: App {
                     GraphWindowManager.shared.show(appState: appState)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+                
+                Divider()
+                Button("Управление доступами…") {
+                    appState.showAccessManager = true
+                }
             }
         }
     }

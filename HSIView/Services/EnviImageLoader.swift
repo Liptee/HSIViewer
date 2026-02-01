@@ -22,6 +22,12 @@ class EnviImageLoader: ImageLoader {
         
         var isGranted = false
         
+        let tryBookmark = {
+            if SecurityScopedBookmarkStore.shared.startAccessingIfPossible(url: directory) {
+                isGranted = true
+            }
+        }
+        
         let showPanel = {
             let panel = NSOpenPanel()
             panel.message = "ENVI формат требует доступ к директории с парными файлами"
@@ -38,9 +44,17 @@ class EnviImageLoader: ImageLoader {
         }
         
         if Thread.isMainThread {
-            showPanel()
+            tryBookmark()
+            if !isGranted {
+                showPanel()
+            }
         } else {
-            DispatchQueue.main.sync(execute: showPanel)
+            DispatchQueue.main.sync {
+                tryBookmark()
+                if !isGranted {
+                    showPanel()
+                }
+            }
         }
         
         return isGranted
@@ -296,4 +310,3 @@ class EnviImageLoader: ImageLoader {
         }
     }
 }
-
