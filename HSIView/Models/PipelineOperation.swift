@@ -4,6 +4,7 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case normalization = "Нормализация"
     case channelwiseNormalization = "Поканальная нормализация"
     case dataTypeConversion = "Тип данных"
+    case clipping = "Клиппинг"
     case rotation = "Поворот"
     case resize = "Изменение размера"
     case spatialCrop = "Обрезка области"
@@ -22,6 +23,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "chart.bar.xaxis"
         case .dataTypeConversion:
             return "arrow.triangle.2.circlepath"
+        case .clipping:
+            return "arrow.up.and.down"
         case .rotation:
             return "rotate.right"
         case .resize:
@@ -47,6 +50,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "Применить нормализацию отдельно к каждому каналу"
         case .dataTypeConversion:
             return "Изменить тип данных"
+        case .clipping:
+            return "Ограничить значения диапазоном"
         case .rotation:
             return "Повернуть изображение на 90°, 180° или 270°"
         case .resize:
@@ -83,6 +88,13 @@ struct ResizeParameters: Equatable {
         lockAspectRatio: true,
         computePrecision: .float64
     )
+}
+
+struct ClippingParameters: Equatable {
+    var lower: Double
+    var upper: Double
+    
+    static let `default` = ClippingParameters(lower: 0.0, upper: 1.0)
 }
 
 enum ResizeAlgorithm: String, CaseIterable, Identifiable {
@@ -522,6 +534,7 @@ struct PipelineOperation: Identifiable, Equatable {
     var preserveDataType: Bool?
     var targetDataType: DataType?
     var autoScale: Bool?
+    var clippingParams: ClippingParameters?
     var rotationAngle: RotationAngle?
     var layout: CubeLayout = .auto
     var cropParameters: SpatialCropParameters?
@@ -542,6 +555,8 @@ struct PipelineOperation: Identifiable, Equatable {
             self.preserveDataType = true
         case .dataTypeConversion:
             self.autoScale = true
+        case .clipping:
+            self.clippingParams = .default
         case .rotation:
             self.rotationAngle = .degree90
         case .resize:
@@ -644,6 +659,8 @@ struct PipelineOperation: Identifiable, Equatable {
             return normalizationType?.rawValue ?? type.rawValue
         case .dataTypeConversion:
             return targetDataType?.rawValue ?? "Тип данных"
+        case .clipping:
+            return "Клиппинг"
         case .rotation:
             return "Поворот \(rotationAngle?.rawValue ?? "")"
         case .resize:
@@ -704,6 +721,11 @@ struct PipelineOperation: Identifiable, Equatable {
                 text += " (clamp)"
             }
             return text
+        case .clipping:
+            if let params = clippingParams {
+                return String(format: "[%.3f, %.3f]", params.lower, params.upper)
+            }
+            return "Настройте диапазон"
         case .rotation:
             return "По часовой стрелке"
         case .resize:
@@ -760,6 +782,10 @@ struct PipelineOperation: Identifiable, Equatable {
             guard let targetType = targetDataType,
                   let autoScale = autoScale else { return cube }
             return DataTypeConverter.convert(cube, to: targetType, autoScale: autoScale)
+            
+        case .clipping:
+            guard let params = clippingParams else { return cube }
+            return CubeClipper.clip(cube: cube, parameters: params, layout: layout)
             
         case .rotation:
             guard let angle = rotationAngle else { return cube }
@@ -1688,6 +1714,61 @@ class CubeCalibrator {
         } else {
             return i2 + dims.2 * (i1 + dims.1 * i0)
         }
+    }
+}
+
+class CubeClipper {
+    static func clip(cube: HyperCube, parameters: ClippingParameters, layout: CubeLayout) -> HyperCube? {
+        let lower = min(parameters.lower, parameters.upper)
+        let upper = max(parameters.lower, parameters.upper)
+        guard lower != -Double.infinity || upper != Double.infinity else { return cube }
+        
+        switch cube.storage {
+        case .float64(let arr):
+            let output = arr.map { min(upper, max(lower, $0)) }
+            return HyperCube(dims: cube.dims, storage: .float64(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .float32(let arr):
+            let lowerF = Float(lower)
+            let upperF = Float(upper)
+            let output = arr.map { min(upperF, max(lowerF, $0)) }
+            return HyperCube(dims: cube.dims, storage: .float32(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .uint16(let arr):
+            let bounds = intBounds(minValue: UInt16.min, maxValue: UInt16.max, lower: lower, upper: upper)
+            let output = arr.map { UInt16(clamping: Int64(clampInt(Double($0), bounds))) }
+            return HyperCube(dims: cube.dims, storage: .uint16(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .uint8(let arr):
+            let bounds = intBounds(minValue: UInt8.min, maxValue: UInt8.max, lower: lower, upper: upper)
+            let output = arr.map { UInt8(clamping: Int64(clampInt(Double($0), bounds))) }
+            return HyperCube(dims: cube.dims, storage: .uint8(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int16(let arr):
+            let bounds = intBounds(minValue: Int16.min, maxValue: Int16.max, lower: lower, upper: upper)
+            let output = arr.map { Int16(clamping: Int64(clampInt(Double($0), bounds))) }
+            return HyperCube(dims: cube.dims, storage: .int16(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int32(let arr):
+            let bounds = intBounds(minValue: Int32.min, maxValue: Int32.max, lower: lower, upper: upper)
+            let output = arr.map { Int32(clamping: Int64(clampInt(Double($0), bounds))) }
+            return HyperCube(dims: cube.dims, storage: .int32(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int8(let arr):
+            let bounds = intBounds(minValue: Int8.min, maxValue: Int8.max, lower: lower, upper: upper)
+            let output = arr.map { Int8(clamping: Int64(clampInt(Double($0), bounds))) }
+            return HyperCube(dims: cube.dims, storage: .int8(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        }
+    }
+    
+    private static func intBounds<T: FixedWidthInteger>(
+        minValue: T,
+        maxValue: T,
+        lower: Double,
+        upper: Double
+    ) -> (Double, Double) {
+        let lowerBound = Swift.max(lower, Double(minValue))
+        let upperBound = Swift.min(upper, Double(maxValue))
+        return (lowerBound, upperBound)
+    }
+    
+    private static func clampInt(_ value: Double, _ bounds: (Double, Double)) -> Double {
+        let (lower, upper) = bounds
+        return min(upper, max(lower, value))
     }
 }
 

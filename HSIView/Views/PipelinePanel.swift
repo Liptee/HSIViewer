@@ -398,6 +398,7 @@ struct OperationEditorView: View {
     @State private var localPreserveDataType: Bool = true
     @State private var localTargetDataType: DataType = .float64
     @State private var localAutoScale: Bool = true
+    @State private var localClippingParams: ClippingParameters = .default
     @State private var localRotationAngle: RotationAngle = .degree90
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
     @State private var localCalibrationParams: CalibrationParameters = .default
@@ -472,6 +473,8 @@ struct OperationEditorView: View {
         case .dataTypeConversion:
             localTargetDataType = op.targetDataType ?? state.cube?.originalDataType ?? .float64
             localAutoScale = op.autoScale ?? true
+        case .clipping:
+            localClippingParams = op.clippingParams ?? .default
         case .rotation:
             localRotationAngle = op.rotationAngle ?? .degree90
         case .spatialCrop:
@@ -506,6 +509,8 @@ struct OperationEditorView: View {
         case .dataTypeConversion:
             state.pipelineOperations[index].targetDataType = localTargetDataType
             state.pipelineOperations[index].autoScale = localAutoScale
+        case .clipping:
+            state.pipelineOperations[index].clippingParams = localClippingParams
         case .rotation:
             state.pipelineOperations[index].rotationAngle = localRotationAngle
         case .resize:
@@ -542,6 +547,8 @@ struct OperationEditorView: View {
             normalizationEditor(for: op)
         case .dataTypeConversion:
             dataTypeEditor(for: op)
+        case .clipping:
+            clippingEditor(for: op)
         case .rotation:
             rotationEditor(for: op)
         case .resize:
@@ -1461,6 +1468,39 @@ struct OperationEditorView: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func clippingEditor(for op: PipelineOperation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ограничение значений (clipping):")
+                .font(.system(size: 11, weight: .medium))
+            
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Нижний порог")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("0", value: $localClippingParams.lower, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Верхний порог")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("1", value: $localClippingParams.upper, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                }
+            }
+            
+            if localClippingParams.upper < localClippingParams.lower {
+                Text("Верхний порог меньше нижнего — значения будут поменяны местами при применении.")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
         }
     }
     
