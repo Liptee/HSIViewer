@@ -152,6 +152,7 @@ final class AppState: ObservableObject {
     @Published var graphWindowXMax: Double = 1000
     @Published var graphWindowYMin: Double = 0
     @Published var graphWindowYMax: Double = 1
+    @Published var showAccessManager: Bool = false
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
         .ndvi: (0, 0),
@@ -276,6 +277,7 @@ final class AppState: ObservableObject {
     }
     
     func open(url: URL) {
+        _ = SecurityScopedBookmarkStore.shared.startAccessingIfPossible(url: url)
         persistCurrentSession()
         let canonical = canonicalURL(url)
         cubeURL = canonical
