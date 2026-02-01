@@ -345,6 +345,7 @@ struct CalibrationParameters: Equatable {
     var scanDirection: CalibrationScanDirection = .topToBottom
     var targetMin: Double = 0.0
     var targetMax: Double = 1.0
+    var clampOutput: Bool = true
     
     var isConfigured: Bool {
         whiteSpectrum != nil || blackSpectrum != nil || whiteRef != nil || blackRef != nil
@@ -1552,8 +1553,10 @@ class CubeCalibrator {
         let blackSpectrum = parameters.blackSpectrum?.values
         let whiteRef = parameters.whiteRef
         let blackRef = parameters.blackRef
+        let hasWhite = whiteSpectrum != nil || whiteRef != nil
+        let hasBlack = blackSpectrum != nil || blackRef != nil
         
-        guard whiteSpectrum != nil || blackSpectrum != nil || whiteRef != nil || blackRef != nil else { return cube }
+        guard hasWhite || hasBlack else { return cube }
         
         if let white = whiteSpectrum, white.count != channels { return cube }
         if let black = blackSpectrum, black.count != channels { return cube }
@@ -1600,21 +1603,12 @@ class CubeCalibrator {
                 }
                 
                 for ch in 0..<channels {
-                    let whiteVal: Double
-                    if canUseWhiteRef, let ref = whiteRef {
-                        whiteVal = ref.value(channel: ch, scanIndex: w)
-                    } else {
-                        whiteVal = whiteSpectrum?[ch] ?? 1.0
-                    }
-                    
                     let blackVal: Double
                     if canUseBlackRef, let ref = blackRef {
                         blackVal = ref.value(channel: ch, scanIndex: w)
                     } else {
                         blackVal = blackSpectrum?[ch] ?? 0.0
                     }
-                    
-                    let range = whiteVal - blackVal
                     
                     var indices = [0, 0, 0]
                     indices[axes.channel] = ch
@@ -1624,15 +1618,37 @@ class CubeCalibrator {
                     let srcIndex = cube.linearIndex(i0: indices[0], i1: indices[1], i2: indices[2])
                     let value = cube.getValue(at: srcIndex)
                     
-                    let normalized: Double
-                    if range > 0 {
-                        normalized = (value - blackVal) / range
+                    let clamped: Double
+                    if hasWhite {
+                        let whiteVal: Double
+                        if canUseWhiteRef, let ref = whiteRef {
+                            whiteVal = ref.value(channel: ch, scanIndex: w)
+                        } else {
+                            whiteVal = whiteSpectrum?[ch] ?? 1.0
+                        }
+                        
+                        let range = whiteVal - blackVal
+                        let normalized: Double
+                        if range > 0 {
+                            normalized = (value - blackVal) / range
+                        } else {
+                            normalized = 0.0
+                        }
+                        
+                        let scaled = targetMin + normalized * (targetMax - targetMin)
+                        if parameters.clampOutput {
+                            clamped = max(targetMin, min(targetMax, scaled))
+                        } else {
+                            clamped = scaled
+                        }
                     } else {
-                        normalized = 0.0
+                        let adjusted = value - blackVal
+                        if parameters.clampOutput {
+                            clamped = max(targetMin, min(targetMax, adjusted))
+                        } else {
+                            clamped = adjusted
+                        }
                     }
-                    
-                    let scaled = targetMin + normalized * (targetMax - targetMin)
-                    let clamped = max(targetMin, min(targetMax, scaled))
                     
                     var dstIndices = [0, 0, 0]
                     dstIndices[axes.channel] = ch
