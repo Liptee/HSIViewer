@@ -32,33 +32,6 @@ private enum GraphWindowStyle: String, CaseIterable, Identifiable {
     }
 }
 
-private enum SeriesLinePattern: String, CaseIterable, Identifiable {
-    case solid
-    case dotted
-    case dashed
-    
-    var id: String { rawValue }
-    
-    var title: String {
-        switch self {
-        case .solid: return "Сплошная"
-        case .dotted: return "Точечная"
-        case .dashed: return "Пунктирная"
-        }
-    }
-    
-    func strokeStyle(lineWidth: Double) -> StrokeStyle {
-        switch self {
-        case .solid:
-            return StrokeStyle(lineWidth: lineWidth)
-        case .dotted:
-            return StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [1, 4])
-        case .dashed:
-            return StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [6, 4])
-        }
-    }
-}
-
 private enum GraphPalette: String, CaseIterable, Identifiable {
     case `default`
     case warm
@@ -87,25 +60,6 @@ private enum GraphPalette: String, CaseIterable, Identifiable {
         case .mono:
             return [.gray, .black, .secondary, .primary]
         }
-    }
-}
-
-private struct SeriesStyleOverride: Equatable {
-    var linePattern: SeriesLinePattern
-    var lineWidth: Double
-    var opacity: Double
-    var showPoints: Bool
-    
-    init(
-        linePattern: SeriesLinePattern = .solid,
-        lineWidth: Double = 1.5,
-        opacity: Double = 1.0,
-        showPoints: Bool = false
-    ) {
-        self.linePattern = linePattern
-        self.lineWidth = lineWidth
-        self.opacity = opacity
-        self.showPoints = showPoints
     }
 }
 
@@ -151,22 +105,113 @@ struct GraphWindowView: View {
     @ObservedObject private var spectrumCache: LibrarySpectrumCache
     
     @State private var dataset: GraphWindowDataset = .points
-    @State private var style: GraphWindowStyle = .linesAndPoints
-    @State private var palette: GraphPalette = .default
-    @State private var customColors: [UUID: Color] = [:]
-    @State private var hiddenSeriesIDs: Set<UUID> = []
-    @State private var seriesOverrides: [UUID: SeriesStyleOverride] = [:]
-    @State private var showLegend: Bool = true
-    @State private var showGrid: Bool = true
-    @State private var lineWidth: Double = 1.5
-    @State private var pointSize: Double = 24
+    private var style: GraphWindowStyle {
+        get { GraphWindowStyle(rawValue: state.graphWindowStyle) ?? .linesAndPoints }
+        nonmutating set { state.graphWindowStyle = newValue.rawValue }
+    }
     
-    @State private var autoScaleX: Bool = true
-    @State private var autoScaleY: Bool = true
-    @State private var xMin: Double = 0
-    @State private var xMax: Double = 1000
-    @State private var yMin: Double = 0
-    @State private var yMax: Double = 1
+    private var palette: GraphPalette {
+        get { GraphPalette(rawValue: state.graphWindowPalette) ?? .default }
+        nonmutating set { state.graphWindowPalette = newValue.rawValue }
+    }
+    
+    private var showLegend: Bool {
+        get { state.graphWindowShowLegend }
+        nonmutating set { state.graphWindowShowLegend = newValue }
+    }
+    
+    private var showGrid: Bool {
+        get { state.graphWindowShowGrid }
+        nonmutating set { state.graphWindowShowGrid = newValue }
+    }
+    
+    private var lineWidth: Double {
+        get { state.graphWindowLineWidth }
+        nonmutating set { state.graphWindowLineWidth = newValue }
+    }
+    
+    private var pointSize: Double {
+        get { state.graphWindowPointSize }
+        nonmutating set { state.graphWindowPointSize = newValue }
+    }
+    
+    private var autoScaleX: Bool {
+        get { state.graphWindowAutoScaleX }
+        nonmutating set { state.graphWindowAutoScaleX = newValue }
+    }
+    
+    private var autoScaleY: Bool {
+        get { state.graphWindowAutoScaleY }
+        nonmutating set { state.graphWindowAutoScaleY = newValue }
+    }
+    
+    private var xMin: Double {
+        get { state.graphWindowXMin }
+        nonmutating set { state.graphWindowXMin = newValue }
+    }
+    
+    private var xMax: Double {
+        get { state.graphWindowXMax }
+        nonmutating set { state.graphWindowXMax = newValue }
+    }
+    
+    private var yMin: Double {
+        get { state.graphWindowYMin }
+        nonmutating set { state.graphWindowYMin = newValue }
+    }
+    
+    private var yMax: Double {
+        get { state.graphWindowYMax }
+        nonmutating set { state.graphWindowYMax = newValue }
+    }
+    
+    private var styleBinding: Binding<GraphWindowStyle> {
+        Binding(get: { style }, set: { style = $0 })
+    }
+    
+    private var paletteBinding: Binding<GraphPalette> {
+        Binding(get: { palette }, set: { palette = $0 })
+    }
+    
+    private var showLegendBinding: Binding<Bool> {
+        Binding(get: { showLegend }, set: { showLegend = $0 })
+    }
+    
+    private var showGridBinding: Binding<Bool> {
+        Binding(get: { showGrid }, set: { showGrid = $0 })
+    }
+    
+    private var lineWidthBinding: Binding<Double> {
+        Binding(get: { lineWidth }, set: { lineWidth = $0 })
+    }
+    
+    private var pointSizeBinding: Binding<Double> {
+        Binding(get: { pointSize }, set: { pointSize = $0 })
+    }
+    
+    private var autoScaleXBinding: Binding<Bool> {
+        Binding(get: { autoScaleX }, set: { autoScaleX = $0 })
+    }
+    
+    private var autoScaleYBinding: Binding<Bool> {
+        Binding(get: { autoScaleY }, set: { autoScaleY = $0 })
+    }
+    
+    private var xMinBinding: Binding<Double> {
+        Binding(get: { xMin }, set: { xMin = $0 })
+    }
+    
+    private var xMaxBinding: Binding<Double> {
+        Binding(get: { xMax }, set: { xMax = $0 })
+    }
+    
+    private var yMinBinding: Binding<Double> {
+        Binding(get: { yMin }, set: { yMin = $0 })
+    }
+    
+    private var yMaxBinding: Binding<Double> {
+        Binding(get: { yMax }, set: { yMax = $0 })
+    }
     
     @State private var showLibraryPanel: Bool = true
     
@@ -208,17 +253,16 @@ struct GraphWindowView: View {
         }
         .frame(minWidth: showLibraryPanel ? 1100 : 900, minHeight: 560)
         .onAppear {
-            applyPalette()
+            pruneGraphSettings()
+            applyPaletteForMissing()
             updateAxisBounds()
         }
         .onChange(of: palette) { _ in
-            applyPalette()
+            applyPaletteForMissing()
         }
         .onChange(of: series) { _ in
-            pruneHiddenSeries()
-            pruneColors()
-            pruneOverrides()
-            applyPaletteIfNeeded()
+            pruneGraphSettings()
+            applyPaletteForMissing()
             if autoScaleX || autoScaleY {
                 updateAxisBounds()
             }
@@ -381,13 +425,13 @@ struct GraphWindowView: View {
                     }
                     
                     settingsSection("Отображение") {
-                        Picker("Стиль линий", selection: $style) {
+                        Picker("Стиль линий", selection: styleBinding) {
                             ForEach(GraphWindowStyle.allCases) { item in
                                 Text(item.title).tag(item)
                             }
                         }
                         
-                        Picker("Палитра", selection: $palette) {
+                        Picker("Палитра", selection: paletteBinding) {
                             ForEach(GraphPalette.allCases) { item in
                                 Text(item.title).tag(item)
                             }
@@ -400,7 +444,7 @@ struct GraphWindowView: View {
                                 .foregroundColor(.secondary)
                                 .font(.system(size: 10, design: .monospaced))
                         }
-                        Slider(value: $lineWidth, in: 0.5...4, step: 0.5)
+                        Slider(value: lineWidthBinding, in: 0.5...4, step: 0.5)
                         
                         if style == .linesAndPoints {
                             HStack {
@@ -410,12 +454,12 @@ struct GraphWindowView: View {
                                     .foregroundColor(.secondary)
                                     .font(.system(size: 10, design: .monospaced))
                             }
-                            Slider(value: $pointSize, in: 8...48, step: 4)
+                            Slider(value: pointSizeBinding, in: 8...48, step: 4)
                         }
                     }
                     
                     settingsSection("Ось X") {
-                        Toggle("Авто масштаб", isOn: $autoScaleX)
+                        Toggle("Авто масштаб", isOn: autoScaleXBinding)
                             .onChange(of: autoScaleX) { auto in
                                 if auto { updateAxisBounds() }
                             }
@@ -423,11 +467,11 @@ struct GraphWindowView: View {
                         if !autoScaleX {
                             HStack {
                                 Text("Мин")
-                                TextField("", value: $xMin, format: .number)
+                                TextField("", value: xMinBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
                                 Text("Макс")
-                                TextField("", value: $xMax, format: .number)
+                                TextField("", value: xMaxBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
                             }
@@ -436,7 +480,7 @@ struct GraphWindowView: View {
                     }
                     
                     settingsSection("Ось Y") {
-                        Toggle("Авто масштаб", isOn: $autoScaleY)
+                        Toggle("Авто масштаб", isOn: autoScaleYBinding)
                             .onChange(of: autoScaleY) { auto in
                                 if auto { updateAxisBounds() }
                             }
@@ -444,11 +488,11 @@ struct GraphWindowView: View {
                         if !autoScaleY {
                             HStack {
                                 Text("Мин")
-                                TextField("", value: $yMin, format: .number)
+                                TextField("", value: yMinBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
                                 Text("Макс")
-                                TextField("", value: $yMax, format: .number)
+                                TextField("", value: yMaxBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
                             }
@@ -457,8 +501,8 @@ struct GraphWindowView: View {
                     }
                     
                     settingsSection("Элементы") {
-                        Toggle("Показать легенду", isOn: $showLegend)
-                        Toggle("Показать сетку", isOn: $showGrid)
+                        Toggle("Показать легенду", isOn: showLegendBinding)
+                        Toggle("Показать сетку", isOn: showGridBinding)
                     }
                     
                     Spacer()
@@ -576,7 +620,7 @@ struct GraphWindowView: View {
                                 let colorBinding = Binding<Color>(
                                     get: { color(for: item) },
                                     set: { newColor in
-                                        customColors[item.id] = newColor
+                                        setCustomColor(newColor, for: item.id)
                                     }
                                 )
                                 HStack(spacing: 8) {
@@ -584,19 +628,19 @@ struct GraphWindowView: View {
                                         .labelsHidden()
                                         .frame(width: 28)
                                     Button(action: { toggleSeriesVisibility(id: item.id) }) {
-                                        Image(systemName: hiddenSeriesIDs.contains(item.id) ? "eye.slash" : "eye")
+                                        Image(systemName: state.graphSeriesHiddenIDs.contains(item.id) ? "eye.slash" : "eye")
                                             .font(.system(size: 11, weight: .semibold))
-                                            .foregroundColor(hiddenSeriesIDs.contains(item.id) ? .secondary : .primary)
+                                            .foregroundColor(state.graphSeriesHiddenIDs.contains(item.id) ? .secondary : .primary)
                                     }
                                     .buttonStyle(.plain)
                                     SeriesStyleButton(
                                         title: item.title,
                                         initialStyle: effectiveStyle(for: item),
                                         onSave: { newStyle in
-                                            seriesOverrides[item.id] = newStyle
+                                            state.graphSeriesOverrides[item.id] = newStyle
                                         },
                                         onReset: {
-                                            seriesOverrides[item.id] = nil
+                                            state.graphSeriesOverrides[item.id] = nil
                                         }
                                     )
                                     VStack(alignment: .leading, spacing: 2) {
@@ -1043,63 +1087,57 @@ struct GraphWindowView: View {
     }
     
     private func color(for series: GraphSeries) -> Color {
-        if let custom = customColors[series.id] {
-            return custom
+        if let custom = state.graphSeriesColors[series.id] {
+            return Color(custom)
         }
         return series.defaultColor
     }
     
-    private func applyPalette() {
+    private func applyPaletteForMissing() {
         guard !series.isEmpty else { return }
         let colors = palette.colors
         guard !colors.isEmpty else { return }
-        var mapping: [UUID: Color] = [:]
+        var mapping = state.graphSeriesColors
         for (idx, item) in series.enumerated() {
-            mapping[item.id] = colors[idx % colors.count]
+            if mapping[item.id] == nil {
+                mapping[item.id] = NSColor(colors[idx % colors.count])
+            }
         }
-        customColors = mapping
+        state.graphSeriesColors = mapping
     }
     
-    private func applyPaletteIfNeeded() {
-        if customColors.isEmpty {
-            applyPalette()
-        }
-    }
-    
-    private func pruneColors() {
-        let ids = Set(series.map(\.id))
-        customColors = customColors.filter { ids.contains($0.key) }
-    }
-
     private func pruneVisibleEntries() {
         let existingIDs = Set(state.libraryEntries.map(\.id))
         spectrumCache.visibleEntries = spectrumCache.visibleEntries.intersection(existingIDs)
     }
 
     private func toggleSeriesVisibility(id: UUID) {
-        if hiddenSeriesIDs.contains(id) {
-            hiddenSeriesIDs.remove(id)
+        if state.graphSeriesHiddenIDs.contains(id) {
+            state.graphSeriesHiddenIDs.remove(id)
         } else {
-            hiddenSeriesIDs.insert(id)
+            state.graphSeriesHiddenIDs.insert(id)
         }
     }
 
-    private func pruneHiddenSeries() {
-        let ids = Set(series.map(\.id))
-        hiddenSeriesIDs = hiddenSeriesIDs.intersection(ids)
-    }
-    
-    private func pruneOverrides() {
-        let ids = Set(series.map(\.id))
-        seriesOverrides = seriesOverrides.filter { ids.contains($0.key) }
+    private func pruneGraphSettings() {
+        let ids = knownSeriesIDs()
+        guard !ids.isEmpty else {
+            state.graphSeriesHiddenIDs.removeAll()
+            state.graphSeriesOverrides.removeAll()
+            state.graphSeriesColors.removeAll()
+            return
+        }
+        state.graphSeriesHiddenIDs = state.graphSeriesHiddenIDs.intersection(ids)
+        state.graphSeriesOverrides = state.graphSeriesOverrides.filter { ids.contains($0.key) }
+        state.graphSeriesColors = state.graphSeriesColors.filter { ids.contains($0.key) }
     }
 
     private var visibleSeries: [GraphSeries] {
-        series.filter { !hiddenSeriesIDs.contains($0.id) }
+        series.filter { !state.graphSeriesHiddenIDs.contains($0.id) }
     }
     
     private func effectiveStyle(for series: GraphSeries) -> SeriesStyleOverride {
-        if let override = seriesOverrides[series.id] {
+        if let override = state.graphSeriesOverrides[series.id] {
             return override
         }
         return SeriesStyleOverride(
@@ -1108,6 +1146,21 @@ struct GraphWindowView: View {
             opacity: 1.0,
             showPoints: style == .linesAndPoints
         )
+    }
+
+    private func knownSeriesIDs() -> Set<UUID> {
+        var ids = Set<UUID>()
+        ids.formUnion(state.spectrumSamples.map(\.id))
+        ids.formUnion(state.roiSamples.map(\.id))
+        for entry in spectrumCache.entries.values {
+            ids.formUnion(entry.spectrumSamples.map(\.id))
+            ids.formUnion(entry.roiSamples.map(\.id))
+        }
+        return ids
+    }
+    
+    private func setCustomColor(_ color: Color, for id: UUID) {
+        state.graphSeriesColors[id] = NSColor(color)
     }
     
     private func exportGraph(as format: GraphExportFormat, scale: CGFloat) {

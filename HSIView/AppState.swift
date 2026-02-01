@@ -137,6 +137,21 @@ final class AppState: ObservableObject {
     
     @Published var maskEditorState = MaskEditorState()
     @Published var librarySpectrumCache = LibrarySpectrumCache()
+    @Published var graphSeriesColors: [UUID: NSColor] = [:]
+    @Published var graphSeriesHiddenIDs: Set<UUID> = []
+    @Published var graphSeriesOverrides: [UUID: SeriesStyleOverride] = [:]
+    @Published var graphWindowPalette: String = "default"
+    @Published var graphWindowStyle: String = "linesAndPoints"
+    @Published var graphWindowShowLegend: Bool = true
+    @Published var graphWindowShowGrid: Bool = true
+    @Published var graphWindowLineWidth: Double = 1.5
+    @Published var graphWindowPointSize: Double = 24
+    @Published var graphWindowAutoScaleX: Bool = true
+    @Published var graphWindowAutoScaleY: Bool = true
+    @Published var graphWindowXMin: Double = 0
+    @Published var graphWindowXMax: Double = 1000
+    @Published var graphWindowYMin: Double = 0
+    @Published var graphWindowYMax: Double = 1
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
         .ndvi: (0, 0),
