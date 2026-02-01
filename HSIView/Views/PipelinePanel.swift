@@ -1812,6 +1812,9 @@ struct OperationEditorView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                 }
+                
+                Toggle("Ограничивать в диапазоне", isOn: $localCalibrationParams.clampOutput)
+                    .font(.system(size: 10))
             }
             
             if !localCalibrationParams.isConfigured {
