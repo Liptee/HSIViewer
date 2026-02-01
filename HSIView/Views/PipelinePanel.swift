@@ -1762,6 +1762,16 @@ struct OperationEditorView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Направление сканирования:")
                     .font(.system(size: 11, weight: .medium))
+
+                Toggle("Использовать параметры сканирования", isOn: $localCalibrationParams.useScanDirection)
+                    .font(.system(size: 10))
+                
+                if !localCalibrationParams.useScanDirection,
+                   localCalibrationParams.whiteRef != nil || localCalibrationParams.blackRef != nil {
+                    Text("REF файлы обнаружены — возможно, стоит включить параметры сканирования.")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
                 
                 Picker("", selection: $localCalibrationParams.scanDirection) {
                     ForEach(CalibrationScanDirection.allCases) { direction in
@@ -1770,6 +1780,7 @@ struct OperationEditorView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 420)
+                .disabled(!localCalibrationParams.useScanDirection)
                 
                 if let scanAxisSize,
                    (localCalibrationParams.whiteRef?.scanLength != nil || localCalibrationParams.blackRef?.scanLength != nil) {

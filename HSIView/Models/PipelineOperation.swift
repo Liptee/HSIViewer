@@ -341,7 +341,8 @@ struct CalibrationParameters: Equatable {
     var blackSpectrum: CalibrationSpectrum?
     var whiteRef: CalibrationRefData?
     var blackRef: CalibrationRefData?
-    var scanDirection: CalibrationScanDirection = .leftToRight
+    var useScanDirection: Bool = false
+    var scanDirection: CalibrationScanDirection = .topToBottom
     var targetMin: Double = 0.0
     var targetMax: Double = 1.0
     
@@ -1564,7 +1565,7 @@ class CubeCalibrator {
         let targetMin = parameters.targetMin
         let targetMax = parameters.targetMax
         
-        let swapSpatial = parameters.scanDirection == .leftToRight || parameters.scanDirection == .rightToLeft
+        let swapSpatial = parameters.useScanDirection && (parameters.scanDirection == .leftToRight || parameters.scanDirection == .rightToLeft)
         var newDims = [dims.0, dims.1, dims.2]
         if swapSpatial {
             newDims[axes.height] = width
@@ -1578,19 +1579,24 @@ class CubeCalibrator {
             for w in 0..<width {
                 let destH: Int
                 let destW: Int
-                switch parameters.scanDirection {
-                case .topToBottom:
+                if parameters.useScanDirection {
+                    switch parameters.scanDirection {
+                    case .topToBottom:
+                        destH = h
+                        destW = w
+                    case .bottomToTop:
+                        destH = height - 1 - h
+                        destW = w
+                    case .leftToRight:
+                        destH = w
+                        destW = h
+                    case .rightToLeft:
+                        destH = w
+                        destW = height - 1 - h
+                    }
+                } else {
                     destH = h
                     destW = w
-                case .bottomToTop:
-                    destH = height - 1 - h
-                    destW = w
-                case .leftToRight:
-                    destH = w
-                    destW = h
-                case .rightToLeft:
-                    destH = w
-                    destW = height - 1 - h
                 }
                 
                 for ch in 0..<channels {
