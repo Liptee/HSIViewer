@@ -162,6 +162,8 @@ final class AppState: ObservableObject {
     private var lastPipelineAppliedOperations: [PipelineOperation] = []
     private var lastPipelineResult: HyperCube?
     private var lastPipelineBaseCubeID: UUID?
+    private var pendingRestoreSpectrumDescriptors: [SpectrumSampleDescriptor]?
+    private var pendingRestoreROISampleDescriptors: [SpectrumROISampleDescriptor]?
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -1150,6 +1152,13 @@ final class AppState: ObservableObject {
             updateWavelengthsFromPipelineResult()
             updateSpectralTrimRangeFromPipeline()
             updateChannelCount()
+            if let descriptors = pendingRestoreSpectrumDescriptors,
+               let roiDescriptors = pendingRestoreROISampleDescriptors {
+                restoreSpectrumSamples(from: descriptors)
+                restoreROISamples(from: roiDescriptors)
+                pendingRestoreSpectrumDescriptors = nil
+                pendingRestoreROISampleDescriptors = nil
+            }
             return
         }
         
@@ -1178,6 +1187,13 @@ final class AppState: ObservableObject {
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
+                    if let descriptors = self.pendingRestoreSpectrumDescriptors,
+                       let roiDescriptors = self.pendingRestoreROISampleDescriptors {
+                        self.restoreSpectrumSamples(from: descriptors)
+                        self.restoreROISamples(from: roiDescriptors)
+                        self.pendingRestoreSpectrumDescriptors = nil
+                        self.pendingRestoreROISampleDescriptors = nil
+                    }
                     self.endBusy()
                 }
             }
@@ -1199,6 +1215,13 @@ final class AppState: ObservableObject {
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
+                    if let descriptors = self.pendingRestoreSpectrumDescriptors,
+                       let roiDescriptors = self.pendingRestoreROISampleDescriptors {
+                        self.restoreSpectrumSamples(from: descriptors)
+                        self.restoreROISamples(from: roiDescriptors)
+                        self.pendingRestoreSpectrumDescriptors = nil
+                        self.pendingRestoreROISampleDescriptors = nil
+                    }
                 self.endBusy()
                 }
             }
@@ -1847,15 +1870,21 @@ final class AppState: ObservableObject {
         if !pipelineOperations.isEmpty {
             spectrumRotationTurns = pipelineRotationTurns()
             spectrumSpatialSize = nil
+            pendingRestoreSpectrumDescriptors = snapshot.spectrumSamples
+            pendingRestoreROISampleDescriptors = snapshot.roiSamples
+            spectrumSpatialOps = spatialOperations(from: pipelineOperations)
+            spectrumSpatialBaseSize = spatialBaseSize()
             applyPipeline()
+        } else {
+            spectrumRotationTurns = pipelineRotationTurns()
+            if let cube = cube {
+                spectrumSpatialSize = cubeSpatialSize(for: cube)
+            }
+            restoreSpectrumSamples(from: snapshot.spectrumSamples)
+            restoreROISamples(from: snapshot.roiSamples)
+            pendingRestoreSpectrumDescriptors = nil
+            pendingRestoreROISampleDescriptors = nil
         }
-        
-        spectrumRotationTurns = pipelineRotationTurns()
-        if let cube = cube {
-            spectrumSpatialSize = cubeSpatialSize(for: cube)
-        }
-        restoreSpectrumSamples(from: snapshot.spectrumSamples)
-        restoreROISamples(from: snapshot.roiSamples)
     }
     
     private func applySnapshotWithoutTrim(_ snapshot: CubeSessionSnapshot) {
