@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
             guard oldValue != layout else { return }
             updateResolvedLayout()
             updateChannelCount()
+            refreshWavelengthsForLayoutChange()
         }
     }
     @Published var currentChannel: Double = 0
@@ -1272,6 +1273,26 @@ final class AppState: ObservableObject {
         } else {
             lambdaStep = ""
         }
+    }
+
+    private func refreshWavelengthsForLayoutChange() {
+        guard let cube else { return }
+        let count = cube.channelCount(for: activeLayout)
+        if let wl = wavelengths, wl.count == count {
+            updateLambdaRange(from: wl)
+            return
+        }
+        if let base = baseWavelengths, base.count == count {
+            wavelengths = base
+            updateLambdaRange(from: base)
+            return
+        }
+        if let wl = cube.wavelengths, wl.count == count {
+            wavelengths = wl
+            updateLambdaRange(from: wl)
+            return
+        }
+        lambdaStep = ""
     }
     
     func enterTrimMode() {

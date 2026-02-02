@@ -147,8 +147,12 @@ struct HyperCube {
             return dimsArr.min() ?? d0
         case .chw:
             return d0
+        case .hcw:
+            return d1
         case .hwc:
             return d2
+        case .wch:
+            return d1
         }
     }
     
@@ -167,8 +171,14 @@ struct HyperCube {
         case .chw:
             return (0, 1, 2)
             
+        case .hcw:
+            return (1, 0, 2)
+            
         case .hwc:
             return (2, 0, 1)
+            
+        case .wch:
+            return (1, 2, 0)
         }
     }
     
@@ -201,7 +211,9 @@ struct HyperCube {
 enum CubeLayout: String, CaseIterable, Identifiable {
     case auto = "Auto (min dim = C)"
     case chw  = "CHW"
+    case hcw  = "HCW"
     case hwc  = "HWC"
+    case wch  = "WCH"
     
     var id: String { rawValue }
 }
