@@ -142,7 +142,7 @@ final class AppState: ObservableObject {
     @Published var graphSeriesHiddenIDs: Set<UUID> = []
     @Published var graphSeriesOverrides: [UUID: SeriesStyleOverride] = [:]
     @Published var graphWindowPalette: String = "default"
-    @Published var graphWindowStyle: String = "linesAndPoints"
+    @Published var graphWindowStyle: String = "lines"
     @Published var graphWindowShowLegend: Bool = true
     @Published var graphWindowShowGrid: Bool = true
     @Published var graphWindowLineWidth: Double = 1.5

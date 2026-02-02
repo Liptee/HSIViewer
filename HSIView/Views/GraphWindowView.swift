@@ -106,7 +106,7 @@ struct GraphWindowView: View {
     
     @State private var dataset: GraphWindowDataset = .points
     private var style: GraphWindowStyle {
-        get { GraphWindowStyle(rawValue: state.graphWindowStyle) ?? .linesAndPoints }
+        get { GraphWindowStyle(rawValue: state.graphWindowStyle) ?? .lines }
         nonmutating set { state.graphWindowStyle = newValue.rawValue }
     }
     
