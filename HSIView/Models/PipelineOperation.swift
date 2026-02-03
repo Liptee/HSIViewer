@@ -843,6 +843,35 @@ struct PipelineOperation: Identifiable, Equatable {
 }
 
 extension PipelineOperation {
+    func clonedWithNewID() -> PipelineOperation {
+        var copy = PipelineOperation(type: type)
+        copy.normalizationType = normalizationType
+        copy.normalizationParams = normalizationParams
+        copy.preserveDataType = preserveDataType
+        copy.targetDataType = targetDataType
+        copy.autoScale = autoScale
+        copy.clippingParams = clippingParams
+        copy.rotationAngle = rotationAngle
+        copy.layout = layout
+        copy.cropParameters = cropParameters
+        copy.calibrationParams = calibrationParams
+        copy.resizeParameters = resizeParameters
+        copy.spectralTrimParams = spectralTrimParams
+        copy.spectralInterpolationParams = spectralInterpolationParams
+        if var alignment = spectralAlignmentParams {
+            alignment.cachedHomographies = nil
+            alignment.alignmentResult = nil
+            alignment.isComputed = false
+            if !alignment.shouldCompute {
+                alignment.shouldCompute = true
+            }
+            copy.spectralAlignmentParams = alignment
+        } else {
+            copy.spectralAlignmentParams = nil
+        }
+        return copy
+    }
+
     func isNoOp(for cube: HyperCube?, layout: CubeLayout) -> Bool {
         guard let cube else { return false }
         guard let axes = cube.axes(for: layout) ?? cube.axes(for: .auto) else { return false }
