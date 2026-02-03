@@ -30,6 +30,9 @@ struct PipelinePanel: View {
         }
         }
         .frame(width: 280)
+        .popover(isPresented: $showingAddMenu, arrowEdge: .trailing) {
+            addOperationMenu
+        }
         .sheet(item: $editingOperation) { operation in
             OperationEditorView(operation: $editingOperation)
                 .environmentObject(state)
@@ -62,11 +65,11 @@ struct PipelinePanel: View {
         .padding(20)
         .background(Color.clear)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            showingAddMenu = true
+        }
         .contextMenu {
-            Button("Вставить") {
-                state.pastePipelineOperation()
-            }
-            .disabled(state.pipelineOperationClipboard == nil)
+            pipelineContextMenu
         }
     }
     
@@ -81,6 +84,7 @@ struct PipelinePanel: View {
                         
                         OperationRow(
                             operation: operation,
+                            accent: accentColor(for: operation.type),
                             isSelected: selectedOperation == operation.id,
                             isDragging: draggingItem?.id == operation.id,
                             onSelect: { selectedOperation = operation.id },
@@ -94,6 +98,7 @@ struct PipelinePanel: View {
                         .draggable(operation.id.uuidString) {
                             OperationRow(
                                 operation: operation,
+                                accent: accentColor(for: operation.type),
                                 isSelected: true,
                                 isDragging: true,
                                 onSelect: {},
@@ -119,6 +124,10 @@ struct PipelinePanel: View {
                 if state.pipelineOperations.count > 0 {
                     Color.clear
                         .frame(height: 30)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            showingAddMenu = true
+                        }
                         .dropDestination(for: String.self) { items, location in
                             handleDrop(items: items, targetIndex: state.pipelineOperations.count, location: location)
                         } isTargeted: { isTargeted in
@@ -132,11 +141,13 @@ struct PipelinePanel: View {
             }
             .padding(8)
         }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            showingAddMenu = true
+        }
+        .background(Color.clear)
         .contextMenu {
-            Button("Вставить") {
-                state.pastePipelineOperation()
-            }
-            .disabled(state.pipelineOperationClipboard == nil)
+            pipelineContextMenu
         }
         .onDeleteCommand {
             if let selected = selectedOperation,
@@ -213,7 +224,7 @@ struct PipelinePanel: View {
                     HStack(spacing: 4) {
                         Image(systemName: state.pipelineAutoApply ? "bolt.fill" : "hand.raised.fill")
                             .font(.system(size: 10))
-                        Text(state.pipelineAutoApply ? "Авто" : "Ручной")
+                        Text(state.pipelineAutoApply ? "Автоматическое применение" : "Ручной")
                             .font(.system(size: 10, weight: .medium))
                     }
                 }
@@ -234,84 +245,211 @@ struct PipelinePanel: View {
                     .disabled(state.pipelineOperations.isEmpty)
                 }
             }
-            
-            HStack(spacing: 8) {
-                Button(action: { showingAddMenu.toggle() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Добавить")
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .popover(isPresented: $showingAddMenu, arrowEdge: .bottom) {
-                    addOperationMenu
-                }
-                
-                Button(action: { state.clearPipeline() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "trash")
-                        Text("Очистить")
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(state.pipelineOperations.isEmpty)
-            }
         }
         .padding(8)
     }
     
     private var addOperationMenu: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(PipelineOperationType.allCases) { type in
-                Button(action: {
-                    state.addOperation(type: type)
-                    showingAddMenu = false
-                }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: type.iconName)
-                            .frame(width: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(type.rawValue)
-                                .font(.system(size: 11, weight: .medium))
-                            Text(type.description)
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .background(Color(NSColor.controlBackgroundColor).opacity(0.01))
-                .onHover { isHovered in
-                    if isHovered {
-                        NSCursor.pointingHand.push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-                
-                if type != PipelineOperationType.allCases.last {
-                    Divider()
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(operationGroups) { group in
+                groupRow(group)
             }
         }
-        .frame(width: 240)
-        .padding(.vertical, 4)
+        .padding(12)
+        .fixedSize(horizontal: true, vertical: true)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(NSColor.windowBackgroundColor).opacity(0.85))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color(NSColor.separatorColor).opacity(0.5), lineWidth: 1)
+        )
+    }
+    
+    private struct OperationGroup: Identifiable {
+        let id: String
+        let title: String
+        let subtitle: String
+        let iconName: String
+        let accent: Color
+        let types: [PipelineOperationType]
+    }
+    
+    private var operationGroups: [OperationGroup] {
+        [
+            OperationGroup(
+                id: "values",
+                title: "Значения",
+                subtitle: "Нормализация, клиппинг, типы",
+                iconName: "slider.horizontal.3",
+                accent: Color(NSColor.systemTeal),
+                types: [
+                    .normalization,
+                    .channelwiseNormalization,
+                    .clipping,
+                    .dataTypeConversion
+                ]
+            ),
+            OperationGroup(
+                id: "spatial",
+                title: "Геометрия",
+                subtitle: "Поворот, размер, обрезка",
+                iconName: "rectangle.compress.vertical",
+                accent: Color(NSColor.systemOrange),
+                types: [
+                    .rotation,
+                    .resize,
+                    .spatialCrop
+                ]
+            ),
+            OperationGroup(
+                id: "spectral",
+                title: "Спектр",
+                subtitle: "Калибровка и спектральные операции",
+                iconName: "waveform.path.ecg",
+                accent: Color(NSColor.systemGreen),
+                types: [
+                    .spectralTrim,
+                    .spectralInterpolation,
+                    .spectralAlignment,
+                    .calibration
+                ]
+            )
+        ]
+    }
+
+    @ViewBuilder
+    private var pipelineContextMenu: some View {
+        Button("Добавить обработку…") {
+            showingAddMenu = true
+        }
+        
+        Button("Вставить") {
+            state.pastePipelineOperation()
+        }
+        .disabled(state.pipelineOperationClipboard == nil)
+        
+        if !state.pipelineOperations.isEmpty {
+            Divider()
+            Button("Очистить") {
+                state.clearPipeline()
+            }
+        }
+    }
+    
+    private func groupRow(_ group: OperationGroup) -> some View {
+        HStack(spacing: 8) {
+            ForEach(group.types) { type in
+                operationChip(type, accent: group.accent)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            group.accent.opacity(0.18),
+                            Color(NSColor.controlBackgroundColor).opacity(0.55)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(group.accent.opacity(0.45), lineWidth: 1)
+        )
+    }
+
+    private func accentColor(for type: PipelineOperationType) -> Color {
+        switch type {
+        case .normalization, .channelwiseNormalization, .clipping, .dataTypeConversion:
+            return Color(NSColor.systemTeal)
+        case .rotation, .resize, .spatialCrop:
+            return Color(NSColor.systemOrange)
+        case .spectralTrim, .spectralInterpolation, .spectralAlignment, .calibration:
+            return Color(NSColor.systemGreen)
+        }
+    }
+    
+    private func operationChip(_ type: PipelineOperationType, accent: Color) -> some View {
+        OperationChip(
+            type: type,
+            accent: accent,
+            lineLimit: chipLineLimit(for: type)
+        ) {
+            state.addOperation(type: type)
+            showingAddMenu = false
+        }
+    }
+
+    private func chipLineLimit(for type: PipelineOperationType) -> Int {
+        type.rawValue.count <= 12 ? 1 : 2
+    }
+}
+
+private struct OperationChip: View {
+    let type: PipelineOperationType
+    let accent: Color
+    let lineLimit: Int
+    let action: () -> Void
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: type.iconName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(accent)
+                Text(type.rawValue)
+                    .font(.system(size: 10, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(lineLimit)
+                    .minimumScaleFactor(0.7)
+                    .allowsTightening(true)
+                    .frame(maxWidth: 80)
+            }
+            .frame(width: 88, height: 88)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(NSColor.windowBackgroundColor),
+                                accent.opacity(0.12)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(accent.opacity(0.55), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .shadow(color: accent.opacity(isHovered ? 0.35 : 0.15), radius: isHovered ? 8 : 4, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
     }
 }
 
 struct OperationRow: View {
     @EnvironmentObject var state: AppState
     let operation: PipelineOperation
+    let accent: Color
     let isSelected: Bool
     let isDragging: Bool
     let onSelect: () -> Void
@@ -335,7 +473,7 @@ struct OperationRow: View {
             HStack(spacing: 8) {
                 Image(systemName: operation.type.iconName)
                     .font(.system(size: 12))
-                    .foregroundColor(isSelected ? .accentColor : .primary)
+                    .foregroundColor(accent)
                     .frame(width: 20)
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -363,11 +501,19 @@ struct OperationRow: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.accentColor.opacity(0.1) : Color(NSColor.controlBackgroundColor))
+                .fill(
+                    LinearGradient(
+                        colors: isSelected
+                        ? [accent.opacity(0.22), Color(NSColor.controlBackgroundColor)]
+                        : [accent.opacity(0.12), Color(NSColor.controlBackgroundColor).opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(accent.opacity(isSelected ? 0.9 : 0.45), lineWidth: isSelected ? 2 : 1)
         )
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
@@ -385,6 +531,9 @@ struct OperationRow: View {
             isHovered = hovering
         }
         .opacity(isDragging ? 0.5 : 1.0)
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .shadow(color: accent.opacity(isHovered ? 0.35 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
         .contextMenu {
             Button("Копировать") {
                 state.copyPipelineOperation(operation)

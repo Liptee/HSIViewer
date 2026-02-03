@@ -209,7 +209,7 @@ struct HyperCube {
 }
 
 enum CubeLayout: String, CaseIterable, Identifiable {
-    case auto = "Auto (min dim = C)"
+    case auto = "Auto"
     case chw  = "CHW"
     case hcw  = "HCW"
     case hwc  = "HWC"

@@ -93,10 +93,10 @@ struct ContentView: View {
                             VStack(spacing: 8) {
                                 Text("Открой гиперспектральный куб")
                                     .font(.system(size: 14, weight: .medium))
-                                Text("Поддерживаются форматы: .mat, .tiff, .npy")
+                                Text("Cmd + O")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
-                                Text("2D и 3D изображения")
+                                Text("Здесь могла бы быть ваша реклама")
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }

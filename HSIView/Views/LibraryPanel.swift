@@ -7,6 +7,7 @@ struct LibraryPanel: View {
     @State private var isExpanded: Bool = true
     @State private var isTargeted: Bool = false
     @State private var selectedEntryIDs: Set<CubeLibraryEntry.ID> = []
+    @State private var hoveredEntryID: CubeLibraryEntry.ID?
     @FocusState private var isFocused: Bool
     
     var body: some View {
@@ -84,6 +85,7 @@ struct LibraryPanel: View {
     private func libraryRow(for entry: CubeLibraryEntry) -> some View {
         let isActive = isEntryActive(entry)
         let isSelected = selectedEntryIDs.contains(entry.id) && !isActive
+        let isHovered = hoveredEntryID == entry.id
         let singleTap = TapGesture()
             .onEnded {
                 handleSelection(for: entry, isCommandPressed: isCommandPressed())
@@ -120,9 +122,19 @@ struct LibraryPanel: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(borderColor(isActive: isActive, isSelected: isSelected), lineWidth: 1)
         )
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .shadow(color: Color.black.opacity(isHovered ? 0.25 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
         .contentShape(Rectangle())
         .highPriorityGesture(doubleTap)
         .simultaneousGesture(singleTap)
+        .onHover { hovering in
+            if hovering {
+                hoveredEntryID = entry.id
+            } else if hoveredEntryID == entry.id {
+                hoveredEntryID = nil
+            }
+        }
         .contextMenu {
             Button("Копировать обработку") {
                 if let target = contextTargets.first {
