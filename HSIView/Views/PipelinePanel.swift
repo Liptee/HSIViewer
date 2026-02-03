@@ -647,15 +647,34 @@ struct OperationEditorView: View {
             
             Divider()
             
+            Text("Точность вычислений:")
+                .font(.system(size: 11, weight: .medium))
+            
+            Picker("", selection: $localNormalizationParams.computePrecision) {
+                ForEach(NormalizationComputationPrecision.allCases) { precision in
+                    Text(precision.rawValue).tag(precision)
+                }
+            }
+            .pickerStyle(.menu)
+            
+            Divider()
+            
             Toggle("Сохранить тип данных", isOn: $localPreserveDataType)
                 .font(.system(size: 11))
+                .disabled(localNormalizationParams.computePrecision == .float32)
             
-            Text(localPreserveDataType 
-                 ? "При нормализации тип данных будет сохранён, если диапазон позволяет (например, UInt8 для [0, 255])"
-                 : "Результат нормализации всегда будет Float64")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if localNormalizationParams.computePrecision == .float32 {
+                    Text("При выборе Float32 результат всегда будет Float32, независимо от исходного типа")
+                } else if localPreserveDataType {
+                    Text("При нормализации тип данных будет сохранён, если диапазон позволяет (например, UInt8 для [0, 255])")
+                } else {
+                    Text("Результат нормализации всегда будет Float64")
+                }
+            }
+            .font(.system(size: 10))
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
             
             Divider()
             

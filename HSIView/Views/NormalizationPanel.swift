@@ -47,6 +47,31 @@ struct NormalizationPanel: View {
                         
                         parametersView
                     }
+
+                    Divider()
+                        .padding(.vertical, 4)
+                    
+                    HStack {
+                        Text("Точность:")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        
+                        Spacer()
+                        
+                        Picker("", selection: $state.normalizationParams.computePrecision) {
+                            ForEach(NormalizationComputationPrecision.allCases) { precision in
+                                Text(precision.rawValue).tag(precision)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+                    
+                    if state.normalizationParams.computePrecision == .float32 {
+                        Text("Результат нормализации будет сохранён в Float32")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     
                     Button(action: {
                         state.applyNormalization()
