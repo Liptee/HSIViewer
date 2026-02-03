@@ -43,6 +43,13 @@ enum CubeNormalizationType: String, CaseIterable, Identifiable {
     }
 }
 
+enum NormalizationComputationPrecision: String, CaseIterable, Identifiable {
+    case float32 = "Float32"
+    case float64 = "Float64"
+    
+    var id: String { rawValue }
+}
+
 struct CubeNormalizationParameters {
     var minValue: Double = 0.0
     var maxValue: Double = 1.0
@@ -52,6 +59,7 @@ struct CubeNormalizationParameters {
     var sourceMax: Double = 1.0
     var targetMin: Double = 0.0
     var targetMax: Double = 1.0
+    var computePrecision: NormalizationComputationPrecision = .float64
     
     static let `default` = CubeNormalizationParameters()
 }
@@ -72,10 +80,22 @@ class CubeNormalizer {
             return cube
             
         case .minMax:
-            return applyMinMax(cube, targetMin: 0.0, targetMax: 1.0, preserveDataType: preserveDataType)
+            return applyMinMax(
+                cube,
+                targetMin: 0.0,
+                targetMax: 1.0,
+                preserveDataType: preserveDataType,
+                computePrecision: parameters.computePrecision
+            )
             
         case .minMaxCustom:
-            return applyMinMax(cube, targetMin: parameters.minValue, targetMax: parameters.maxValue, preserveDataType: preserveDataType)
+            return applyMinMax(
+                cube,
+                targetMin: parameters.minValue,
+                targetMax: parameters.maxValue,
+                preserveDataType: preserveDataType,
+                computePrecision: parameters.computePrecision
+            )
             
         case .manualRange:
             return applyManualRange(
@@ -84,24 +104,69 @@ class CubeNormalizer {
                 sourceMax: parameters.sourceMax,
                 targetMin: parameters.targetMin,
                 targetMax: parameters.targetMax,
-                preserveDataType: preserveDataType
+                preserveDataType: preserveDataType,
+                computePrecision: parameters.computePrecision
             )
             
         case .percentile:
-            return applyPercentile(cube, lower: parameters.lowerPercentile, upper: parameters.upperPercentile)
+            return applyPercentile(
+                cube,
+                lower: parameters.lowerPercentile,
+                upper: parameters.upperPercentile,
+                computePrecision: parameters.computePrecision
+            )
             
         case .zScore:
-            return applyZScore(cube)
+            return applyZScore(cube, computePrecision: parameters.computePrecision)
             
         case .log:
-            return applyLog(cube)
+            return applyLog(cube, computePrecision: parameters.computePrecision)
             
         case .sqrt:
-            return applySqrt(cube)
+            return applySqrt(cube, computePrecision: parameters.computePrecision)
         }
     }
     
-    private static func applyMinMax(_ cube: HyperCube, targetMin: Double, targetMax: Double, preserveDataType: Bool = false) -> HyperCube? {
+    private static func applyMinMax(
+        _ cube: HyperCube,
+        targetMin: Double,
+        targetMax: Double,
+        preserveDataType: Bool = false,
+        computePrecision: NormalizationComputationPrecision
+    ) -> HyperCube? {
+        let useFloat32 = computePrecision == .float32
+        if useFloat32 {
+            var minVal = Float.greatestFiniteMagnitude
+            var maxVal = -Float.greatestFiniteMagnitude
+            
+            for idx in 0..<cube.totalElements {
+                let value = Float(cube.storage.getValue(at: idx))
+                if value < minVal { minVal = value }
+                if value > maxVal { maxVal = value }
+            }
+            
+            guard maxVal > minVal else { return cube }
+            
+            let range = maxVal - minVal
+            let targetMinF = Float(targetMin)
+            let targetRange = Float(targetMax - targetMin)
+            
+            var output = [Float](repeating: 0, count: cube.totalElements)
+            for idx in 0..<cube.totalElements {
+                let value = Float(cube.storage.getValue(at: idx))
+                let normalized = (value - minVal) / range
+                output[idx] = targetMinF + normalized * targetRange
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [MinMax]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         let stats = cube.statistics()
         let dataMin = stats.min
         let dataMax = stats.max
@@ -135,8 +200,36 @@ class CubeNormalizer {
         sourceMax: Double,
         targetMin: Double,
         targetMax: Double,
-        preserveDataType: Bool = false
+        preserveDataType: Bool = false,
+        computePrecision: NormalizationComputationPrecision
     ) -> HyperCube? {
+        let useFloat32 = computePrecision == .float32
+        if useFloat32 {
+            guard sourceMax > sourceMin else { return cube }
+            
+            let sourceMinF = Float(sourceMin)
+            let sourceMaxF = Float(sourceMax)
+            let sourceRange = sourceMaxF - sourceMinF
+            let targetMinF = Float(targetMin)
+            let targetRange = Float(targetMax - targetMin)
+            
+            var output = [Float](repeating: 0, count: cube.totalElements)
+            for idx in 0..<cube.totalElements {
+                let value = Float(cube.storage.getValue(at: idx))
+                let clamped = max(sourceMinF, min(sourceMaxF, value))
+                let normalized = (clamped - sourceMinF) / sourceRange
+                output[idx] = targetMinF + normalized * targetRange
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [ManualRange]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         guard sourceMax > sourceMin else { return cube }
         
         let sourceRange = sourceMax - sourceMin
@@ -161,7 +254,50 @@ class CubeNormalizer {
         )
     }
     
-    private static func applyPercentile(_ cube: HyperCube, lower: Double, upper: Double) -> HyperCube? {
+    private static func applyPercentile(
+        _ cube: HyperCube,
+        lower: Double,
+        upper: Double,
+        computePrecision: NormalizationComputationPrecision
+    ) -> HyperCube? {
+        if computePrecision == .float32 {
+            var allValues = [Float]()
+            allValues.reserveCapacity(cube.totalElements)
+            
+            for idx in 0..<cube.totalElements {
+                allValues.append(Float(cube.storage.getValue(at: idx)))
+            }
+            
+            allValues.sort()
+            
+            guard !allValues.isEmpty else { return cube }
+            
+            let lowerIdx = max(0, min(allValues.count - 1, Int(Double(allValues.count - 1) * lower / 100.0)))
+            let upperIdx = max(0, min(allValues.count - 1, Int(Double(allValues.count - 1) * upper / 100.0)))
+            
+            let lowerValue = allValues[lowerIdx]
+            let upperValue = allValues[upperIdx]
+            
+            guard upperValue > lowerValue else { return cube }
+            
+            let range = upperValue - lowerValue
+            var output = [Float](repeating: 0, count: cube.totalElements)
+            
+            for idx in 0..<cube.totalElements {
+                let value = Float(cube.storage.getValue(at: idx))
+                let clamped = max(lowerValue, min(upperValue, value))
+                output[idx] = (clamped - lowerValue) / range
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [Percentile]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         var allValues = [Double]()
         allValues.reserveCapacity(cube.totalElements)
         
@@ -200,7 +336,45 @@ class CubeNormalizer {
         )
     }
     
-    private static func applyZScore(_ cube: HyperCube) -> HyperCube? {
+    private static func applyZScore(
+        _ cube: HyperCube,
+        computePrecision: NormalizationComputationPrecision
+    ) -> HyperCube? {
+        if computePrecision == .float32 {
+            let total = cube.totalElements
+            guard total > 0 else { return cube }
+            
+            var sum: Float = 0
+            for idx in 0..<total {
+                sum += Float(cube.storage.getValue(at: idx))
+            }
+            
+            let mean = sum / Float(total)
+            var varianceSum: Float = 0
+            for idx in 0..<total {
+                let diff = Float(cube.storage.getValue(at: idx)) - mean
+                varianceSum += diff * diff
+            }
+            let variance = varianceSum / Float(total)
+            let std = sqrt(variance)
+            
+            guard std > 0 else { return cube }
+            
+            var output = [Float](repeating: 0, count: total)
+            for idx in 0..<total {
+                let value = Float(cube.storage.getValue(at: idx))
+                output[idx] = (value - mean) / std
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [Z-Score]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         let stats = cube.statistics()
         let mean = stats.mean
         let std = stats.stdDev
@@ -223,7 +397,26 @@ class CubeNormalizer {
         )
     }
     
-    private static func applyLog(_ cube: HyperCube) -> HyperCube? {
+    private static func applyLog(
+        _ cube: HyperCube,
+        computePrecision: NormalizationComputationPrecision
+    ) -> HyperCube? {
+        if computePrecision == .float32 {
+            var output = [Float](repeating: 0, count: cube.totalElements)
+            for idx in 0..<cube.totalElements {
+                let value = Float(cube.storage.getValue(at: idx))
+                output[idx] = log(max(0, value) + 1.0)
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [Log]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         let normalizedData = (0..<cube.totalElements).map { idx -> Double in
             let value = cube.storage.getValue(at: idx)
             return log(max(0, value) + 1.0)
@@ -240,7 +433,26 @@ class CubeNormalizer {
         )
     }
     
-    private static func applySqrt(_ cube: HyperCube) -> HyperCube? {
+    private static func applySqrt(
+        _ cube: HyperCube,
+        computePrecision: NormalizationComputationPrecision
+    ) -> HyperCube? {
+        if computePrecision == .float32 {
+            var output = [Float](repeating: 0, count: cube.totalElements)
+            for idx in 0..<cube.totalElements {
+                let value = Float(cube.storage.getValue(at: idx))
+                output[idx] = sqrt(max(0, value))
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(output),
+                sourceFormat: cube.sourceFormat + " [Sqrt]",
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         let normalizedData = (0..<cube.totalElements).map { idx -> Double in
             let value = cube.storage.getValue(at: idx)
             return sqrt(max(0, value))
@@ -336,6 +548,73 @@ class CubeNormalizer {
         guard channels > 0 else { return nil }
         
         let totalElements = height * width * channels
+        let useFloat32 = parameters.computePrecision == .float32
+        if useFloat32 {
+            var allData = [Float](repeating: 0.0, count: totalElements)
+            
+            for ch in 0..<channels {
+                var channelData = [Float]()
+                channelData.reserveCapacity(height * width)
+                
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let idx = cube.linearIndex(i0: h, i1: w, i2: ch)
+                        let value = Float(cube.getValue(at: idx))
+                        channelData.append(value)
+                    }
+                }
+                
+                let normalizedChannel: [Float]
+                switch type {
+                case .none:
+                    normalizedChannel = channelData
+                    
+                case .minMax:
+                    normalizedChannel = normalizeChannelMinMax(channelData, targetMin: 0.0, targetMax: 1.0)
+                    
+                case .minMaxCustom:
+                    normalizedChannel = normalizeChannelMinMax(channelData, targetMin: Float(parameters.minValue), targetMax: Float(parameters.maxValue))
+                    
+                case .percentile:
+                    normalizedChannel = normalizeChannelPercentile(channelData, lower: Float(parameters.lowerPercentile), upper: Float(parameters.upperPercentile))
+                    
+                case .zScore:
+                    normalizedChannel = normalizeChannelZScore(channelData)
+                    
+                case .log:
+                    normalizedChannel = normalizeChannelLog(channelData)
+                    
+                case .sqrt:
+                    normalizedChannel = normalizeChannelSqrt(channelData)
+                    
+                case .manualRange:
+                    normalizedChannel = normalizeChannelManualRange(
+                        channelData,
+                        sourceMin: Float(parameters.sourceMin),
+                        sourceMax: Float(parameters.sourceMax),
+                        targetMin: Float(parameters.targetMin),
+                        targetMax: Float(parameters.targetMax)
+                    )
+                }
+                
+                for h in 0..<height {
+                    for w in 0..<width {
+                        let idx = cube.linearIndex(i0: h, i1: w, i2: ch)
+                        let channelIdx = h * width + w
+                        allData[idx] = normalizedChannel[channelIdx]
+                    }
+                }
+            }
+            
+            return HyperCube(
+                dims: cube.dims,
+                storage: .float32(allData),
+                sourceFormat: cube.sourceFormat,
+                isFortranOrder: cube.isFortranOrder,
+                wavelengths: cube.wavelengths
+            )
+        }
+        
         var allData = [Double](repeating: 0.0, count: totalElements)
         
         for ch in 0..<channels {
@@ -424,6 +703,23 @@ class CubeNormalizer {
             return targetMin + normalized * (targetMax - targetMin)
         }
     }
+
+    private static func normalizeChannelMinMax(_ data: [Float], targetMin: Float, targetMax: Float) -> [Float] {
+        guard !data.isEmpty else { return data }
+        
+        let channelMin = data.min() ?? 0.0
+        let channelMax = data.max() ?? 1.0
+        let range = channelMax - channelMin
+        
+        guard range > 1e-10 else {
+            return data.map { _ in targetMin }
+        }
+        
+        return data.map { value in
+            let normalized = (value - channelMin) / range
+            return targetMin + normalized * (targetMax - targetMin)
+        }
+    }
     
     private static func normalizeChannelPercentile(_ data: [Double], lower: Double, upper: Double) -> [Double] {
         guard !data.isEmpty else { return data }
@@ -433,6 +729,29 @@ class CubeNormalizer {
         
         let lowerIdx = max(0, min(count - 1, Int(Double(count - 1) * lower / 100.0)))
         let upperIdx = max(0, min(count - 1, Int(Double(count - 1) * upper / 100.0)))
+        
+        let lowerValue = sorted[lowerIdx]
+        let upperValue = sorted[upperIdx]
+        let range = upperValue - lowerValue
+        
+        guard range > 1e-10 else {
+            return data.map { _ in 0.0 }
+        }
+        
+        return data.map { value in
+            let clamped = max(lowerValue, min(upperValue, value))
+            return (clamped - lowerValue) / range
+        }
+    }
+
+    private static func normalizeChannelPercentile(_ data: [Float], lower: Float, upper: Float) -> [Float] {
+        guard !data.isEmpty else { return data }
+        
+        var sorted = data.sorted()
+        let count = sorted.count
+        
+        let lowerIdx = max(0, min(count - 1, Int(Double(count - 1) * Double(lower) / 100.0)))
+        let upperIdx = max(0, min(count - 1, Int(Double(count - 1) * Double(upper) / 100.0)))
         
         let lowerValue = sorted[lowerIdx]
         let upperValue = sorted[upperIdx]
@@ -465,6 +784,24 @@ class CubeNormalizer {
             return targetMin + normalized * targetRange
         }
     }
+
+    private static func normalizeChannelManualRange(
+        _ data: [Float],
+        sourceMin: Float,
+        sourceMax: Float,
+        targetMin: Float,
+        targetMax: Float
+    ) -> [Float] {
+        guard sourceMax > sourceMin else { return data }
+        let sourceRange = sourceMax - sourceMin
+        let targetRange = targetMax - targetMin
+        
+        return data.map { value in
+            let clamped = max(sourceMin, min(sourceMax, value))
+            let normalized = (clamped - sourceMin) / sourceRange
+            return targetMin + normalized * targetRange
+        }
+    }
     
     private static func normalizeChannelZScore(_ data: [Double]) -> [Double] {
         guard !data.isEmpty else { return data }
@@ -479,12 +816,34 @@ class CubeNormalizer {
         
         return data.map { ($0 - mean) / std }
     }
+
+    private static func normalizeChannelZScore(_ data: [Float]) -> [Float] {
+        guard !data.isEmpty else { return data }
+        
+        let mean = data.reduce(0.0, +) / Float(data.count)
+        let variance = data.map { pow($0 - mean, 2) }.reduce(0.0, +) / Float(data.count)
+        let std = sqrt(variance)
+        
+        guard std > 1e-10 else {
+            return data.map { _ in 0.0 }
+        }
+        
+        return data.map { ($0 - mean) / std }
+    }
     
     private static func normalizeChannelLog(_ data: [Double]) -> [Double] {
         return data.map { log(max($0, 0.0) + 1.0) }
     }
     
     private static func normalizeChannelSqrt(_ data: [Double]) -> [Double] {
+        return data.map { sqrt(max($0, 0.0)) }
+    }
+
+    private static func normalizeChannelLog(_ data: [Float]) -> [Float] {
+        return data.map { log(max($0, 0.0) + 1.0) }
+    }
+    
+    private static func normalizeChannelSqrt(_ data: [Float]) -> [Float] {
         return data.map { sqrt(max($0, 0.0)) }
     }
     
