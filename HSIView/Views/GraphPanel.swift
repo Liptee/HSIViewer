@@ -314,6 +314,7 @@ private struct SpectrumChartSeries: Identifiable {
 }
 
 private struct SampleRow: View {
+    @EnvironmentObject var state: AppState
     let sample: SpectrumSample
     let isSelected: Bool
     let isHidden: Bool
@@ -376,6 +377,11 @@ private struct SampleRow: View {
             startEditing()
             editingSampleID = nil
         }
+        .contextMenu {
+            Button("Копировать") {
+                state.copySpectrumSample(sample)
+            }
+        }
     }
     
     private func startEditing() {
@@ -390,6 +396,7 @@ private struct SampleRow: View {
 }
 
 private struct ROISampleRow: View {
+    @EnvironmentObject var state: AppState
     let sample: SpectrumROISample
     let isSelected: Bool
     let isHidden: Bool
@@ -451,6 +458,11 @@ private struct ROISampleRow: View {
             guard newValue == sample.id else { return }
             startEditing()
             editingSampleID = nil
+        }
+        .contextMenu {
+            Button("Копировать") {
+                state.copyROISample(sample)
+            }
         }
     }
     
