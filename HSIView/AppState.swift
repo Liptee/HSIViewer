@@ -154,6 +154,7 @@ final class AppState: ObservableObject {
     @Published var graphWindowYMin: Double = 0
     @Published var graphWindowYMax: Double = 1
     @Published var showAccessManager: Bool = false
+    @Published private(set) var pipelineOperationClipboard: PipelineOperation?
     private var hasCustomColorSynthesisMapping: Bool = false
     private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
         .ndvi: (0, 0),
@@ -1013,6 +1014,22 @@ final class AppState: ObservableObject {
         }
         if pipelineAutoApply {
             applyPipeline()
+        }
+    }
+
+    func copyPipelineOperation(_ operation: PipelineOperation) {
+        pipelineOperationClipboard = operation
+    }
+
+    func pastePipelineOperation() {
+        guard let clipboardOperation = pipelineOperationClipboard else { return }
+        let newOperation = clipboardOperation.clonedWithNewID()
+        pipelineOperations.append(newOperation)
+        if pipelineAutoApply {
+            let isNoOp = newOperation.isNoOp(for: cube, layout: activeLayout)
+            if !isNoOp {
+                applyPipeline()
+            }
         }
     }
     

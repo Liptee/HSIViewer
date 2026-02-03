@@ -57,14 +57,17 @@ struct PipelinePanel: View {
             Text("Пайплайн пуст")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
-            
-            Text("Нажмите + чтобы добавить обработку")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(20)
+        .background(Color.clear)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Вставить") {
+                state.pastePipelineOperation()
+            }
+            .disabled(state.pipelineOperationClipboard == nil)
+        }
     }
     
     private var operationsList: some View {
@@ -128,6 +131,12 @@ struct PipelinePanel: View {
                 }
             }
             .padding(8)
+        }
+        .contextMenu {
+            Button("Вставить") {
+                state.pastePipelineOperation()
+            }
+            .disabled(state.pipelineOperationClipboard == nil)
         }
         .onDeleteCommand {
             if let selected = selectedOperation,
@@ -301,6 +310,7 @@ struct PipelinePanel: View {
 }
 
 struct OperationRow: View {
+    @EnvironmentObject var state: AppState
     let operation: PipelineOperation
     let isSelected: Bool
     let isDragging: Bool
@@ -375,6 +385,11 @@ struct OperationRow: View {
             isHovered = hovering
         }
         .opacity(isDragging ? 0.5 : 1.0)
+        .contextMenu {
+            Button("Копировать") {
+                state.copyPipelineOperation(operation)
+            }
+        }
     }
 }
 
