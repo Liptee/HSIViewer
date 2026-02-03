@@ -98,6 +98,8 @@ struct LibraryPanel: View {
         
         let contextTargets = contextMenuTargets(for: entry)
         let canCopyFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyProcessing(from: $0) } == true
+        let canPastePoint = state.canPasteSpectrumPoint
+        let canPasteROI = state.canPasteSpectrumROI
         
         return VStack(alignment: .leading, spacing: 4) {
             Text(entry.fileName)
@@ -136,6 +138,22 @@ struct LibraryPanel: View {
                     }
                 }
             }
+            
+            Divider()
+            
+            Button("Вставить точку") {
+                for target in contextTargets {
+                    state.pasteSpectrumPoint(to: target)
+                }
+            }
+            .disabled(!canPastePoint)
+            
+            Button("Вставить область") {
+                for target in contextTargets {
+                    state.pasteSpectrumROI(to: target)
+                }
+            }
+            .disabled(!canPasteROI)
             
             Divider()
             
