@@ -87,7 +87,10 @@ struct PipelinePanel: View {
                             accent: accentColor(for: operation.type),
                             isSelected: selectedOperation == operation.id,
                             isDragging: draggingItem?.id == operation.id,
-                            onSelect: { selectedOperation = operation.id },
+                            onSelect: {
+                                selectedOperation = operation.id
+                                hasListFocus = true
+                            },
                             onEdit: { editingOperation = operation },
                             onDelete: {
                                 if let idx = state.pipelineOperations.firstIndex(where: { $0.id == operation.id }) {
@@ -149,13 +152,7 @@ struct PipelinePanel: View {
         .contextMenu {
             pipelineContextMenu
         }
-        .onDeleteCommand {
-            if let selected = selectedOperation,
-               let index = state.pipelineOperations.firstIndex(where: { $0.id == selected }) {
-                state.removeOperation(at: index)
-                selectedOperation = nil
-            }
-        }
+        .onDeleteCommand(perform: deleteSelectedOperation)
         .focusable()
         .focusEffectDisabled()
         .focused($hasListFocus)
@@ -165,6 +162,17 @@ struct PipelinePanel: View {
         .onAppear {
             hasListFocus = true
         }
+        .background(
+            DeleteKeyCatcher(
+                isActive: Binding(
+                    get: { hasListFocus },
+                    set: { hasListFocus = $0 }
+                ),
+                onDelete: deleteSelectedOperation
+            )
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+        )
         .onChange(of: draggingItem) { oldValue, newValue in
             if newValue == nil {
                 dropIndicator = nil
@@ -215,6 +223,15 @@ struct PipelinePanel: View {
                 dropIndicator = nil
             }
         }
+    }
+
+    private func deleteSelectedOperation() {
+        guard let selected = selectedOperation,
+              let index = state.pipelineOperations.firstIndex(where: { $0.id == selected }) else {
+            return
+        }
+        state.removeOperation(at: index)
+        selectedOperation = nil
     }
     
     private var footer: some View {
@@ -550,6 +567,40 @@ fileprivate enum DropPosition: Equatable {
 fileprivate struct DropIndicator: Equatable {
     let targetIndex: Int
     let position: DropPosition
+}
+
+private struct DeleteKeyCatcher: NSViewRepresentable {
+    @Binding var isActive: Bool
+    let onDelete: () -> Void
+    
+    func makeNSView(context: Context) -> KeyView {
+        let view = KeyView()
+        view.onDelete = onDelete
+        return view
+    }
+    
+    func updateNSView(_ nsView: KeyView, context: Context) {
+        nsView.onDelete = onDelete
+        guard isActive else { return }
+        if nsView.window?.firstResponder !== nsView {
+            nsView.window?.makeFirstResponder(nsView)
+        }
+    }
+    
+    final class KeyView: NSView {
+        var onDelete: (() -> Void)?
+        
+        override var acceptsFirstResponder: Bool { true }
+        
+        override func keyDown(with event: NSEvent) {
+            switch event.keyCode {
+            case 51, 117:
+                onDelete?()
+            default:
+                super.keyDown(with: event)
+            }
+        }
+    }
 }
 
 private enum SpectralTrimInputMode: String, CaseIterable, Identifiable {
