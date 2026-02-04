@@ -472,7 +472,7 @@ struct ContentView: View {
                         allSuccess = false
                         completed += 1
                         state.updateLibraryExportProgress(completed: completed, total: entries.count)
-                        print("Пропуск \(entry.fileName) — нет данных для экспорта")
+                        print("Пропуск \(entry.displayName) — нет данных для экспорта")
                         return
                     }
                     
@@ -522,9 +522,9 @@ struct ContentView: View {
                     
                     switch result {
                     case .success:
-                        print("Экспортирован \(entry.fileName)")
+                        print("Экспортирован \(entry.displayName)")
                     case .failure(let error):
-                        print("Ошибка экспорта \(entry.fileName): \(error.localizedDescription)")
+                        print("Ошибка экспорта \(entry.displayName): \(error.localizedDescription)")
                         allSuccess = false
                     }
                     
@@ -550,7 +550,7 @@ struct ContentView: View {
         HStack(alignment: .center) {
             HStack(spacing: 8) {
             if let url = state.cubeURL {
-                Text(url.lastPathComponent)
+                Text(state.displayName(for: url))
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)

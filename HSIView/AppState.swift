@@ -294,8 +294,26 @@ final class AppState: ObservableObject {
         return samples.compactMap { $0.trimmed(to: range) }
     }
 
+    var currentCubeDisplayName: String {
+        guard let url = cubeURL else { return "Куб" }
+        return displayName(for: url)
+    }
+    
     var defaultExportBaseName: String {
         guard let url = cubeURL else { return "hypercube" }
+        return exportBaseName(for: url)
+    }
+    
+    func displayName(for url: URL) -> String {
+        let canonical = canonicalURL(url)
+        return libraryEntries.first(where: { $0.canonicalPath == canonical.path })?.displayName ?? canonical.lastPathComponent
+    }
+    
+    func exportBaseName(for url: URL) -> String {
+        let canonical = canonicalURL(url)
+        if let entry = libraryEntries.first(where: { $0.canonicalPath == canonical.path }) {
+            return entry.exportBaseName
+        }
         let rawName = url.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
         return rawName.isEmpty ? "hypercube" : rawName
     }
@@ -1877,6 +1895,16 @@ final class AppState: ObservableObject {
         }
     }
     
+    func renameLibraryEntry(id: CubeLibraryEntry.ID, to name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName = (trimmed?.isEmpty == false) ? trimmed : nil
+        guard let index = libraryEntries.firstIndex(where: { $0.id == id }) else { return }
+        var entry = libraryEntries[index]
+        entry.customName = newName
+        libraryEntries[index] = entry
+        librarySpectrumCache.renameEntry(libraryID: id, displayName: entry.displayName)
+    }
+    
     func removeLibraryEntry(_ entry: CubeLibraryEntry) {
         let canonical = canonicalURL(entry.url)
         libraryEntries.removeAll { $0.canonicalPath == entry.canonicalPath }
@@ -1904,7 +1932,7 @@ final class AppState: ObservableObject {
             return nil
         }
         
-        let baseName = entry.url.deletingPathExtension().lastPathComponent
+        let baseName = entry.exportBaseName
         return CubeExportPayload(
             cube: prepared.cube,
             wavelengths: prepared.wavelengths,
@@ -2165,10 +2193,10 @@ final class AppState: ObservableObject {
         sessionSnapshots[canonical] = snapshot
         
         let libraryID = canonical.path
-        let fileName = url.lastPathComponent
+        let displayName = displayName(for: url)
         librarySpectrumCache.updateEntry(
             libraryID: libraryID,
-            fileName: fileName,
+            displayName: displayName,
             spectrumSamples: snapshot.spectrumSamples,
             roiSamples: snapshot.roiSamples
         )

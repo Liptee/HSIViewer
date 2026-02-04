@@ -363,7 +363,7 @@ struct GraphWindowView: View {
             
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text(entry.fileName)
+                    Text(entry.displayName)
                         .font(.system(size: 11, weight: isCurrentImage ? .semibold : .regular))
                         .lineLimit(1)
                     
@@ -1011,7 +1011,7 @@ struct GraphWindowView: View {
                             values: $0.values,
                             wavelengths: $0.wavelengths,
                             defaultColor: Color($0.nsColor),
-                            sourceName: entry.fileName
+                            sourceName: entry.displayName
                         )
                     }
                 } else if let cached = spectrumCache.entries[entry.id]?.spectrumSamples {
@@ -1022,7 +1022,7 @@ struct GraphWindowView: View {
                             values: sample.values,
                             wavelengths: sample.wavelengths,
                             defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
-                            sourceName: entry.fileName
+                            sourceName: entry.displayName
                         )
                     }
                 }
@@ -1035,7 +1035,7 @@ struct GraphWindowView: View {
                             values: $0.values,
                             wavelengths: $0.wavelengths,
                             defaultColor: Color($0.nsColor),
-                            sourceName: entry.fileName
+                            sourceName: entry.displayName
                         )
                     }
                 } else if let cached = spectrumCache.entries[entry.id]?.roiSamples {
@@ -1046,7 +1046,7 @@ struct GraphWindowView: View {
                             values: sample.values,
                             wavelengths: sample.wavelengths,
                             defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
-                            sourceName: entry.fileName
+                            sourceName: entry.displayName
                         )
                     }
                 }

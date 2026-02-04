@@ -8,6 +8,9 @@ struct LibraryPanel: View {
     @State private var isTargeted: Bool = false
     @State private var selectedEntryIDs: Set<CubeLibraryEntry.ID> = []
     @State private var hoveredEntryID: CubeLibraryEntry.ID?
+    @State private var isRenaming: Bool = false
+    @State private var renameText: String = ""
+    @State private var renameTargetID: CubeLibraryEntry.ID?
     @FocusState private var isFocused: Bool
     
     var body: some View {
@@ -32,6 +35,17 @@ struct LibraryPanel: View {
         .onChange(of: state.libraryEntries) { entries in
             let existingIDs = Set(entries.map(\.id))
             selectedEntryIDs = selectedEntryIDs.intersection(existingIDs)
+        }
+        .alert("Переименовать куб", isPresented: $isRenaming) {
+            TextField("Название", text: $renameText)
+            Button("Сохранить") {
+                commitRename()
+            }
+            Button("Отмена", role: .cancel) {
+                cancelRename()
+            }
+        } message: {
+            Text("Введите новое имя для выбранного куба.")
         }
     }
     
@@ -102,9 +116,10 @@ struct LibraryPanel: View {
         let canCopyFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyProcessing(from: $0) } == true
         let canPastePoint = state.canPasteSpectrumPoint
         let canPasteROI = state.canPasteSpectrumROI
+        let canRename = contextTargets.count == 1
         
         return VStack(alignment: .leading, spacing: 4) {
-            Text(entry.fileName)
+            Text(entry.displayName)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isActive ? .accentColor : .primary)
             Text(entry.url.deletingLastPathComponent().path)
@@ -168,6 +183,15 @@ struct LibraryPanel: View {
             .disabled(!canPasteROI)
             
             Divider()
+
+            Button("Переименовать…") {
+                if let target = contextTargets.first {
+                    startRename(for: target)
+                }
+            }
+            .disabled(!canRename)
+            
+            Divider()
             
             Button(role: .destructive) {
                 removeEntries(contextTargets)
@@ -229,9 +253,29 @@ struct LibraryPanel: View {
     private func removeEntries(_ entries: [CubeLibraryEntry]) {
         guard !entries.isEmpty else { return }
         for entry in entries {
-        state.removeLibraryEntry(entry)
+            state.removeLibraryEntry(entry)
             selectedEntryIDs.remove(entry.id)
         }
+    }
+    
+    private func startRename(for entry: CubeLibraryEntry) {
+        renameTargetID = entry.id
+        renameText = entry.displayName
+        isRenaming = true
+    }
+    
+    private func commitRename() {
+        guard let targetID = renameTargetID else { return }
+        state.renameLibraryEntry(id: targetID, to: renameText)
+        isRenaming = false
+        renameTargetID = nil
+        renameText = ""
+    }
+    
+    private func cancelRename() {
+        isRenaming = false
+        renameTargetID = nil
+        renameText = ""
     }
     
     private func contextMenuTargets(for entry: CubeLibraryEntry) -> [CubeLibraryEntry] {

@@ -641,7 +641,7 @@ extension GraphPanel {
         let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
         let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
-        let cubeName = state.cubeURL?.lastPathComponent ?? "Куб"
+        let cubeName = state.currentCubeDisplayName
         let series = visibleSamples.map {
             SpectrumChartSeries(
                 id: $0.id,
@@ -711,7 +711,7 @@ extension GraphPanel {
         let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
         let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
-        let cubeName = state.cubeURL?.lastPathComponent ?? "Куб"
+        let cubeName = state.currentCubeDisplayName
         let series = visibleSamples.map {
             SpectrumChartSeries(
                 id: $0.id,

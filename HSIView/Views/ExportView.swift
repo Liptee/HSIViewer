@@ -558,7 +558,7 @@ struct ExportView: View {
             if state.exportEntireLibrary {
                 infoRow(label: "Файлов в библиотеке", value: "\(state.libraryEntries.count)")
                 if let current = state.cubeURL {
-                    infoRow(label: "Текущий файл", value: current.lastPathComponent)
+                    infoRow(label: "Текущий файл", value: state.displayName(for: current))
                 }
             } else if let cube = state.cube {
                 VStack(spacing: 4) {
