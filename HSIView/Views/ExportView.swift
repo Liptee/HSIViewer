@@ -684,6 +684,7 @@ struct ExportView: View {
             ? ColorSynthesisConfig(
                 mode: colorSynthesisMode,
                 mapping: state.colorSynthesisConfig.mapping,
+                rangeMapping: state.colorSynthesisConfig.rangeMapping,
                 pcaConfig: state.colorSynthesisConfig.pcaConfig
             )
             : nil,

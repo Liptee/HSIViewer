@@ -2449,6 +2449,13 @@ struct OperationEditorView: View {
                     wavelengths: state.wavelengths,
                     mapping: state.colorSynthesisConfig.mapping
                 )
+            case .rangeWideRGB:
+                return ImageRenderer.renderRGBRange(
+                    cube: cube,
+                    layout: layout,
+                    wavelengths: state.wavelengths,
+                    rangeMapping: state.colorSynthesisConfig.rangeMapping
+                )
             case .pcaVisualization:
                 return state.pcaRenderedImage
             }
@@ -2466,12 +2473,24 @@ struct OperationEditorView: View {
                 wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
             )
         case .mask:
-            return ImageRenderer.renderRGB(
-                cube: cube,
-                layout: layout,
-                wavelengths: state.wavelengths,
-                mapping: state.colorSynthesisConfig.mapping
-            )
+            switch state.colorSynthesisConfig.mode {
+            case .trueColorRGB:
+                return ImageRenderer.renderRGB(
+                    cube: cube,
+                    layout: layout,
+                    wavelengths: state.wavelengths,
+                    mapping: state.colorSynthesisConfig.mapping
+                )
+            case .rangeWideRGB:
+                return ImageRenderer.renderRGBRange(
+                    cube: cube,
+                    layout: layout,
+                    wavelengths: state.wavelengths,
+                    rangeMapping: state.colorSynthesisConfig.rangeMapping
+                )
+            case .pcaVisualization:
+                return state.pcaRenderedImage
+            }
         }
     }
     

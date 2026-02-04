@@ -2,6 +2,7 @@ import Foundation
 
 enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
     case trueColorRGB = "True Color RGB"
+    case rangeWideRGB = "Range-wide RGB"
     case pcaVisualization = "PCA visualization"
     
     var id: String { rawValue }
@@ -10,6 +11,8 @@ enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .trueColorRGB:
             return "R=630нм, G=530нм, B=450нм"
+        case .rangeWideRGB:
+            return "Усреднение диапазонов λ для R/G/B"
         case .pcaVisualization:
             return "Информативная псевдо-цветность через PCA"
         }
@@ -19,6 +22,8 @@ enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
         switch self {
         case .trueColorRGB:
             return "paintpalette"
+        case .rangeWideRGB:
+            return "slider.horizontal.3"
         case .pcaVisualization:
             return "point.3.filled.trianglepath"
         }
@@ -154,15 +159,58 @@ struct RGBChannelMapping: Equatable {
     }
 }
 
+struct RGBChannelRange: Equatable {
+    var start: Int
+    var end: Int
+    
+    var normalized: RGBChannelRange {
+        start <= end ? self : RGBChannelRange(start: end, end: start)
+    }
+    
+    func clamped(maxChannelCount: Int) -> RGBChannelRange {
+        guard maxChannelCount > 0 else { return self }
+        let maxIndex = maxChannelCount - 1
+        let clampedStart = max(0, min(start, maxIndex))
+        let clampedEnd = max(0, min(end, maxIndex))
+        let normalizedRange = RGBChannelRange(start: clampedStart, end: clampedEnd).normalized
+        return normalizedRange
+    }
+}
+
+struct RGBChannelRangeMapping: Equatable {
+    var red: RGBChannelRange
+    var green: RGBChannelRange
+    var blue: RGBChannelRange
+    
+    static func defaultMapping(channelCount: Int, wavelengths: [Double]?) -> RGBChannelRangeMapping {
+        let mapping = RGBChannelMapping.defaultMapping(channelCount: channelCount, wavelengths: wavelengths)
+        return RGBChannelRangeMapping(
+            red: RGBChannelRange(start: mapping.red, end: mapping.red),
+            green: RGBChannelRange(start: mapping.green, end: mapping.green),
+            blue: RGBChannelRange(start: mapping.blue, end: mapping.blue)
+        )
+    }
+    
+    func clamped(maxChannelCount: Int) -> RGBChannelRangeMapping {
+        RGBChannelRangeMapping(
+            red: red.clamped(maxChannelCount: maxChannelCount),
+            green: green.clamped(maxChannelCount: maxChannelCount),
+            blue: blue.clamped(maxChannelCount: maxChannelCount)
+        )
+    }
+}
+
 struct ColorSynthesisConfig: Equatable {
     var mode: ColorSynthesisMode
     var mapping: RGBChannelMapping
+    var rangeMapping: RGBChannelRangeMapping
     var pcaConfig: PCAVisualizationConfig
     
     static func `default`(channelCount: Int, wavelengths: [Double]?) -> ColorSynthesisConfig {
         ColorSynthesisConfig(
             mode: .trueColorRGB,
             mapping: .defaultMapping(channelCount: channelCount, wavelengths: wavelengths),
+            rangeMapping: .defaultMapping(channelCount: channelCount, wavelengths: wavelengths),
             pcaConfig: .default()
         )
     }
