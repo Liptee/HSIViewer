@@ -552,6 +552,22 @@ fileprivate struct DropIndicator: Equatable {
     let position: DropPosition
 }
 
+private enum SpectralTrimInputMode: String, CaseIterable, Identifiable {
+    case channels
+    case wavelengths
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .channels:
+            return "Каналы"
+        case .wavelengths:
+            return "Длины волн"
+        }
+    }
+}
+
 struct OperationEditorView: View {
     @Binding var operation: PipelineOperation?
     @EnvironmentObject var state: AppState
@@ -570,6 +586,9 @@ struct OperationEditorView: View {
     @State private var localSpectralTrimParams: SpectralTrimParameters = SpectralTrimParameters(startChannel: 0, endChannel: 0)
     @State private var localSpectralInterpolationParams: SpectralInterpolationParameters = .default
     @State private var localSpectralAlignmentParams: SpectralAlignmentParameters = .default
+    @State private var spectralTrimInputMode: SpectralTrimInputMode = .channels
+    @State private var trimStartWavelength: Double = 0
+    @State private var trimEndWavelength: Double = 0
     @State private var resizeAspectRatio: Double = 1.0
     @State private var isAdjustingResize: Bool = false
     @State private var isComputingAlignment: Bool = false
@@ -1561,42 +1580,128 @@ struct OperationEditorView: View {
         let channels = state.cube?.channelCount(for: op.layout) ?? state.channelCount
         let maxIndex = max(channels - 1, 0)
         let wavelengths = state.cube?.wavelengths ?? state.wavelengths
+        let hasWavelengths = (wavelengths?.isEmpty == false)
+        let remainingChannels = max(0, localSpectralTrimParams.endChannel - localSpectralTrimParams.startChannel + 1)
+        let startLambda = wavelengthValue(for: localSpectralTrimParams.startChannel, wavelengths: wavelengths)
+        let endLambda = wavelengthValue(for: localSpectralTrimParams.endChannel, wavelengths: wavelengths)
+        let wavelengthRange = wavelengthBounds(wavelengths)
+        let startChannelBinding = Binding<Int>(
+            get: { localSpectralTrimParams.startChannel },
+            set: { newValue in
+                localSpectralTrimParams.startChannel = clampChannel(newValue, maxIndex: maxIndex)
+            }
+        )
+        let endChannelBinding = Binding<Int>(
+            get: { localSpectralTrimParams.endChannel },
+            set: { newValue in
+                localSpectralTrimParams.endChannel = clampChannel(newValue, maxIndex: maxIndex)
+            }
+        )
         
         return VStack(alignment: .leading, spacing: 12) {
             Text("Обрезка спектра")
                 .font(.system(size: 11, weight: .medium))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Диапазон каналов: 0–\(maxIndex) (\(channels) всего)")
+                if let range = wavelengthRange {
+                    Text("Диапазон λ: \(formatWavelength(range.min)) – \(formatWavelength(range.max)) нм")
+                } else {
+                    Text("Длины волн недоступны")
+                }
+                Text("Останется: \(remainingChannels) каналов")
+            }
+            .font(.system(size: 10))
+            .foregroundColor(.secondary)
             
-            if let wavelengths, !wavelengths.isEmpty,
-               localSpectralTrimParams.startChannel < wavelengths.count,
-               localSpectralTrimParams.endChannel < wavelengths.count {
-                Text("λ: \(String(format: "%.1f", wavelengths[localSpectralTrimParams.startChannel])) – \(String(format: "%.1f", wavelengths[localSpectralTrimParams.endChannel])) нм")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Текущая обрезка: каналы \(localSpectralTrimParams.startChannel) – \(localSpectralTrimParams.endChannel)")
                     .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                if let startLambda, let endLambda {
+                    Text("Будет обрезано до λ \(formatWavelength(startLambda)) – \(formatWavelength(endLambda)) нм")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
             }
             
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Начальный канал")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    Stepper(value: $localSpectralTrimParams.startChannel, in: 0...maxIndex) {
-                        Text("\(localSpectralTrimParams.startChannel)")
-                            .font(.system(size: 11))
-                            .frame(minWidth: 36, alignment: .leading)
+            if hasWavelengths {
+                Picker("Ввод", selection: $spectralTrimInputMode) {
+                    ForEach(SpectralTrimInputMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
-                    .controlSize(.small)
                 }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Конечный канал")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    Stepper(value: $localSpectralTrimParams.endChannel, in: 0...maxIndex) {
-                        Text("\(localSpectralTrimParams.endChannel)")
-                            .font(.system(size: 11))
-                            .frame(minWidth: 36, alignment: .leading)
+                .pickerStyle(.segmented)
+            }
+            
+            if spectralTrimInputMode == .channels || !hasWavelengths {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Начальный канал")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            TextField("", value: startChannelBinding, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 70)
+                            Stepper("", value: startChannelBinding, in: 0...maxIndex)
+                                .labelsHidden()
+                                .controlSize(.small)
+                        }
                     }
-                    .controlSize(.small)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Конечный канал")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 6) {
+                            TextField("", value: endChannelBinding, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 70)
+                            Stepper("", value: endChannelBinding, in: 0...maxIndex)
+                                .labelsHidden()
+                                .controlSize(.small)
+                        }
+                    }
+                }
+            }
+            
+            if hasWavelengths, spectralTrimInputMode == .wavelengths {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Начальная λ")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 6) {
+                                TextField("", value: $trimStartWavelength, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 90)
+                                Text("нм")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Конечная λ")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 6) {
+                                TextField("", value: $trimEndWavelength, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 90)
+                                Text("нм")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    
+                    if let startLambda, let endLambda {
+                        Text("Ближайшие каналы: \(localSpectralTrimParams.startChannel) – \(localSpectralTrimParams.endChannel) (λ \(formatWavelength(startLambda)) – \(formatWavelength(endLambda)) нм)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
@@ -1609,17 +1714,94 @@ struct OperationEditorView: View {
             if localSpectralTrimParams.endChannel < localSpectralTrimParams.startChannel {
                 localSpectralTrimParams.endChannel = localSpectralTrimParams.startChannel
             }
+            if hasWavelengths {
+                syncTrimWavelengthInputs(wavelengths)
+            } else {
+                spectralTrimInputMode = .channels
+            }
         }
         .onChange(of: localSpectralTrimParams.startChannel) { newValue in
             if localSpectralTrimParams.endChannel < newValue {
                 localSpectralTrimParams.endChannel = newValue
+            }
+            if spectralTrimInputMode == .channels {
+                syncTrimWavelengthInputs(wavelengths)
             }
         }
         .onChange(of: localSpectralTrimParams.endChannel) { newValue in
             if newValue < localSpectralTrimParams.startChannel {
                 localSpectralTrimParams.startChannel = newValue
             }
+            if spectralTrimInputMode == .channels {
+                syncTrimWavelengthInputs(wavelengths)
+            }
         }
+        .onChange(of: spectralTrimInputMode) { newValue in
+            guard newValue == .wavelengths else { return }
+            syncTrimWavelengthInputs(wavelengths)
+        }
+        .onChange(of: trimStartWavelength) { _ in
+            guard spectralTrimInputMode == .wavelengths else { return }
+            updateTrimChannelsFromWavelengths(wavelengths, maxIndex: maxIndex)
+        }
+        .onChange(of: trimEndWavelength) { _ in
+            guard spectralTrimInputMode == .wavelengths else { return }
+            updateTrimChannelsFromWavelengths(wavelengths, maxIndex: maxIndex)
+        }
+    }
+
+    private func clampChannel(_ value: Int, maxIndex: Int) -> Int {
+        min(max(value, 0), maxIndex)
+    }
+
+    private func wavelengthValue(for channel: Int, wavelengths: [Double]?) -> Double? {
+        guard let wavelengths, wavelengths.indices.contains(channel) else { return nil }
+        return wavelengths[channel]
+    }
+    
+    private func wavelengthBounds(_ wavelengths: [Double]?) -> (min: Double, max: Double)? {
+        guard let wavelengths, let minValue = wavelengths.min(), let maxValue = wavelengths.max() else {
+            return nil
+        }
+        return (min: minValue, max: maxValue)
+    }
+    
+    private func formatWavelength(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
+    
+    private func nearestChannelIndex(to target: Double, wavelengths: [Double]) -> Int {
+        guard !wavelengths.isEmpty else { return 0 }
+        var bestIndex = 0
+        var bestDiff = abs(wavelengths[0] - target)
+        for (index, wavelength) in wavelengths.enumerated() {
+            let diff = abs(wavelength - target)
+            if diff < bestDiff {
+                bestDiff = diff
+                bestIndex = index
+            }
+        }
+        return bestIndex
+    }
+    
+    private func syncTrimWavelengthInputs(_ wavelengths: [Double]?) {
+        guard let wavelengths, !wavelengths.isEmpty else { return }
+        let maxWaveIndex = max(wavelengths.count - 1, 0)
+        let startIndex = min(localSpectralTrimParams.startChannel, maxWaveIndex)
+        let endIndex = min(localSpectralTrimParams.endChannel, maxWaveIndex)
+        trimStartWavelength = wavelengths[startIndex]
+        trimEndWavelength = wavelengths[endIndex]
+    }
+    
+    private func updateTrimChannelsFromWavelengths(_ wavelengths: [Double]?, maxIndex: Int) {
+        guard let wavelengths, !wavelengths.isEmpty else { return }
+        var startIndex = nearestChannelIndex(to: trimStartWavelength, wavelengths: wavelengths)
+        var endIndex = nearestChannelIndex(to: trimEndWavelength, wavelengths: wavelengths)
+        if endIndex < startIndex {
+            swap(&startIndex, &endIndex)
+        }
+        localSpectralTrimParams.startChannel = clampChannel(startIndex, maxIndex: maxIndex)
+        localSpectralTrimParams.endChannel = clampChannel(endIndex, maxIndex: maxIndex)
     }
     
     private func dataTypeEditor(for op: PipelineOperation) -> some View {
