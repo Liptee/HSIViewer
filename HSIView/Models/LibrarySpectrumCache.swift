@@ -2,7 +2,7 @@ import Foundation
 
 struct LibrarySpectrumEntry: Identifiable, Equatable {
     let libraryID: String
-    let fileName: String
+    var displayName: String
     var spectrumSamples: [CachedSpectrumSample]
     var roiSamples: [CachedROISample]
     
@@ -53,7 +53,7 @@ class LibrarySpectrumCache: ObservableObject {
     @Published var entries: [String: LibrarySpectrumEntry] = [:]
     @Published var visibleEntries: Set<String> = []
     
-    func updateEntry(libraryID: String, fileName: String, spectrumSamples: [SpectrumSampleDescriptor], roiSamples: [SpectrumROISampleDescriptor]) {
+    func updateEntry(libraryID: String, displayName: String, spectrumSamples: [SpectrumSampleDescriptor], roiSamples: [SpectrumROISampleDescriptor]) {
         let cachedSpectrumSamples = spectrumSamples.map { descriptor in
             CachedSpectrumSample(
                 id: descriptor.id,
@@ -84,7 +84,7 @@ class LibrarySpectrumCache: ObservableObject {
         
         let entry = LibrarySpectrumEntry(
             libraryID: libraryID,
-            fileName: fileName,
+            displayName: displayName,
             spectrumSamples: cachedSpectrumSamples,
             roiSamples: cachedROISamples
         )
@@ -98,6 +98,12 @@ class LibrarySpectrumCache: ObservableObject {
     func removeEntry(libraryID: String) {
         entries.removeValue(forKey: libraryID)
         visibleEntries.remove(libraryID)
+    }
+
+    func renameEntry(libraryID: String, displayName: String) {
+        guard var entry = entries[libraryID] else { return }
+        entry.displayName = displayName
+        entries[libraryID] = entry
     }
     
     func toggleVisibility(libraryID: String) {
@@ -133,7 +139,6 @@ class LibrarySpectrumCache: ObservableObject {
     }
     
     var nonEmptyEntries: [LibrarySpectrumEntry] {
-        entries.values.filter { !$0.isEmpty }.sorted { $0.fileName < $1.fileName }
+        entries.values.filter { !$0.isEmpty }.sorted { $0.displayName < $1.displayName }
     }
 }
-
