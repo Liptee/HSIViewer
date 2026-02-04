@@ -83,6 +83,47 @@ class ImageRenderer {
         
         return createRGBImage(r: pixelsR, g: pixelsG, b: pixelsB, width: w, height: h)
     }
+
+    static func renderRGBRange(
+        cube: HyperCube,
+        layout: CubeLayout,
+        wavelengths: [Double]?,
+        rangeMapping: RGBChannelRangeMapping
+    ) -> NSImage? {
+        _ = wavelengths
+        if cube.is2D {
+            return render2DImage(cube: cube)
+        }
+        
+        guard let axes = cube.axes(for: layout) else { return nil }
+        
+        let (d0, d1, d2) = cube.dims
+        let dimsArr = [d0, d1, d2]
+        
+        let cCount = dimsArr[axes.channel]
+        
+        let h = dimsArr[axes.height]
+        let w = dimsArr[axes.width]
+        
+        let clamped = rangeMapping.clamped(maxChannelCount: cCount)
+        let rangeR = clamped.red.normalized
+        let rangeG = clamped.green.normalized
+        let rangeB = clamped.blue.normalized
+        
+        let sliceR = extractChannelRangeAverage(cube: cube, axes: axes, range: rangeR, h: h, w: w)
+        let sliceG = extractChannelRangeAverage(cube: cube, axes: axes, range: rangeG, h: h, w: w)
+        let sliceB = extractChannelRangeAverage(cube: cube, axes: axes, range: rangeB, h: h, w: w)
+        
+        let normR = DataNormalizer.normalize(sliceR)
+        let normG = DataNormalizer.normalize(sliceG)
+        let normB = DataNormalizer.normalize(sliceB)
+        
+        let pixelsR = DataNormalizer.toUInt8(normR.normalized)
+        let pixelsG = DataNormalizer.toUInt8(normG.normalized)
+        let pixelsB = DataNormalizer.toUInt8(normB.normalized)
+        
+        return createRGBImage(r: pixelsR, g: pixelsG, b: pixelsB, width: w, height: h)
+    }
     
     private static func extractChannel(
         cube: HyperCube,
@@ -102,6 +143,43 @@ class ImageRenderer {
                 
                 let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
                 slice[y * w + x] = cube.getValue(at: lin)
+            }
+        }
+        
+        return slice
+    }
+
+    private static func extractChannelRangeAverage(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        range: RGBChannelRange,
+        h: Int,
+        w: Int
+    ) -> [Double] {
+        let normalized = range.normalized
+        let start = normalized.start
+        let end = normalized.end
+        let count = max(end - start + 1, 1)
+        var slice = [Double](repeating: 0.0, count: h * w)
+        
+        for ch in start...end {
+            for y in 0..<h {
+                for x in 0..<w {
+                    var idx3 = [0, 0, 0]
+                    idx3[axes.channel] = ch
+                    idx3[axes.height] = y
+                    idx3[axes.width] = x
+                    
+                    let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
+                    slice[y * w + x] += cube.getValue(at: lin)
+                }
+            }
+        }
+        
+        let divisor = Double(count)
+        if divisor > 1 {
+            for i in 0..<slice.count {
+                slice[i] /= divisor
             }
         }
         

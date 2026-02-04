@@ -43,6 +43,13 @@ class QuickPNGExporter {
                 wavelengths: wavelengths,
                 mapping: config.mapping
             )
+        case .rangeWideRGB:
+            return renderRangeWideRGB(
+                cube: cube,
+                layout: layout,
+                wavelengths: wavelengths,
+                rangeMapping: config.rangeMapping
+            )
         case .pcaVisualization:
             let result = PCARenderer.render(
                 cube: cube,
@@ -89,6 +96,39 @@ class QuickPNGExporter {
         
         return createRGBImage(r: pixelsR, g: pixelsG, b: pixelsB, width: width, height: height)
     }
+
+    private static func renderRangeWideRGB(
+        cube: HyperCube,
+        layout: CubeLayout,
+        wavelengths: [Double]?,
+        rangeMapping: RGBChannelRangeMapping
+    ) -> NSImage? {
+        _ = wavelengths
+        guard let axes = cube.axes(for: layout) else { return nil }
+        
+        let (d0, d1, d2) = cube.dims
+        let dimsArr = [d0, d1, d2]
+        
+        let channels = dimsArr[axes.channel]
+        guard channels > 0 else { return nil }
+        let height = dimsArr[axes.height]
+        let width = dimsArr[axes.width]
+        
+        let clamped = rangeMapping.clamped(maxChannelCount: channels)
+        let sliceR = extractChannelRangeAverage(cube: cube, axes: axes, range: clamped.red, h: height, w: width)
+        let sliceG = extractChannelRangeAverage(cube: cube, axes: axes, range: clamped.green, h: height, w: width)
+        let sliceB = extractChannelRangeAverage(cube: cube, axes: axes, range: clamped.blue, h: height, w: width)
+        
+        let normR = normalize(sliceR)
+        let normG = normalize(sliceG)
+        let normB = normalize(sliceB)
+        
+        let pixelsR = toUInt8(normR)
+        let pixelsG = toUInt8(normG)
+        let pixelsB = toUInt8(normB)
+        
+        return createRGBImage(r: pixelsR, g: pixelsG, b: pixelsB, width: width, height: height)
+    }
     
     private static func extractChannel(
         cube: HyperCube,
@@ -108,6 +148,43 @@ class QuickPNGExporter {
                 
                 let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
                 slice[y * w + x] = cube.getValue(at: lin)
+            }
+        }
+        
+        return slice
+    }
+
+    private static func extractChannelRangeAverage(
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        range: RGBChannelRange,
+        h: Int,
+        w: Int
+    ) -> [Double] {
+        let normalized = range.normalized
+        let start = normalized.start
+        let end = normalized.end
+        let count = max(end - start + 1, 1)
+        var slice = [Double](repeating: 0.0, count: h * w)
+        
+        for ch in start...end {
+            for y in 0..<h {
+                for x in 0..<w {
+                    var idx3 = [0, 0, 0]
+                    idx3[axes.channel] = ch
+                    idx3[axes.height] = y
+                    idx3[axes.width] = x
+                    
+                    let lin = cube.linearIndex(i0: idx3[0], i1: idx3[1], i2: idx3[2])
+                    slice[y * w + x] += cube.getValue(at: lin)
+                }
+            }
+        }
+        
+        let divisor = Double(count)
+        if divisor > 1 {
+            for i in 0..<slice.count {
+                slice[i] /= divisor
             }
         }
         
@@ -187,7 +264,6 @@ class QuickPNGExporter {
         return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
     }
 }
-
 
 
 

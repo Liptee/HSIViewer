@@ -381,6 +381,13 @@ final class AppState: ObservableObject {
             hasCustomColorSynthesisMapping = true
         }
     }
+
+    func updateColorSynthesisRangeMapping(_ mapping: RGBChannelRangeMapping, userInitiated: Bool) {
+        colorSynthesisConfig.rangeMapping = mapping.clamped(maxChannelCount: channelCount)
+        if userInitiated {
+            hasCustomColorSynthesisMapping = true
+        }
+    }
     
     func updatePCAConfig(_ updater: (inout PCAVisualizationConfig) -> Void) {
         if pcaPendingConfig == nil {
@@ -444,11 +451,16 @@ final class AppState: ObservableObject {
             channelCount: channelCount,
             wavelengths: wavelengths
         )
+        colorSynthesisConfig.rangeMapping = RGBChannelRangeMapping.defaultMapping(
+            channelCount: channelCount,
+            wavelengths: wavelengths
+        )
         colorSynthesisConfig.pcaConfig.mapping = PCAComponentMapping(red: 0, green: 1, blue: 2).clamped(maxComponents: max(channelCount, 1))
     }
     
     private func clampColorSynthesisMapping() {
         colorSynthesisConfig.mapping = colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount)
+        colorSynthesisConfig.rangeMapping = colorSynthesisConfig.rangeMapping.clamped(maxChannelCount: channelCount)
         colorSynthesisConfig.pcaConfig.mapping = colorSynthesisConfig.pcaConfig.mapping.clamped(maxComponents: max(channelCount, 1))
         if let basis = colorSynthesisConfig.pcaConfig.basis,
            let first = basis.first,
@@ -962,12 +974,25 @@ final class AppState: ObservableObject {
         let width = dimsArray[axes.width]
         let height = dimsArray[axes.height]
         
-        let rgbImage = ImageRenderer.renderRGB(
-            cube: cube,
-            layout: activeLayout,
-            wavelengths: wavelengths,
-            mapping: colorSynthesisConfig.mapping
-        )
+        let rgbImage: NSImage?
+        switch colorSynthesisConfig.mode {
+        case .trueColorRGB:
+            rgbImage = ImageRenderer.renderRGB(
+                cube: cube,
+                layout: activeLayout,
+                wavelengths: wavelengths,
+                mapping: colorSynthesisConfig.mapping
+            )
+        case .rangeWideRGB:
+            rgbImage = ImageRenderer.renderRGBRange(
+                cube: cube,
+                layout: activeLayout,
+                wavelengths: wavelengths,
+                rangeMapping: colorSynthesisConfig.rangeMapping
+            )
+        case .pcaVisualization:
+            rgbImage = pcaRenderedImage
+        }
         
         maskEditorState.initialize(width: width, height: height, rgbImage: rgbImage)
     }
@@ -987,12 +1012,25 @@ final class AppState: ObservableObject {
     
     func updateMaskReferenceImage() {
         guard viewMode == .mask, let cube = cube else { return }
-        let rgbImage = ImageRenderer.renderRGB(
-            cube: cube,
-            layout: activeLayout,
-            wavelengths: wavelengths,
-            mapping: colorSynthesisConfig.mapping
-        )
+        let rgbImage: NSImage?
+        switch colorSynthesisConfig.mode {
+        case .trueColorRGB:
+            rgbImage = ImageRenderer.renderRGB(
+                cube: cube,
+                layout: activeLayout,
+                wavelengths: wavelengths,
+                mapping: colorSynthesisConfig.mapping
+            )
+        case .rangeWideRGB:
+            rgbImage = ImageRenderer.renderRGBRange(
+                cube: cube,
+                layout: activeLayout,
+                wavelengths: wavelengths,
+                rangeMapping: colorSynthesisConfig.rangeMapping
+            )
+        case .pcaVisualization:
+            rgbImage = pcaRenderedImage
+        }
         
         if let refLayer = maskEditorState.referenceLayers.first,
            let index = maskEditorState.layers.firstIndex(where: { $0.id == refLayer.id }),
@@ -2119,6 +2157,7 @@ final class AppState: ObservableObject {
         colorSynthesisConfig = ColorSynthesisConfig(
             mode: snapshot.colorSynthesisConfig.mode,
             mapping: snapshot.colorSynthesisConfig.mapping,
+            rangeMapping: snapshot.colorSynthesisConfig.rangeMapping,
             pcaConfig: clampedPCAConfig(snapshot.colorSynthesisConfig.pcaConfig)
         )
         ndPreset = snapshot.ndPreset
@@ -2292,6 +2331,7 @@ final class AppState: ObservableObject {
         let clampedConfig = ColorSynthesisConfig(
             mode: colorSynthesisConfig.mode,
             mapping: colorSynthesisConfig.mapping.clamped(maxChannelCount: channelCount),
+            rangeMapping: colorSynthesisConfig.rangeMapping.clamped(maxChannelCount: channelCount),
             pcaConfig: clampedPCAConfig(colorSynthesisConfig.pcaConfig)
         )
         

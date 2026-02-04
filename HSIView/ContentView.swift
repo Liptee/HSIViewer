@@ -623,6 +623,13 @@ struct ContentView: View {
                     wavelengths: state.wavelengths,
                     mapping: config.mapping
                 )
+            case .rangeWideRGB:
+                image = ImageRenderer.renderRGBRange(
+                    cube: cube,
+                    layout: state.activeLayout,
+                    wavelengths: state.wavelengths,
+                    rangeMapping: config.rangeMapping
+                )
             case .pcaVisualization:
                 image = state.pcaRenderedImage
             }
@@ -982,6 +989,10 @@ struct ContentView: View {
                     state.updateColorSynthesisMapping(newMapping, userInitiated: true)
                 }
             }
+            
+        case .rangeWideRGB:
+            RangeWideColorControls(cube: cube)
+                .environmentObject(state)
             
         case .pcaVisualization:
             pcaColorControls(cube: cube)
