@@ -26,13 +26,17 @@ class NpyImageLoader: ImageLoader {
         } else {
             dims = (header.shape[0], header.shape[1], header.shape[2])
         }
+
+        let channelCount = header.shape.count == 2 ? 1 : dims.2
+        let wavelengths = loadWavelengths(for: url, expectedCount: channelCount)
         
         // Передаем флаг Fortran-order для правильной индексации
         return .success(HyperCube(
             dims: dims,
             storage: storage,
             sourceFormat: "NumPy (.npy)",
-            isFortranOrder: header.fortranOrder
+            isFortranOrder: header.fortranOrder,
+            wavelengths: wavelengths
         ))
     }
     
@@ -290,6 +294,46 @@ class NpyImageLoader: ImageLoader {
             return nil
         }
     }
+
+    private static func loadWavelengths(for npyURL: URL, expectedCount: Int) -> [Double]? {
+        guard expectedCount > 0 else { return nil }
+
+        let base = npyURL.deletingPathExtension()
+        let candidateURLs: [URL] = [
+            base.appendingPathExtension("wavelengths.txt"),
+            npyURL.deletingPathExtension().deletingLastPathComponent()
+                .appendingPathComponent("\(base.lastPathComponent)_wavelengths.txt")
+        ]
+
+        for candidate in candidateURLs {
+            guard let text = try? String(contentsOf: candidate, encoding: .utf8) else { continue }
+            let lines = text
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            guard lines.count == expectedCount else { continue }
+
+            var values: [Double] = []
+            values.reserveCapacity(lines.count)
+            var isValid = true
+
+            for line in lines {
+                let normalized = line.replacingOccurrences(of: ",", with: ".")
+                guard let value = Double(normalized), value.isFinite else {
+                    isValid = false
+                    break
+                }
+                values.append(value)
+            }
+
+            if isValid {
+                return values
+            }
+        }
+
+        return nil
+    }
     
     // Больше не используется - DataStorage хранит originalDataType
     private static func npyDtypeToDataType(_ dtype: String) -> DataType {
@@ -316,4 +360,3 @@ class NpyImageLoader: ImageLoader {
         return .unknown
     }
 }
-

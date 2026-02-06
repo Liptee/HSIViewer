@@ -92,6 +92,14 @@ struct HSIViewApp: App {
 
                 Divider()
 
+                Button("Собрать ГСИ") {
+                    HSIAssemblerWindowManager.shared.show(appState: appState)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(appState.isBusy)
+
+                Divider()
+
                 Button("Создать из текущего") {
                     appState.createDerivedCubeFromCurrent()
                 }

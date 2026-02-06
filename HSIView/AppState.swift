@@ -2,6 +2,38 @@ import Foundation
 import AppKit
 
 final class AppState: ObservableObject {
+    enum HSIAssemblyError: LocalizedError {
+        case noMaterials
+        case busy
+        case inconsistentResolution(expected: String, actual: String, fileName: String)
+        case nonGrayscaleMaterial(fileName: String)
+        case partialWavelengths
+        case invalidWavelength(index: Int)
+        case invalidMaterialData(fileName: String)
+        case noWorkspaceAccess
+
+        var errorDescription: String? {
+            switch self {
+            case .noMaterials:
+                return "Добавьте хотя бы один материал"
+            case .busy:
+                return "Дождитесь завершения текущей операции"
+            case .inconsistentResolution(let expected, let actual, let fileName):
+                return "Разрешение \(fileName) (\(actual)) не совпадает с ожидаемым \(expected)"
+            case .nonGrayscaleMaterial(let fileName):
+                return "Материал \(fileName) не в Grayscale. Разбейте его на каналы."
+            case .partialWavelengths:
+                return "Укажите длину волны либо для всех материалов, либо не указывайте вовсе"
+            case .invalidWavelength(let index):
+                return "Некорректная длина волны у материала №\(index)"
+            case .invalidMaterialData(let fileName):
+                return "Повреждённые данные материала: \(fileName)"
+            case .noWorkspaceAccess:
+                return "Не удалось получить доступ к рабочей папке"
+            }
+        }
+    }
+
     @Published var cube: HyperCube? {
         didSet {
             handleCubeChange(previousCube: oldValue)
@@ -2090,6 +2122,116 @@ final class AppState: ObservableObject {
         }
     }
 
+    func assembleCubeFromMaterials(
+        _ materials: [HSIAssemblyMaterial],
+        openAfterAssemble: Bool = true,
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        loadError = nil
+
+        guard !materials.isEmpty else {
+            let error = HSIAssemblyError.noMaterials
+            loadError = error.localizedDescription
+            completion(.failure(error))
+            return
+        }
+
+        guard !isBusy else {
+            let error = HSIAssemblyError.busy
+            loadError = error.localizedDescription
+            completion(.failure(error))
+            return
+        }
+
+        let referenceWidth = materials[0].width
+        let referenceHeight = materials[0].height
+        let expectedResolution = "\(referenceWidth) × \(referenceHeight)"
+
+        for material in materials {
+            if material.width != referenceWidth || material.height != referenceHeight {
+                let actual = "\(material.width) × \(material.height)"
+                let error = HSIAssemblyError.inconsistentResolution(
+                    expected: expectedResolution,
+                    actual: actual,
+                    fileName: material.fileName
+                )
+                loadError = error.localizedDescription
+                completion(.failure(error))
+                return
+            }
+            if !material.isGrayscale {
+                let error = HSIAssemblyError.nonGrayscaleMaterial(fileName: material.fileName)
+                loadError = error.localizedDescription
+                completion(.failure(error))
+                return
+            }
+            if material.channelValues.count != material.pixelCount {
+                let error = HSIAssemblyError.invalidMaterialData(fileName: material.fileName)
+                loadError = error.localizedDescription
+                completion(.failure(error))
+                return
+            }
+        }
+
+        let wavelengths: [Double]?
+        do {
+            wavelengths = try parseAssemblyWavelengths(materials: materials)
+        } catch {
+            loadError = error.localizedDescription
+            completion(.failure(error))
+            return
+        }
+
+        guard let targetURL = AppWorkingDirectory.shared.derivedCubeURL(baseName: "assembled_hsi", allowPrompt: true) else {
+            let error = HSIAssemblyError.noWorkspaceAccess
+            loadError = error.localizedDescription
+            completion(.failure(error))
+            return
+        }
+
+        beginBusy(message: "Сборка ГСИ…")
+        let buildMaterials = materials
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+
+            let channels = buildMaterials.count
+            let pixelCount = referenceWidth * referenceHeight
+            var buffer = [UInt8](repeating: 0, count: pixelCount * channels)
+
+            for (channelIndex, material) in buildMaterials.enumerated() {
+                for pixelIndex in 0..<pixelCount {
+                    buffer[pixelIndex * channels + channelIndex] = material.channelValues[pixelIndex]
+                }
+            }
+
+            let assembledCube = HyperCube(
+                dims: (referenceHeight, referenceWidth, channels),
+                storage: .uint8(buffer),
+                sourceFormat: "HSI Builder",
+                isFortranOrder: false,
+                wavelengths: wavelengths
+            )
+
+            let result = NpyExporter.export(cube: assembledCube, to: targetURL, wavelengths: wavelengths)
+            DispatchQueue.main.async {
+                self.endBusy()
+                switch result {
+                case .success:
+                    let canonical = self.canonicalURL(targetURL)
+                    self.ensureLibraryContains(url: canonical)
+                    if openAfterAssemble {
+                        self.open(url: canonical)
+                    }
+                    completion(.success(canonical))
+                case .failure(let error):
+                    self.loadError = error.localizedDescription
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
     func cleanupTemporaryWorkspace() {
         let tempDir = AppWorkingDirectory.shared.temporaryDirectoryURL(allowPrompt: false, createIfNeeded: false)
         let tempPath = tempDir?.standardizedFileURL.path
@@ -2125,6 +2267,32 @@ final class AppState: ObservableObject {
         }
 
         AppWorkingDirectory.shared.clearTemporaryDirectory()
+    }
+
+    private func parseAssemblyWavelengths(materials: [HSIAssemblyMaterial]) throws -> [Double]? {
+        let normalized = materials.map { material in
+            material.wavelengthText
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: ",", with: ".")
+        }
+
+        let nonEmptyCount = normalized.filter { !$0.isEmpty }.count
+        if nonEmptyCount == 0 {
+            return nil
+        }
+        guard nonEmptyCount == materials.count else {
+            throw HSIAssemblyError.partialWavelengths
+        }
+
+        var values: [Double] = []
+        values.reserveCapacity(materials.count)
+        for (index, value) in normalized.enumerated() {
+            guard let parsed = Double(value), parsed.isFinite else {
+                throw HSIAssemblyError.invalidWavelength(index: index + 1)
+            }
+            values.append(parsed)
+        }
+        return values
     }
 
     func beginLibraryExportProgress(total: Int) {
