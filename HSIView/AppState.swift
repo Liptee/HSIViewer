@@ -2034,6 +2034,99 @@ final class AppState: ObservableObject {
         }
     }
 
+    func createDerivedCubeFromCurrent() {
+        loadError = nil
+        guard let cube else {
+            loadError = "Сначала открой гиперкуб"
+            return
+        }
+        if isBusy {
+            loadError = "Дождитесь завершения текущей операции"
+            return
+        }
+
+        let baseName: String
+        if let url = cubeURL {
+            baseName = exportBaseName(for: url)
+        } else {
+            baseName = "hypercube"
+        }
+
+        guard let targetURL = AppWorkingDirectory.shared.derivedCubeURL(baseName: baseName, allowPrompt: true) else {
+            loadError = "Не удалось получить доступ к рабочей папке"
+            return
+        }
+
+        beginBusy(message: "Создание нового ГСИ…")
+
+        let cubeToSave = cubeWithWavelengthsIfNeeded(cube, layout: activeLayout)
+        let wavelengthsToSave = wavelengths ?? cubeToSave.wavelengths
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = NpyExporter.export(cube: cubeToSave, to: targetURL, wavelengths: wavelengthsToSave)
+            DispatchQueue.main.async {
+                self.endBusy()
+                switch result {
+                case .success:
+                    let canonical = self.canonicalURL(targetURL)
+                    self.ensureLibraryContains(url: canonical)
+                    var snapshot = self.makeSnapshot() ?? CubeSessionSnapshot.empty
+                    snapshot.pipelineOperations = []
+                    snapshot.spectralTrimRange = nil
+                    snapshot.baseWavelengths = snapshot.wavelengths
+                    self.sessionSnapshots[canonical] = snapshot
+                    let displayName = self.displayName(for: canonical)
+                    self.librarySpectrumCache.updateEntry(
+                        libraryID: canonical.path,
+                        displayName: displayName,
+                        spectrumSamples: snapshot.spectrumSamples,
+                        roiSamples: snapshot.roiSamples
+                    )
+                case .failure(let error):
+                    self.loadError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func cleanupTemporaryWorkspace() {
+        let tempDir = AppWorkingDirectory.shared.temporaryDirectoryURL(allowPrompt: false, createIfNeeded: false)
+        let tempPath = tempDir?.standardizedFileURL.path
+        let tempPrefix = tempPath.map { $0 + "/" }
+
+        if let tempPath, let tempPrefix {
+            let removedEntries = libraryEntries.filter { entry in
+                let path = entry.url.standardizedFileURL.path
+                return path == tempPath || path.hasPrefix(tempPrefix)
+            }
+
+            if !removedEntries.isEmpty {
+                let removedIDs = Set(removedEntries.map(\.id))
+                libraryEntries.removeAll { removedIDs.contains($0.id) }
+                for entry in removedEntries {
+                    let canonical = canonicalURL(entry.url)
+                    sessionSnapshots.removeValue(forKey: canonical)
+                    librarySpectrumCache.removeEntry(libraryID: entry.id)
+                }
+            }
+
+            if let currentURL = cubeURL?.standardizedFileURL {
+                let currentPath = currentURL.path
+                if currentPath == tempPath || currentPath.hasPrefix(tempPrefix) {
+                    cube = nil
+                    originalCube = nil
+                    cubeURL = nil
+                    channelCount = 0
+                    currentChannel = 0
+                    resetSessionState()
+                }
+            }
+        }
+
+        AppWorkingDirectory.shared.clearTemporaryDirectory()
+    }
+
     func beginLibraryExportProgress(total: Int) {
         DispatchQueue.main.async {
             self.libraryExportDismissWorkItem?.cancel()

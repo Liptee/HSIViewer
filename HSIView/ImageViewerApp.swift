@@ -7,6 +7,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         ensureSingleMainWindow()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
@@ -29,6 +35,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return true
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        AppDelegate.sharedState?.cleanupTemporaryWorkspace()
+    }
     
     private func activateMainWindow() {
         if let mainWindow = NSApp.windows.first(where: { $0.identifier?.rawValue == "main-window" }) {
@@ -44,6 +54,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 window.close()
             }
         }
+    }
+
+    @objc private func handleWindowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window.identifier?.rawValue == "main-window" else {
+            return
+        }
+        AppDelegate.sharedState?.cleanupTemporaryWorkspace()
     }
 }
 
@@ -71,9 +89,17 @@ struct HSIViewApp: App {
                     openFile()
                 }
                 .keyboardShortcut("o", modifiers: .command)
-                
+
                 Divider()
-                
+
+                Button("Создать из текущего") {
+                    appState.createDerivedCubeFromCurrent()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(appState.cube == nil || appState.isBusy)
+
+                Divider()
+
                 Button("Экспорт...") {
                     appState.showExportView = true
                 }
