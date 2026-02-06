@@ -771,18 +771,21 @@ struct HSIAssemblerView: View {
         }
 
         var templateOrder: [String] = []
-        var templateWavelengths: [String: String] = [:]
-        var templateNameSet: Set<String> = []
+        var templateWavelengthsByName: [String: String] = [:]
+        var templateNamesLowercased: Set<String> = []
 
         if strategy == .template {
             templateOrder = activeMaterials.map(\.fileName)
-            templateNameSet = Set(templateOrder)
-            guard templateNameSet.count == templateOrder.count else {
+            let loweredOrder = templateOrder.map { $0.lowercased() }
+            templateNamesLowercased = Set(loweredOrder)
+            guard templateNamesLowercased.count == templateOrder.count else {
                 errorMessage = "В текущих материалах есть дублирующиеся имена файлов, массовая сборка по шаблону невозможна"
                 infoMessage = nil
                 return
             }
-            templateWavelengths = Dictionary(uniqueKeysWithValues: activeMaterials.map { ($0.fileName, $0.wavelengthText) })
+            templateWavelengthsByName = Dictionary(
+                uniqueKeysWithValues: activeMaterials.map { ($0.fileName.lowercased(), $0.wavelengthText) }
+            )
         }
 
         isBulkBuilding = true
@@ -826,7 +829,8 @@ struct HSIAssemblerView: View {
                 return
             }
 
-            loadSourceBundle(for: source) { result in
+            let allowedNames = strategy == .template ? templateNamesLowercased : nil
+            loadSourceBundle(for: source, allowedNames: allowedNames) { result in
                 switch result {
                 case .failure(let error):
                     failures.append("\(source.displayName): \(error.localizedDescription)")
@@ -835,30 +839,26 @@ struct HSIAssemblerView: View {
                 case .success(let bundle):
                     switch strategy {
                     case .template:
-                        guard bundle.materials.count == templateOrder.count else {
-                            failures.append("\(source.displayName): отличается количество файлов")
+                        let sourceNamesLowercased = bundle.materials.map { $0.fileName.lowercased() }
+                        let uniqueSourceNamesLowercased = Set(sourceNamesLowercased)
+                        guard uniqueSourceNamesLowercased.count == sourceNamesLowercased.count else {
+                            failures.append("\(source.displayName): есть дублирующиеся имена файлов")
                             process(index: index + 1)
                             return
                         }
 
-                        let sourceNames = Set(bundle.materials.map(\.fileName))
-                        guard sourceNames == templateNameSet else {
-                            failures.append("\(source.displayName): отличаются имена файлов")
-                            process(index: index + 1)
-                            return
-                        }
-
-                        let byName = Dictionary(uniqueKeysWithValues: bundle.materials.map { ($0.fileName, $0) })
+                        let byName = Dictionary(uniqueKeysWithValues: bundle.materials.map { ($0.fileName.lowercased(), $0) })
                         var arranged: [HSIAssemblyMaterial] = []
                         arranged.reserveCapacity(templateOrder.count)
 
                         for name in templateOrder {
-                            guard var material = byName[name] else {
+                            let normalizedName = name.lowercased()
+                            guard var material = byName[normalizedName] else {
                                 failures.append("\(source.displayName): отсутствует файл \(name)")
                                 process(index: index + 1)
                                 return
                             }
-                            material.wavelengthText = templateWavelengths[name] ?? ""
+                            material.wavelengthText = templateWavelengthsByName[normalizedName] ?? ""
                             arranged.append(material)
                         }
 
@@ -917,10 +917,20 @@ struct HSIAssemblerView: View {
         process(index: 0)
     }
 
-    private func loadSourceBundle(for source: SourceEntry, completion: @escaping (Result<SourceLoadBundle, SourceLoadError>) -> Void) {
+    private func loadSourceBundle(
+        for source: SourceEntry,
+        allowedNames: Set<String>? = nil,
+        completion: @escaping (Result<SourceLoadBundle, SourceLoadError>) -> Void
+    ) {
         let sourceURL = source.url
         DispatchQueue.global(qos: .userInitiated).async {
-            let imageURLs = imageFileURLs(in: sourceURL)
+            let imageURLs: [URL]
+            if let allowedNames {
+                imageURLs = imageFileURLs(in: sourceURL)
+                    .filter { allowedNames.contains($0.lastPathComponent.lowercased()) }
+            } else {
+                imageURLs = imageFileURLs(in: sourceURL)
+            }
             guard !imageURLs.isEmpty else {
                 DispatchQueue.main.async {
                     completion(.failure(.noSupportedFiles))
