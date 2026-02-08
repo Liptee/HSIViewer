@@ -114,6 +114,7 @@ struct LibraryPanel: View {
         
         let contextTargets = contextMenuTargets(for: entry)
         let canCopyFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyProcessing(from: $0) } == true
+        let canCopyWavelengthsFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyWavelengths(from: $0) } == true
         let canPastePoint = state.canPasteSpectrumPoint
         let canPasteROI = state.canPasteSpectrumROI
         let canRename = contextTargets.count == 1
@@ -162,6 +163,23 @@ struct LibraryPanel: View {
                 Button("Вставить обработку") {
                     for target in contextTargets {
                         state.pasteProcessing(to: target)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button("Копировать длины волн") {
+                if let target = contextTargets.first {
+                    state.copyWavelengths(from: target)
+                }
+            }
+            .disabled(!canCopyWavelengthsFromSingle)
+
+            if state.hasWavelengthClipboard {
+                Button("Вставить длины волн") {
+                    for target in contextTargets {
+                        state.pasteWavelengths(to: target)
                     }
                 }
             }
