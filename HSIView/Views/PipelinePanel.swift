@@ -619,6 +619,22 @@ private enum SpectralTrimInputMode: String, CaseIterable, Identifiable {
     }
 }
 
+private enum SpectralInterpolationTargetMode: String, CaseIterable, Identifiable {
+    case manual
+    case fromFile
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .manual:
+            return "Ручной ввод"
+        case .fromFile:
+            return "Из txt"
+        }
+    }
+}
+
 struct OperationEditorView: View {
     @Binding var operation: PipelineOperation?
     @EnvironmentObject var state: AppState
@@ -638,6 +654,9 @@ struct OperationEditorView: View {
     @State private var localSpectralInterpolationParams: SpectralInterpolationParameters = .default
     @State private var localSpectralAlignmentParams: SpectralAlignmentParameters = .default
     @State private var spectralTrimInputMode: SpectralTrimInputMode = .channels
+    @State private var spectralInterpolationTargetMode: SpectralInterpolationTargetMode = .manual
+    @State private var spectralInterpolationImportError: String?
+    @State private var spectralInterpolationImportInfo: String?
     @State private var trimStartWavelength: Double = 0
     @State private var trimEndWavelength: Double = 0
     @State private var resizeAspectRatio: Double = 1.0
@@ -688,7 +707,7 @@ struct OperationEditorView: View {
         case .spectralTrim:
             return CGSize(width: 460, height: 420)
         case .spectralInterpolation:
-            return CGSize(width: 520, height: 520)
+            return CGSize(width: 560, height: 590)
         case .spectralAlignment:
             return CGSize(width: 520, height: 720)
         default:
@@ -724,6 +743,16 @@ struct OperationEditorView: View {
             localSpectralTrimParams = op.spectralTrimParams ?? SpectralTrimParameters(startChannel: 0, endChannel: 0)
         case .spectralInterpolation:
             localSpectralInterpolationParams = op.spectralInterpolationParams ?? .default
+            if let customTargets = localSpectralInterpolationParams.targetWavelengths, !customTargets.isEmpty {
+                spectralInterpolationTargetMode = .fromFile
+                localSpectralInterpolationParams.targetChannelCount = customTargets.count
+                localSpectralInterpolationParams.targetMinLambda = customTargets.min() ?? 0
+                localSpectralInterpolationParams.targetMaxLambda = customTargets.max() ?? 0
+            } else {
+                spectralInterpolationTargetMode = .manual
+            }
+            spectralInterpolationImportError = nil
+            spectralInterpolationImportInfo = nil
         case .spectralAlignment:
             localSpectralAlignmentParams = op.spectralAlignmentParams ?? .default
         }
@@ -756,6 +785,9 @@ struct OperationEditorView: View {
         case .calibration:
             state.pipelineOperations[index].calibrationParams = localCalibrationParams
         case .spectralInterpolation:
+            if spectralInterpolationTargetMode == .manual {
+                localSpectralInterpolationParams.targetWavelengths = nil
+            }
             state.pipelineOperations[index].spectralInterpolationParams = localSpectralInterpolationParams
         case .spectralAlignment:
             state.pipelineOperations[index].spectralAlignmentParams = localSpectralAlignmentParams
@@ -1051,6 +1083,8 @@ struct OperationEditorView: View {
         let sourceMin = wavelengths?.min() ?? 0
         let sourceMax = wavelengths?.max() ?? 0
         let hasWavelengths = wavelengths != nil && !(wavelengths?.isEmpty ?? true)
+        let customTargets = localSpectralInterpolationParams.targetWavelengths ?? []
+        let hasCustomTargets = !customTargets.isEmpty
         
         return VStack(alignment: .leading, spacing: 12) {
             Text("Спектральная интерполяция")
@@ -1065,36 +1099,92 @@ struct OperationEditorView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
-            
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Целевое число каналов")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 8) {
-                        TextField("Channels", value: $localSpectralInterpolationParams.targetChannelCount, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
-                        Stepper("", value: $localSpectralInterpolationParams.targetChannelCount, in: 1...8192)
-                            .labelsHidden()
-                            .controlSize(.small)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Целевая сетка")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Picker("", selection: $spectralInterpolationTargetMode) {
+                    ForEach(SpectralInterpolationTargetMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
                 }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Диапазон λ")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 8) {
-                        TextField("Min", value: $localSpectralInterpolationParams.targetMinLambda, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
-                        Text("–")
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 320)
+            }
+            
+            if spectralInterpolationTargetMode == .manual {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Целевое число каналов")
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
-                        TextField("Max", value: $localSpectralInterpolationParams.targetMaxLambda, format: .number)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
+                        HStack(spacing: 8) {
+                            TextField("Channels", value: $localSpectralInterpolationParams.targetChannelCount, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 90)
+                            Stepper("", value: $localSpectralInterpolationParams.targetChannelCount, in: 1...8192)
+                                .labelsHidden()
+                                .controlSize(.small)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Диапазон λ")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        HStack(spacing: 8) {
+                            TextField("Min", value: $localSpectralInterpolationParams.targetMinLambda, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 90)
+                            Text("–")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField("Max", value: $localSpectralInterpolationParams.targetMaxLambda, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 90)
+                        }
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button("Загрузить λ из txt…") {
+                            importSpectralInterpolationTargetsFromFile()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Очистить") {
+                            localSpectralInterpolationParams.targetWavelengths = nil
+                            spectralInterpolationImportError = nil
+                            spectralInterpolationImportInfo = nil
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!hasCustomTargets)
+                    }
+
+                    if hasCustomTargets {
+                        let minLambda = customTargets.min() ?? 0
+                        let maxLambda = customTargets.max() ?? 0
+                        Text(String(format: "Из файла: %d каналов, %.2f – %.2f нм", customTargets.count, minLambda, maxLambda))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Файл не загружен. Интерполяция будет использовать ручные параметры как fallback.")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let spectralInterpolationImportInfo {
+                        Text(spectralInterpolationImportInfo)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let spectralInterpolationImportError {
+                        Text(spectralInterpolationImportError)
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
                     }
                 }
             }
@@ -1158,6 +1248,9 @@ struct OperationEditorView: View {
                     localSpectralInterpolationParams.targetMinLambda = sourceMin
                     localSpectralInterpolationParams.targetMaxLambda = sourceMax
                 }
+            }
+            if let customTargets = localSpectralInterpolationParams.targetWavelengths, !customTargets.isEmpty {
+                spectralInterpolationTargetMode = .fromFile
             }
         }
     }
@@ -2424,6 +2517,87 @@ struct OperationEditorView: View {
                 }
             }
         }
+    }
+
+    private func importSpectralInterpolationTargetsFromFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Выберите txt файл со списком длин волн (по одному значению на строку)"
+        panel.prompt = "Загрузить"
+        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let wavelengths = try parseWavelengthListFile(url: url)
+            localSpectralInterpolationParams.targetWavelengths = wavelengths
+            localSpectralInterpolationParams.targetChannelCount = wavelengths.count
+            localSpectralInterpolationParams.targetMinLambda = wavelengths.min() ?? 0
+            localSpectralInterpolationParams.targetMaxLambda = wavelengths.max() ?? 0
+            spectralInterpolationTargetMode = .fromFile
+            spectralInterpolationImportError = nil
+            spectralInterpolationImportInfo = "Загружено \(wavelengths.count) длин волн из \(url.lastPathComponent)"
+        } catch {
+            spectralInterpolationImportError = error.localizedDescription
+            spectralInterpolationImportInfo = nil
+        }
+    }
+
+    private enum SpectralInterpolationFileError: LocalizedError {
+        case readFailed
+        case empty
+        case invalidValue(line: Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .readFailed:
+                return "Не удалось прочитать txt файл длин волн"
+            case .empty:
+                return "Файл длин волн пуст"
+            case .invalidValue(let line):
+                return "Некорректная длина волны в строке \(line)"
+            }
+        }
+    }
+
+    private func parseWavelengthListFile(url: URL) throws -> [Double] {
+        guard let text = readWavelengthTextFile(url: url) else {
+            throw SpectralInterpolationFileError.readFailed
+        }
+
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !lines.isEmpty else {
+            throw SpectralInterpolationFileError.empty
+        }
+
+        var values: [Double] = []
+        values.reserveCapacity(lines.count)
+
+        for (index, line) in lines.enumerated() {
+            let normalized = line.replacingOccurrences(of: ",", with: ".")
+            guard let value = Double(normalized), value.isFinite else {
+                throw SpectralInterpolationFileError.invalidValue(line: index + 1)
+            }
+            values.append(value)
+        }
+
+        return values
+    }
+
+    private func readWavelengthTextFile(url: URL) -> String? {
+        let encodings: [String.Encoding] = [.utf8, .utf16, .windowsCP1251, .isoLatin1]
+        for encoding in encodings {
+            if let text = try? String(contentsOf: url, encoding: encoding) {
+                return text
+            }
+        }
+        return nil
     }
     
     private func currentPreviewImage() -> NSImage? {

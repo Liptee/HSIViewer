@@ -140,6 +140,7 @@ struct SpectralInterpolationParameters: Equatable {
     var targetChannelCount: Int
     var targetMinLambda: Double
     var targetMaxLambda: Double
+    var targetWavelengths: [Double]?
     var method: SpectralInterpolationMethod
     var extrapolation: SpectralExtrapolationMode
     var dataType: SpectralInterpolationDataType
@@ -148,6 +149,7 @@ struct SpectralInterpolationParameters: Equatable {
         targetChannelCount: 0,
         targetMinLambda: 0,
         targetMaxLambda: 0,
+        targetWavelengths: nil,
         method: .linear,
         extrapolation: .clamp,
         dataType: .float64
@@ -624,6 +626,7 @@ struct PipelineOperation: Identifiable, Equatable {
                     targetChannelCount: channelCount,
                     targetMinLambda: minLambda,
                     targetMaxLambda: maxLambda,
+                    targetWavelengths: nil,
                     method: .linear,
                     extrapolation: .clamp,
                     dataType: .float64
@@ -748,6 +751,9 @@ struct PipelineOperation: Identifiable, Equatable {
             return calibrationParams?.summaryText ?? "Не настроено"
         case .spectralInterpolation:
             if let params = spectralInterpolationParams {
+                if let customWavelengths = params.targetWavelengths, !customWavelengths.isEmpty {
+                    return "\(customWavelengths.count) каналов (txt), \(params.method.rawValue)"
+                }
                 return "\(params.targetChannelCount) каналов, \(params.method.rawValue)"
             }
             return "Настройте параметры"
@@ -2008,12 +2014,16 @@ class CubeSpectralInterpolator {
         let channelCount = dimsArray[axes.channel]
         guard channelCount > 0, wavelengths.count == channelCount else { return cube }
         
-        let targetCount = parameters.targetChannelCount
-        guard targetCount > 0 else { return cube }
-        
-        let targetMin = parameters.targetMinLambda
-        let targetMax = parameters.targetMaxLambda
-        let targetWavelengths = buildTargetWavelengths(min: targetMin, max: targetMax, count: targetCount)
+        let targetWavelengths: [Double]
+        if let explicitTargets = sanitizedTargetWavelengths(parameters.targetWavelengths) {
+            targetWavelengths = explicitTargets
+        } else {
+            let targetCount = parameters.targetChannelCount
+            guard targetCount > 0 else { return cube }
+            let targetMin = parameters.targetMinLambda
+            let targetMax = parameters.targetMaxLambda
+            targetWavelengths = buildTargetWavelengths(min: targetMin, max: targetMax, count: targetCount)
+        }
         
         let (sortedWavelengths, indexMap) = sortedWavelengthsIfNeeded(wavelengths)
         let outputChannels = targetWavelengths.count
@@ -2069,6 +2079,12 @@ class CubeSpectralInterpolator {
         guard count > 1 else { return [min] }
         let step = (max - min) / Double(count - 1)
         return (0..<count).map { min + Double($0) * step }
+    }
+
+    private static func sanitizedTargetWavelengths(_ wavelengths: [Double]?) -> [Double]? {
+        guard let wavelengths, !wavelengths.isEmpty else { return nil }
+        guard wavelengths.allSatisfy({ $0.isFinite }) else { return nil }
+        return wavelengths
     }
     
     private static func sortedWavelengthsIfNeeded(_ wavelengths: [Double]) -> ([Double], [Int]) {
