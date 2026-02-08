@@ -7,8 +7,6 @@ struct PipelinePanel: View {
     @State private var selectedOperation: UUID?
     @State private var showingAddMenu: Bool = false
     @State private var editingOperation: PipelineOperation?
-    @State private var draggingItem: PipelineOperation?
-    @State private var dropIndicator: DropIndicator?
     @FocusState private var hasListFocus: Bool
     
     var body: some View {
@@ -76,71 +74,31 @@ struct PipelinePanel: View {
     private var operationsList: some View {
         ScrollView {
             VStack(spacing: 8) {
-                ForEach(Array(state.pipelineOperations.enumerated()), id: \.element.id) { index, operation in
-                    VStack(spacing: 0) {
-                        if dropIndicator?.targetIndex == index && dropIndicator?.position == .above {
-                            dropIndicatorView
-                        }
-                        
-                        OperationRow(
-                            operation: operation,
-                            accent: accentColor(for: operation.type),
-                            isSelected: selectedOperation == operation.id,
-                            isDragging: draggingItem?.id == operation.id,
-                            onSelect: {
-                                selectedOperation = operation.id
-                                hasListFocus = true
-                            },
-                            onEdit: { editingOperation = operation },
-                            onDelete: {
-                                if let idx = state.pipelineOperations.firstIndex(where: { $0.id == operation.id }) {
-                                    state.removeOperation(at: idx)
-                                }
+                ForEach(state.pipelineOperations) { operation in
+                    OperationRow(
+                        operation: operation,
+                        accent: accentColor(for: operation.type),
+                        isSelected: selectedOperation == operation.id,
+                        isDragging: false,
+                        onSelect: {
+                            selectedOperation = operation.id
+                            hasListFocus = true
+                        },
+                        onEdit: { editingOperation = operation },
+                        onDelete: {
+                            if let idx = state.pipelineOperations.firstIndex(where: { $0.id == operation.id }) {
+                                state.removeOperation(at: idx)
                             }
-                        )
-                        .draggable(operation.id.uuidString) {
-                            OperationRow(
-                                operation: operation,
-                                accent: accentColor(for: operation.type),
-                                isSelected: true,
-                                isDragging: true,
-                                onSelect: {},
-                                onEdit: {},
-                                onDelete: {}
-                            )
-                            .frame(width: 260)
-                            .opacity(0.8)
-                            .onAppear { draggingItem = operation }
                         }
-                        .dropDestination(for: String.self) { items, location in
-                            handleDrop(items: items, targetIndex: index, location: location)
-                        } isTargeted: { isTargeted in
-                            handleDropTargeting(isTargeted: isTargeted, targetIndex: index)
-                        }
-                        
-                        if dropIndicator?.targetIndex == index && dropIndicator?.position == .below {
-                            dropIndicatorView
-                        }
-                    }
+                    )
                 }
                 
-                if state.pipelineOperations.count > 0 {
-                    Color.clear
-                        .frame(height: 30)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            showingAddMenu = true
-                        }
-                        .dropDestination(for: String.self) { items, location in
-                            handleDrop(items: items, targetIndex: state.pipelineOperations.count, location: location)
-                        } isTargeted: { isTargeted in
-                            if isTargeted && draggingItem != nil {
-                                dropIndicator = DropIndicator(targetIndex: state.pipelineOperations.count - 1, position: .below)
-                            } else if !isTargeted && dropIndicator?.targetIndex == state.pipelineOperations.count - 1 {
-                                dropIndicator = nil
-                            }
-                        }
-                }
+                Color.clear
+                    .frame(height: 30)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        showingAddMenu = true
+                    }
             }
             .padding(8)
         }
@@ -173,56 +131,6 @@ struct PipelinePanel: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
         )
-        .onChange(of: draggingItem) { oldValue, newValue in
-            if newValue == nil {
-                dropIndicator = nil
-            }
-        }
-    }
-    
-    private var dropIndicatorView: some View {
-        Capsule()
-            .fill(Color.yellow)
-            .frame(height: 4)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .shadow(color: .yellow.opacity(0.6), radius: 4, x: 0, y: 0)
-    }
-    
-    private func handleDrop(items: [String], targetIndex: Int, location: CGPoint) -> Bool {
-        guard let draggedIDString = items.first,
-              let draggedID = UUID(uuidString: draggedIDString),
-              let fromIndex = state.pipelineOperations.firstIndex(where: { $0.id == draggedID }) else {
-            dropIndicator = nil
-            draggingItem = nil
-            return false
-        }
-        
-        let position = dropIndicator?.position ?? .below
-        var toIndex = targetIndex
-        if position == .below {
-            toIndex += 1
-        }
-        
-        state.moveOperation(from: fromIndex, to: toIndex)
-        dropIndicator = nil
-        draggingItem = nil
-        return true
-    }
-    
-    private func handleDropTargeting(isTargeted: Bool, targetIndex: Int) {
-        guard draggingItem != nil else { return }
-        
-        if isTargeted {
-            if let draggedIndex = state.pipelineOperations.firstIndex(where: { $0.id == draggingItem?.id }) {
-                let position: DropPosition = targetIndex <= draggedIndex ? .above : .below
-                dropIndicator = DropIndicator(targetIndex: targetIndex, position: position)
-            }
-        } else {
-            if dropIndicator?.targetIndex == targetIndex {
-                dropIndicator = nil
-            }
-        }
     }
 
     private func deleteSelectedOperation() {
@@ -557,16 +465,6 @@ struct OperationRow: View {
             }
         }
     }
-}
-
-fileprivate enum DropPosition: Equatable {
-    case above
-    case below
-}
-
-fileprivate struct DropIndicator: Equatable {
-    let targetIndex: Int
-    let position: DropPosition
 }
 
 private struct DeleteKeyCatcher: NSViewRepresentable {
