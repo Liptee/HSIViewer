@@ -122,6 +122,11 @@ struct HSIViewApp: App {
                     appState.propagateProcessingToLibrary()
                 }
                 .disabled(!appState.canPropagateProcessing)
+
+                Button("Распространить длины волн") {
+                    appState.propagateWavelengthsToLibrary()
+                }
+                .disabled(!appState.canPropagateWavelengths)
             }
             
             CommandGroup(after: .sidebar) {

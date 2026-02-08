@@ -133,6 +133,7 @@ final class AppState: ObservableObject {
     @Published var pendingMatSelection: MatSelectionRequest?
     @Published var libraryEntries: [CubeLibraryEntry] = []
     @Published private(set) var hasProcessingClipboard: Bool = false
+    @Published private(set) var hasWavelengthClipboard: Bool = false
     @Published var libraryExportProgressState: LibraryExportProgressState?
     
     @Published var activeAnalysisTool: AnalysisTool = .none
@@ -202,6 +203,11 @@ final class AppState: ObservableObject {
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
+        }
+    }
+    private var wavelengthsClipboard: [Double]? {
+        didSet {
+            hasWavelengthClipboard = !(wavelengthsClipboard?.isEmpty ?? true)
         }
     }
 
@@ -2046,6 +2052,29 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    func canCopyWavelengths(from entry: CubeLibraryEntry) -> Bool {
+        availableWavelengths(for: entry) != nil
+    }
+
+    func copyWavelengths(from entry: CubeLibraryEntry) {
+        guard let values = availableWavelengths(for: entry) else {
+            loadError = "Для выбранного куба не заданы длины волн"
+            return
+        }
+        wavelengthsClipboard = values
+        loadError = nil
+    }
+
+    func pasteWavelengths(to entry: CubeLibraryEntry) {
+        guard let values = wavelengthsClipboard, !values.isEmpty else { return }
+        let result = applyWavelengths(values, to: entry)
+        if !result {
+            loadError = "Не удалось вставить длины волн в \(entry.displayName): не совпадает количество каналов"
+        } else {
+            loadError = nil
+        }
+    }
     
     var canPropagateProcessing: Bool {
         cube != nil && !libraryEntries.isEmpty
@@ -2063,6 +2092,34 @@ final class AppState: ObservableObject {
         let entries = libraryEntries
         for entry in entries {
             pasteProcessing(to: entry)
+        }
+    }
+
+    var canPropagateWavelengths: Bool {
+        guard let values = wavelengths else { return false }
+        return cube != nil && !libraryEntries.isEmpty && !values.isEmpty
+    }
+
+    func propagateWavelengthsToLibrary() {
+        guard let values = wavelengths, !values.isEmpty else {
+            loadError = "Сначала задайте длины волн для текущего куба"
+            return
+        }
+
+        wavelengthsClipboard = values
+        var skipped: [String] = []
+        let entries = libraryEntries
+
+        for entry in entries {
+            if !applyWavelengths(values, to: entry) {
+                skipped.append(entry.displayName)
+            }
+        }
+
+        if skipped.isEmpty {
+            loadError = nil
+        } else {
+            loadError = "Длины волн не применены: \(skipped.joined(separator: ", "))"
         }
     }
 
@@ -2293,6 +2350,97 @@ final class AppState: ObservableObject {
             values.append(parsed)
         }
         return values
+    }
+
+    private func availableWavelengths(for entry: CubeLibraryEntry) -> [Double]? {
+        let canonical = canonicalURL(entry.url)
+        if let currentURL = cubeURL?.standardizedFileURL,
+           currentURL == canonical,
+           let values = wavelengths,
+           !values.isEmpty {
+            return values
+        }
+
+        if let snapshot = sessionSnapshots[canonical],
+           let values = snapshot.wavelengths,
+           !values.isEmpty {
+            return values
+        }
+
+        return nil
+    }
+
+    private func applyWavelengths(_ values: [Double], to entry: CubeLibraryEntry) -> Bool {
+        let canonical = canonicalURL(entry.url)
+        let isCurrent = cubeURL?.standardizedFileURL == canonical
+        let expectedChannels: Int?
+
+        if isCurrent {
+            expectedChannels = channelCount > 0 ? channelCount : nil
+        } else {
+            let snapshot = sessionSnapshots[canonical]
+            if let snapshotWavelengths = snapshot?.wavelengths, !snapshotWavelengths.isEmpty {
+                expectedChannels = snapshotWavelengths.count
+            } else if let rawCube = tryLoadCube(for: canonical) {
+                let preferredLayout = snapshot?.layout ?? .auto
+                let resolvedLayout = preferredLayout == .auto ? inferLayout(for: rawCube) : preferredLayout
+                expectedChannels = rawCube.channelCount(for: resolvedLayout)
+            } else {
+                expectedChannels = nil
+            }
+        }
+
+        guard let expectedChannels, expectedChannels == values.count else {
+            return false
+        }
+
+        let lambda = lambdaFields(for: values)
+        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty
+        snapshot.wavelengths = values
+        if snapshot.baseWavelengths == nil || snapshot.baseWavelengths?.count == values.count {
+            snapshot.baseWavelengths = values
+        }
+        snapshot.lambdaStart = lambda.start
+        snapshot.lambdaEnd = lambda.end
+        snapshot.lambdaStep = lambda.step
+        sessionSnapshots[canonical] = snapshot
+
+        if isCurrent {
+            wavelengths = values
+            if baseWavelengths == nil || baseWavelengths?.count == values.count {
+                baseWavelengths = values
+            }
+            lambdaStart = lambda.start
+            lambdaEnd = lambda.end
+            lambdaStep = lambda.step
+            persistCurrentSession()
+        }
+
+        return true
+    }
+
+    private func tryLoadCube(for canonicalURL: URL) -> HyperCube? {
+        let result = ImageLoaderFactory.load(from: canonicalURL)
+        if case .success(let cube) = result {
+            return cube
+        }
+        return nil
+    }
+
+    private func lambdaFields(for values: [Double]) -> (start: String, end: String, step: String) {
+        guard let first = values.first, let last = values.last else {
+            return ("400", "1000", "")
+        }
+        let start = String(format: "%.1f", first)
+        let end = String(format: "%.1f", last)
+        let step: String
+        if values.count > 1 {
+            let delta = (last - first) / Double(values.count - 1)
+            step = String(format: "%.2f", delta)
+        } else {
+            step = ""
+        }
+        return (start, end, step)
     }
 
     func beginLibraryExportProgress(total: Int) {
