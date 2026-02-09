@@ -66,11 +66,13 @@ private enum GraphPalette: String, CaseIterable, Identifiable {
 private enum GraphExportFormat {
     case png
     case pdf
+    case json
     
     var fileExtension: String {
         switch self {
         case .png: return "png"
         case .pdf: return "pdf"
+        case .json: return "json"
         }
     }
     
@@ -78,6 +80,7 @@ private enum GraphExportFormat {
         switch self {
         case .png: return "PNG"
         case .pdf: return "PDF"
+        case .json: return "JSON"
         }
     }
 }
@@ -98,6 +101,11 @@ private struct GraphSeries: Identifiable, Equatable {
         self.defaultColor = defaultColor
         self.sourceName = sourceName
     }
+}
+
+private struct GraphSeriesJSONPayload: Encodable {
+    let wavelengths: [Double]
+    let intensity: [Double]
 }
 
 struct GraphWindowView: View {
@@ -558,6 +566,7 @@ struct GraphWindowView: View {
             Button("Экспорт PNG (900×600)") { exportGraph(as: .png, scale: 1) }
             Divider()
             Button("Экспорт PDF") { exportGraph(as: .pdf, scale: 2) }
+            Button("Экспорт JSON") { exportGraph(as: .json, scale: 1) }
         } label: {
             Label("Экспорт", systemImage: "square.and.arrow.up")
                 .labelStyle(.titleAndIcon)
@@ -1164,25 +1173,45 @@ struct GraphWindowView: View {
     }
     
     private func exportGraph(as format: GraphExportFormat, scale: CGFloat) {
+        let exportSeries = visibleSeries
+        guard !exportSeries.isEmpty else { return }
+        
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.allowedContentTypes = format == .png ? [UTType.png] : [UTType.pdf]
+        switch format {
+        case .png:
+            panel.allowedContentTypes = [UTType.png]
+        case .pdf:
+            panel.allowedContentTypes = [UTType.pdf]
+        case .json:
+            panel.allowedContentTypes = [UTType.json]
+        }
         panel.nameFieldStringValue = "graph.\(format.fileExtension)"
         panel.title = "Экспорт графика"
         panel.message = "Выберите место для сохранения \(format.title)"
         
         guard panel.runModal() == .OK, let url = panel.url else { return }
         
+        if format == .json {
+            let payload = buildJSONPayload(from: exportSeries)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(payload) {
+                try? data.write(to: url)
+            }
+            return
+        }
+        
         let exportView = ExportableChartView(
-            series: series,
-            colors: series.map { color(for: $0) },
+            series: exportSeries,
+            colors: exportSeries.map { color(for: $0) },
             style: style,
             lineWidth: lineWidth,
             pointSize: pointSize,
             showGrid: showGrid,
             xDomain: xDomain,
             yDomain: yDomain,
-            xAxisLabel: series.first?.wavelengths != nil ? "λ (нм)" : "Канал"
+            xAxisLabel: exportSeries.first?.wavelengths != nil ? "λ (нм)" : "Канал"
         )
         .frame(width: 900 * scale, height: 600 * scale)
         .background(Color.white)
@@ -1202,6 +1231,60 @@ struct GraphWindowView: View {
         case .pdf:
             let pdfData = hosting.dataWithPDF(inside: hosting.bounds)
             try? pdfData.write(to: url)
+        case .json:
+            break
+        }
+    }
+    
+    private func buildJSONPayload(from seriesList: [GraphSeries]) -> [String: GraphSeriesJSONPayload] {
+        var result: [String: GraphSeriesJSONPayload] = [:]
+        var usedKeys: Set<String> = []
+        
+        for item in seriesList {
+            let key = uniqueSeriesKey(base: item.title, used: &usedKeys)
+            
+            let pairs: [(Double, Double)]
+            if let wavelengths = item.wavelengths {
+                let count = min(wavelengths.count, item.values.count)
+                pairs = (0..<count).compactMap { index in
+                    let wavelength = wavelengths[index]
+                    let intensity = item.values[index]
+                    guard wavelength.isFinite, intensity.isFinite else { return nil }
+                    return (wavelength, intensity)
+                }
+            } else {
+                // Fallback: если длины волн отсутствуют, экспортируем индекс канала.
+                pairs = item.values.enumerated().compactMap { index, intensity in
+                    guard intensity.isFinite else { return nil }
+                    return (Double(index), intensity)
+                }
+            }
+            
+            result[key] = GraphSeriesJSONPayload(
+                wavelengths: pairs.map(\.0),
+                intensity: pairs.map(\.1)
+            )
+        }
+        
+        return result
+    }
+    
+    private func uniqueSeriesKey(base: String, used: inout Set<String>) -> String {
+        let normalized = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseKey = normalized.isEmpty ? "series" : normalized
+        if !used.contains(baseKey) {
+            used.insert(baseKey)
+            return baseKey
+        }
+        
+        var suffix = 2
+        while true {
+            let candidate = "\(baseKey) (\(suffix))"
+            if !used.contains(candidate) {
+                used.insert(candidate)
+                return candidate
+            }
+            suffix += 1
         }
     }
     
