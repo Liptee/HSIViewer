@@ -3,7 +3,5 @@
 
 #import "MatHelper.h"
 #import "TiffHelper.h"
-#import <matio.h>
 
 #endif
-
