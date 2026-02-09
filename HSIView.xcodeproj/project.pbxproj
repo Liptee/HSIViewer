@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		044E5EC82ED7322E0093730A /* libtiff.6.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 044E5EC72ED7322E0093730A /* libtiff.6.dylib */; };
 		044E5ECA2ED768250093730A /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 044E5EC92ED768200093730A /* .gitignore */; };
-		049FB5EC2ED707540098C2F2 /* libmatio.13.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 049FB5EB2ED707540098C2F2 /* libmatio.13.dylib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,7 +34,6 @@
 		049FB5AD2ED6FE760098C2F2 /* HSIView.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HSIView.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		049FB5BE2ED6FE780098C2F2 /* HSIViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HSIViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		049FB5C82ED6FE780098C2F2 /* HSIViewUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HSIViewUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		049FB5EB2ED707540098C2F2 /* libmatio.13.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libmatio.13.dylib; path = ../../../../opt/homebrew/Cellar/libmatio/1.5.29/lib/libmatio.13.dylib; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -65,7 +63,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				044E5EC82ED7322E0093730A /* libtiff.6.dylib in Frameworks */,
-				049FB5EC2ED707540098C2F2 /* libmatio.13.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -110,7 +107,6 @@
 			isa = PBXGroup;
 			children = (
 				044E5EC72ED7322E0093730A /* libtiff.6.dylib */,
-				049FB5EB2ED707540098C2F2 /* libmatio.13.dylib */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -421,7 +417,7 @@
 				CODE_SIGN_ENTITLEMENTS = HSIView/HSIView.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HSIView/Info.plist;
@@ -436,10 +432,9 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
 					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
 				);
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -458,7 +453,7 @@
 				CODE_SIGN_ENTITLEMENTS = HSIView/HSIView.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 1;
 				EXCLUDED_ARCHS = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HSIView/Info.plist;
@@ -473,10 +468,9 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					/opt/homebrew/Cellar/libmatio/1.5.29/lib,
 					/opt/homebrew/Cellar/libtiff/4.7.0/lib,
 				);
-				MARKETING_VERSION = 0.7.0;
+				MARKETING_VERSION = 0.7.1;
 				PRODUCT_BUNDLE_IDENTIFIER = Liptee.HSIView;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
