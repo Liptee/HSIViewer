@@ -135,6 +135,11 @@ struct HSIViewApp: App {
                     GraphWindowManager.shared.show(appState: appState)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
+
+                Button("Grid-библиотека") {
+                    GridLibraryWindowManager.shared.show(appState: appState)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
                 
                 Divider()
                 Button("Управление доступами…") {

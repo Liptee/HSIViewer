@@ -132,6 +132,15 @@ final class AppState: ObservableObject {
     
     @Published var pendingMatSelection: MatSelectionRequest?
     @Published var libraryEntries: [CubeLibraryEntry] = []
+    @Published var gridLibraryRows: [GridLibraryAxisItem] = [
+        GridLibraryAxisItem(name: "Ряд 1"),
+        GridLibraryAxisItem(name: "Ряд 2")
+    ]
+    @Published var gridLibraryColumns: [GridLibraryAxisItem] = [
+        GridLibraryAxisItem(name: "Столбец 1"),
+        GridLibraryAxisItem(name: "Столбец 2")
+    ]
+    @Published var gridLibraryAssignments: [GridLibraryCellPosition: CubeLibraryEntry.ID] = [:]
     @Published private(set) var hasProcessingClipboard: Bool = false
     @Published private(set) var hasWavelengthClipboard: Bool = false
     @Published var libraryExportProgressState: LibraryExportProgressState?
@@ -1970,6 +1979,104 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    func libraryEntry(for id: CubeLibraryEntry.ID) -> CubeLibraryEntry? {
+        libraryEntries.first(where: { $0.id == id })
+    }
+
+    func libraryEntry(for url: URL) -> CubeLibraryEntry? {
+        let canonical = canonicalURL(url)
+        return libraryEntries.first(where: { $0.canonicalPath == canonical.path })
+    }
+
+    @discardableResult
+    func addLibraryEntryIfPossible(from url: URL) -> CubeLibraryEntry? {
+        let canonical = canonicalURL(url)
+        guard ImageLoaderFactory.loader(for: canonical) != nil else { return nil }
+        if let existing = libraryEntries.first(where: { $0.canonicalPath == canonical.path }) {
+            return existing
+        }
+        let entry = CubeLibraryEntry(url: canonical)
+        libraryEntries.append(entry)
+        return entry
+    }
+
+    func addGridLibraryRow() {
+        gridLibraryRows.append(GridLibraryAxisItem(name: "Ряд \(gridLibraryRows.count + 1)"))
+    }
+
+    func addGridLibraryColumn() {
+        gridLibraryColumns.append(GridLibraryAxisItem(name: "Столбец \(gridLibraryColumns.count + 1)"))
+    }
+
+    func renameGridLibraryRow(id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let idx = gridLibraryRows.firstIndex(where: { $0.id == id }) else { return }
+        gridLibraryRows[idx].name = trimmed
+    }
+
+    func renameGridLibraryColumn(id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let idx = gridLibraryColumns.firstIndex(where: { $0.id == id }) else { return }
+        gridLibraryColumns[idx].name = trimmed
+    }
+
+    func removeGridLibraryRow(id: UUID) {
+        guard gridLibraryRows.contains(where: { $0.id == id }) else { return }
+        gridLibraryRows.removeAll { $0.id == id }
+        gridLibraryAssignments = gridLibraryAssignments.filter { $0.key.rowID != id }
+    }
+
+    func removeGridLibraryColumn(id: UUID) {
+        guard gridLibraryColumns.contains(where: { $0.id == id }) else { return }
+        gridLibraryColumns.removeAll { $0.id == id }
+        gridLibraryAssignments = gridLibraryAssignments.filter { $0.key.columnID != id }
+    }
+
+    func moveGridLibraryRow(id: UUID, by offset: Int) {
+        guard let fromIndex = gridLibraryRows.firstIndex(where: { $0.id == id }) else { return }
+        let toIndex = max(0, min(gridLibraryRows.count - 1, fromIndex + offset))
+        guard fromIndex != toIndex else { return }
+        let item = gridLibraryRows.remove(at: fromIndex)
+        gridLibraryRows.insert(item, at: toIndex)
+    }
+
+    func moveGridLibraryColumn(id: UUID, by offset: Int) {
+        guard let fromIndex = gridLibraryColumns.firstIndex(where: { $0.id == id }) else { return }
+        let toIndex = max(0, min(gridLibraryColumns.count - 1, fromIndex + offset))
+        guard fromIndex != toIndex else { return }
+        let item = gridLibraryColumns.remove(at: fromIndex)
+        gridLibraryColumns.insert(item, at: toIndex)
+    }
+
+    func gridLibraryCellPosition(for entryID: CubeLibraryEntry.ID) -> GridLibraryCellPosition? {
+        gridLibraryAssignments.first(where: { $0.value == entryID })?.key
+    }
+
+    func gridLibraryEntryID(rowID: UUID, columnID: UUID) -> CubeLibraryEntry.ID? {
+        gridLibraryAssignments[GridLibraryCellPosition(rowID: rowID, columnID: columnID)]
+    }
+
+    func assignLibraryEntryToGrid(entryID: CubeLibraryEntry.ID, rowID: UUID, columnID: UUID) {
+        guard libraryEntries.contains(where: { $0.id == entryID }) else { return }
+        guard gridLibraryRows.contains(where: { $0.id == rowID }) else { return }
+        guard gridLibraryColumns.contains(where: { $0.id == columnID }) else { return }
+
+        let target = GridLibraryCellPosition(rowID: rowID, columnID: columnID)
+        gridLibraryAssignments = gridLibraryAssignments.filter { $0.value != entryID }
+        gridLibraryAssignments[target] = entryID
+    }
+
+    func clearGridLibraryCell(rowID: UUID, columnID: UUID) {
+        let key = GridLibraryCellPosition(rowID: rowID, columnID: columnID)
+        gridLibraryAssignments.removeValue(forKey: key)
+    }
+
+    func clearGridLibraryAssignment(for entryID: CubeLibraryEntry.ID) {
+        gridLibraryAssignments = gridLibraryAssignments.filter { $0.value != entryID }
+    }
     
     func renameLibraryEntry(id: CubeLibraryEntry.ID, to name: String?) {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1984,6 +2091,7 @@ final class AppState: ObservableObject {
     func removeLibraryEntry(_ entry: CubeLibraryEntry) {
         let canonical = canonicalURL(entry.url)
         libraryEntries.removeAll { $0.canonicalPath == entry.canonicalPath }
+        clearGridLibraryAssignment(for: entry.id)
         sessionSnapshots.removeValue(forKey: canonical)
     }
     
@@ -2303,6 +2411,7 @@ final class AppState: ObservableObject {
             if !removedEntries.isEmpty {
                 let removedIDs = Set(removedEntries.map(\.id))
                 libraryEntries.removeAll { removedIDs.contains($0.id) }
+                gridLibraryAssignments = gridLibraryAssignments.filter { !removedIDs.contains($0.value) }
                 for entry in removedEntries {
                     let canonical = canonicalURL(entry.url)
                     sessionSnapshots.removeValue(forKey: canonical)
