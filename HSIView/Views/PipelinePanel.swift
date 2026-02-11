@@ -555,6 +555,8 @@ struct OperationEditorView: View {
     @State private var spectralInterpolationTargetMode: SpectralInterpolationTargetMode = .manual
     @State private var spectralInterpolationImportError: String?
     @State private var spectralInterpolationImportInfo: String?
+    @State private var spectralAlignmentIOError: String?
+    @State private var spectralAlignmentIOInfo: String?
     @State private var trimStartWavelength: Double = 0
     @State private var trimEndWavelength: Double = 0
     @State private var resizeAspectRatio: Double = 1.0
@@ -653,6 +655,8 @@ struct OperationEditorView: View {
             spectralInterpolationImportInfo = nil
         case .spectralAlignment:
             localSpectralAlignmentParams = op.spectralAlignmentParams ?? .default
+            spectralAlignmentIOError = nil
+            spectralAlignmentIOInfo = nil
         }
     }
     
@@ -1379,6 +1383,40 @@ struct OperationEditorView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!isComputed)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                let currentParams = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams
+                let canExport = (currentParams?.isComputed ?? false) || localSpectralAlignmentParams.isComputed
+                
+                HStack(spacing: 8) {
+                    Button("Экспорт гомографий в txt…") {
+                        exportSpectralAlignmentPreset(for: op)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canExport)
+                    
+                    Button("Загрузить гомографии из txt…") {
+                        importSpectralAlignmentPreset(for: op)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                
+                Text("Файл содержит layout, пространственные/спектральные характеристики и матрицы гомографии для быстрого повторного применения.")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+                
+                if let spectralAlignmentIOInfo {
+                    Text(spectralAlignmentIOInfo)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                
+                if let spectralAlignmentIOError {
+                    Text(spectralAlignmentIOError)
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
                 }
             }
             
@@ -2461,7 +2499,7 @@ struct OperationEditorView: View {
     }
 
     private func parseWavelengthListFile(url: URL) throws -> [Double] {
-        guard let text = readWavelengthTextFile(url: url) else {
+        guard let text = readTextFile(url: url) else {
             throw SpectralInterpolationFileError.readFailed
         }
 
@@ -2488,12 +2526,454 @@ struct OperationEditorView: View {
         return values
     }
 
-    private func readWavelengthTextFile(url: URL) -> String? {
+    private func readTextFile(url: URL) -> String? {
         let encodings: [String.Encoding] = [.utf8, .utf16, .windowsCP1251, .isoLatin1]
         for encoding in encodings {
             if let text = try? String(contentsOf: url, encoding: encoding) {
                 return text
             }
+        }
+        return nil
+    }
+    
+    private struct SpectralAlignmentPresetFile: Codable {
+        static let formatID = "HSIView.SpectralAlignmentPreset"
+        static let currentVersion = 1
+        
+        struct Source: Codable {
+            let fileName: String?
+            let layout: String
+            let dims: [Int]
+            let width: Int
+            let height: Int
+            let channels: Int
+            let wavelengths: [Double]?
+        }
+        
+        struct ReferencePoint: Codable {
+            let x: Double
+            let y: Double
+        }
+        
+        struct Parameters: Codable {
+            let referenceChannel: Int
+            let method: String
+            let offsetMin: Int
+            let offsetMax: Int
+            let step: Int
+            let metric: String
+            let iterations: Int
+            let enableSubpixel: Bool
+            let enableMultiscale: Bool
+            let useManualPoints: Bool
+            let referencePoints: [ReferencePoint]
+        }
+        
+        struct ChannelOffset: Codable {
+            let dx: Int
+            let dy: Int
+        }
+        
+        struct ResultPayload: Codable {
+            let metricName: String
+            let averageScore: Double
+            let channelScores: [Double]
+            let channelOffsets: [ChannelOffset]
+        }
+        
+        let format: String
+        let version: Int
+        let createdAt: String
+        let source: Source
+        let parameters: Parameters
+        let homographies: [[Double]]
+        let result: ResultPayload?
+    }
+    
+    private enum SpectralAlignmentPresetError: LocalizedError {
+        case cubeUnavailable
+        case dataUnavailable
+        case readFailed
+        case writeFailed
+        case invalidFormat
+        case unsupportedVersion(Int)
+        case invalidLayout(String)
+        case invalidMethod(String)
+        case invalidMetric(String)
+        case invalidReferenceChannel(Int, Int)
+        case invalidReferencePoints
+        case invalidHomography(Int)
+        case incompatibleLayout(expected: String, actual: String)
+        case incompatibleSpatial(expected: String, actual: String)
+        case incompatibleChannels(expected: Int, actual: Int)
+        case missingCurrentWavelengths
+        case incompatibleWavelengthCount(expected: Int, actual: Int)
+        case incompatibleWavelength(index: Int)
+        case invalidResult
+        
+        var errorDescription: String? {
+            switch self {
+            case .cubeUnavailable:
+                return "Откройте куб перед экспортом/импортом гомографий"
+            case .dataUnavailable:
+                return "Нет рассчитанных гомографий для экспорта"
+            case .readFailed:
+                return "Не удалось прочитать файл гомографий"
+            case .writeFailed:
+                return "Не удалось сохранить файл гомографий"
+            case .invalidFormat:
+                return "Некорректный формат файла гомографий"
+            case .unsupportedVersion(let version):
+                return "Неподдерживаемая версия файла: \(version)"
+            case .invalidLayout(let value):
+                return "Неизвестный layout в файле: \(value)"
+            case .invalidMethod(let value):
+                return "Неизвестный метод оптимизации: \(value)"
+            case .invalidMetric(let value):
+                return "Неизвестная метрика: \(value)"
+            case .invalidReferenceChannel(let value, let max):
+                return "Эталонный канал \(value) вне диапазона 0...\(max)"
+            case .invalidReferencePoints:
+                return "Некорректные опорные точки в файле"
+            case .invalidHomography(let index):
+                return "Некорректная матрица гомографии для канала \(index)"
+            case .incompatibleLayout(let expected, let actual):
+                return "Layout не совпадает: в файле \(expected), в текущем кубе \(actual)"
+            case .incompatibleSpatial(let expected, let actual):
+                return "Пространственные характеристики не совпадают: файл \(expected), текущий куб \(actual)"
+            case .incompatibleChannels(let expected, let actual):
+                return "Число каналов не совпадает: файл \(expected), текущий куб \(actual)"
+            case .missingCurrentWavelengths:
+                return "В файле есть длины волн, но в текущем кубе они не заданы"
+            case .incompatibleWavelengthCount(let expected, let actual):
+                return "Число длин волн не совпадает: файл \(expected), текущий куб \(actual)"
+            case .incompatibleWavelength(let index):
+                return "Спектральные характеристики отличаются (канал \(index))"
+            case .invalidResult:
+                return "Сводка результата в файле повреждена"
+            }
+        }
+    }
+    
+    private func exportSpectralAlignmentPreset(for op: PipelineOperation) {
+        guard let cube = state.cube else {
+            spectralAlignmentIOError = SpectralAlignmentPresetError.cubeUnavailable.localizedDescription
+            spectralAlignmentIOInfo = nil
+            return
+        }
+        
+        let currentParams = state.pipelineOperations.first(where: { $0.id == op.id })?.spectralAlignmentParams
+            ?? localSpectralAlignmentParams
+        
+        do {
+            let preset = try makeSpectralAlignmentPresetFile(
+                params: currentParams,
+                for: op,
+                cube: cube
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let encoded = try encoder.encode(preset)
+            guard let text = String(data: encoded, encoding: .utf8) else {
+                throw SpectralAlignmentPresetError.writeFailed
+            }
+            
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
+            let baseName = state.cubeURL?.deletingPathExtension().lastPathComponent ?? "alignment"
+            panel.nameFieldStringValue = "\(baseName)_spectral_alignment.txt"
+            panel.message = "Сохранить рассчитанные параметры спектрального выравнивания"
+            panel.prompt = "Сохранить"
+            
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            do {
+                try text.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                throw SpectralAlignmentPresetError.writeFailed
+            }
+            
+            spectralAlignmentIOError = nil
+            spectralAlignmentIOInfo = "Гомографии сохранены: \(url.lastPathComponent)"
+        } catch {
+            spectralAlignmentIOError = error.localizedDescription
+            spectralAlignmentIOInfo = nil
+        }
+    }
+    
+    private func importSpectralAlignmentPreset(for op: PipelineOperation) {
+        guard let cube = state.cube else {
+            spectralAlignmentIOError = SpectralAlignmentPresetError.cubeUnavailable.localizedDescription
+            spectralAlignmentIOInfo = nil
+            return
+        }
+        
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Выберите txt файл с рассчитанными гомографиями"
+        panel.prompt = "Загрузить"
+        panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
+        
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        
+        do {
+            guard let text = readTextFile(url: url) else {
+                throw SpectralAlignmentPresetError.readFailed
+            }
+            let data = Data(text.utf8)
+            let decoder = JSONDecoder()
+            let preset = try decoder.decode(SpectralAlignmentPresetFile.self, from: data)
+            try applySpectralAlignmentPreset(
+                preset,
+                to: op,
+                cube: cube
+            )
+            
+            saveLocalState()
+            if state.pipelineAutoApply {
+                state.applyPipeline()
+            }
+            
+            spectralAlignmentIOError = nil
+            spectralAlignmentIOInfo = "Гомографии загружены из \(url.lastPathComponent)"
+        } catch {
+            spectralAlignmentIOError = error.localizedDescription
+            spectralAlignmentIOInfo = nil
+        }
+    }
+    
+    private func makeSpectralAlignmentPresetFile(
+        params: SpectralAlignmentParameters,
+        for op: PipelineOperation,
+        cube: HyperCube
+    ) throws -> SpectralAlignmentPresetFile {
+        guard params.isComputed,
+              let homographies = params.cachedHomographies,
+              !homographies.isEmpty else {
+            throw SpectralAlignmentPresetError.dataUnavailable
+        }
+        
+        let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        let layout = resolvedLayoutForAlignment(operation: op, cube: cube)
+        guard let axes = cube.axes(for: layout) else {
+            throw SpectralAlignmentPresetError.cubeUnavailable
+        }
+        let width = dims[axes.width]
+        let height = dims[axes.height]
+        let channels = dims[axes.channel]
+        guard homographies.count == channels else {
+            throw SpectralAlignmentPresetError.incompatibleChannels(expected: channels, actual: homographies.count)
+        }
+        
+        for (index, matrix) in homographies.enumerated() {
+            guard matrix.count == 9, matrix.allSatisfy({ $0.isFinite }) else {
+                throw SpectralAlignmentPresetError.invalidHomography(index + 1)
+            }
+        }
+        
+        let wavelengths = currentWavelengthsForAlignment(channelCount: channels, cube: cube)
+        let resultPayload: SpectralAlignmentPresetFile.ResultPayload?
+        if let result = params.alignmentResult,
+           result.channelScores.count == channels,
+           result.channelOffsets.count == channels {
+            resultPayload = SpectralAlignmentPresetFile.ResultPayload(
+                metricName: result.metricName,
+                averageScore: result.averageScore,
+                channelScores: result.channelScores,
+                channelOffsets: result.channelOffsets.map {
+                    SpectralAlignmentPresetFile.ChannelOffset(dx: $0.dx, dy: $0.dy)
+                }
+            )
+        } else {
+            resultPayload = nil
+        }
+        
+        let points = params.referencePoints.map {
+            SpectralAlignmentPresetFile.ReferencePoint(x: $0.x, y: $0.y)
+        }
+        let createdAt = ISO8601DateFormatter().string(from: Date())
+        
+        return SpectralAlignmentPresetFile(
+            format: SpectralAlignmentPresetFile.formatID,
+            version: SpectralAlignmentPresetFile.currentVersion,
+            createdAt: createdAt,
+            source: SpectralAlignmentPresetFile.Source(
+                fileName: state.cubeURL?.lastPathComponent,
+                layout: layout.rawValue,
+                dims: dims,
+                width: width,
+                height: height,
+                channels: channels,
+                wavelengths: wavelengths
+            ),
+            parameters: SpectralAlignmentPresetFile.Parameters(
+                referenceChannel: params.referenceChannel,
+                method: params.method.rawValue,
+                offsetMin: params.offsetMin,
+                offsetMax: params.offsetMax,
+                step: params.step,
+                metric: params.metric.rawValue,
+                iterations: params.iterations,
+                enableSubpixel: params.enableSubpixel,
+                enableMultiscale: params.enableMultiscale,
+                useManualPoints: params.useManualPoints,
+                referencePoints: points
+            ),
+            homographies: homographies,
+            result: resultPayload
+        )
+    }
+    
+    private func applySpectralAlignmentPreset(
+        _ preset: SpectralAlignmentPresetFile,
+        to op: PipelineOperation,
+        cube: HyperCube
+    ) throws {
+        guard preset.format == SpectralAlignmentPresetFile.formatID else {
+            throw SpectralAlignmentPresetError.invalidFormat
+        }
+        guard preset.version == SpectralAlignmentPresetFile.currentVersion else {
+            throw SpectralAlignmentPresetError.unsupportedVersion(preset.version)
+        }
+        
+        let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        let layout = resolvedLayoutForAlignment(operation: op, cube: cube)
+        guard let axes = cube.axes(for: layout) else {
+            throw SpectralAlignmentPresetError.cubeUnavailable
+        }
+        
+        let width = dims[axes.width]
+        let height = dims[axes.height]
+        let channels = dims[axes.channel]
+        
+        guard preset.source.layout == layout.rawValue else {
+            throw SpectralAlignmentPresetError.incompatibleLayout(expected: preset.source.layout, actual: layout.rawValue)
+        }
+        guard preset.source.width == width, preset.source.height == height else {
+            throw SpectralAlignmentPresetError.incompatibleSpatial(
+                expected: "\(preset.source.width)x\(preset.source.height)",
+                actual: "\(width)x\(height)"
+            )
+        }
+        guard preset.source.channels == channels else {
+            throw SpectralAlignmentPresetError.incompatibleChannels(
+                expected: preset.source.channels,
+                actual: channels
+            )
+        }
+        
+        guard preset.homographies.count == channels else {
+            throw SpectralAlignmentPresetError.incompatibleChannels(
+                expected: channels,
+                actual: preset.homographies.count
+            )
+        }
+        for (index, matrix) in preset.homographies.enumerated() {
+            guard matrix.count == 9, matrix.allSatisfy({ $0.isFinite }) else {
+                throw SpectralAlignmentPresetError.invalidHomography(index + 1)
+            }
+        }
+        
+        if let expectedWavelengths = preset.source.wavelengths {
+            guard let currentWavelengths = currentWavelengthsForAlignment(channelCount: channels, cube: cube) else {
+                throw SpectralAlignmentPresetError.missingCurrentWavelengths
+            }
+            guard currentWavelengths.count == expectedWavelengths.count else {
+                throw SpectralAlignmentPresetError.incompatibleWavelengthCount(
+                    expected: expectedWavelengths.count,
+                    actual: currentWavelengths.count
+                )
+            }
+            let tolerance = 1e-2
+            for i in 0..<expectedWavelengths.count {
+                if abs(currentWavelengths[i] - expectedWavelengths[i]) > tolerance {
+                    throw SpectralAlignmentPresetError.incompatibleWavelength(index: i + 1)
+                }
+            }
+        }
+        
+        guard let method = SpectralAlignmentMethod(rawValue: preset.parameters.method) else {
+            throw SpectralAlignmentPresetError.invalidMethod(preset.parameters.method)
+        }
+        guard let metric = SpectralAlignmentMetric(rawValue: preset.parameters.metric) else {
+            throw SpectralAlignmentPresetError.invalidMetric(preset.parameters.metric)
+        }
+        guard preset.parameters.referenceChannel >= 0,
+              preset.parameters.referenceChannel < channels else {
+            throw SpectralAlignmentPresetError.invalidReferenceChannel(
+                preset.parameters.referenceChannel,
+                max(0, channels - 1)
+            )
+        }
+        guard !preset.parameters.referencePoints.isEmpty else {
+            throw SpectralAlignmentPresetError.invalidReferencePoints
+        }
+        
+        var restoredResult: SpectralAlignmentResult?
+        if let resultPayload = preset.result {
+            guard resultPayload.channelScores.count == channels,
+                  resultPayload.channelOffsets.count == channels else {
+                throw SpectralAlignmentPresetError.invalidResult
+            }
+            restoredResult = SpectralAlignmentResult(
+                channelScores: resultPayload.channelScores,
+                channelOffsets: resultPayload.channelOffsets.map { (dx: $0.dx, dy: $0.dy) },
+                averageScore: resultPayload.averageScore,
+                referenceChannel: preset.parameters.referenceChannel,
+                metricName: resultPayload.metricName
+            )
+        }
+        
+        localSpectralAlignmentParams.referenceChannel = preset.parameters.referenceChannel
+        localSpectralAlignmentParams.method = method
+        localSpectralAlignmentParams.offsetMin = preset.parameters.offsetMin
+        localSpectralAlignmentParams.offsetMax = preset.parameters.offsetMax
+        localSpectralAlignmentParams.step = max(1, preset.parameters.step)
+        localSpectralAlignmentParams.metric = metric
+        localSpectralAlignmentParams.iterations = max(1, preset.parameters.iterations)
+        localSpectralAlignmentParams.enableSubpixel = preset.parameters.enableSubpixel
+        localSpectralAlignmentParams.enableMultiscale = preset.parameters.enableMultiscale
+        localSpectralAlignmentParams.useManualPoints = preset.parameters.useManualPoints
+        localSpectralAlignmentParams.referencePoints = preset.parameters.referencePoints.map {
+            AlignmentPoint(x: $0.x, y: $0.y)
+        }
+        localSpectralAlignmentParams.cachedHomographies = preset.homographies
+        localSpectralAlignmentParams.alignmentResult = restoredResult
+        localSpectralAlignmentParams.isComputed = true
+        localSpectralAlignmentParams.shouldCompute = false
+    }
+    
+    private func resolvedLayoutForAlignment(operation: PipelineOperation, cube: HyperCube) -> CubeLayout {
+        if operation.layout != .auto {
+            return operation.layout
+        }
+        if state.activeLayout != .auto {
+            return state.activeLayout
+        }
+        if let axes = cube.axes(for: .auto) {
+            switch axes.channel {
+            case 0:
+                return .chw
+            case 1:
+                return .hcw
+            case 2:
+                return .hwc
+            default:
+                return .chw
+            }
+        }
+        return .chw
+    }
+    
+    private func currentWavelengthsForAlignment(channelCount: Int, cube: HyperCube) -> [Double]? {
+        if let wl = state.wavelengths, wl.count == channelCount {
+            return wl
+        }
+        if let wl = cube.wavelengths, wl.count == channelCount {
+            return wl
         }
         return nil
     }
