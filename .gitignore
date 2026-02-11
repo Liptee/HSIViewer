@@ -56,3 +56,5 @@ npy_file_reader.py
 tiff_file_reader.py
 debug_npy.py
 HSIView/Assets.xcassets/AppIcon.appiconset/HSIViewer.icns
+.derivedData/
+
