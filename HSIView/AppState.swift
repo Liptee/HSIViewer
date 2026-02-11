@@ -2482,18 +2482,33 @@ final class AppState: ObservableObject {
     private func applyWavelengths(_ values: [Double], to entry: CubeLibraryEntry) -> Bool {
         let canonical = canonicalURL(entry.url)
         let isCurrent = cubeURL?.standardizedFileURL == canonical
+        let existingSnapshot = sessionSnapshots[canonical]
         let expectedChannels: Int?
+        var resolvedLayout: CubeLayout? = isCurrent ? activeLayout : nil
 
         if isCurrent {
             expectedChannels = channelCount > 0 ? channelCount : nil
+        } else if let rawCube = tryLoadCube(for: canonical) {
+            let preferredLayout = existingSnapshot?.layout ?? .auto
+            if let inferredLayout = preferredLayoutForChannelCount(
+                in: rawCube,
+                preferred: preferredLayout,
+                channelCount: values.count
+            ) {
+                expectedChannels = rawCube.channelCount(for: inferredLayout)
+                resolvedLayout = inferredLayout
+            } else {
+                let fallbackLayout = preferredLayout == .auto
+                    ? resolveLayout(for: rawCube, preferred: preferredLayout)
+                    : preferredLayout
+                expectedChannels = rawCube.channelCount(for: fallbackLayout)
+                if fallbackLayout != .auto {
+                    resolvedLayout = fallbackLayout
+                }
+            }
         } else {
-            let snapshot = sessionSnapshots[canonical]
-            if let snapshotWavelengths = snapshot?.wavelengths, !snapshotWavelengths.isEmpty {
+            if let snapshotWavelengths = existingSnapshot?.wavelengths, !snapshotWavelengths.isEmpty {
                 expectedChannels = snapshotWavelengths.count
-            } else if let rawCube = tryLoadCube(for: canonical) {
-                let preferredLayout = snapshot?.layout ?? .auto
-                let resolvedLayout = preferredLayout == .auto ? inferLayout(for: rawCube) : preferredLayout
-                expectedChannels = rawCube.channelCount(for: resolvedLayout)
             } else {
                 expectedChannels = nil
             }
@@ -2504,7 +2519,10 @@ final class AppState: ObservableObject {
         }
 
         let lambda = lambdaFields(for: values)
-        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty
+        var snapshot = existingSnapshot ?? CubeSessionSnapshot.empty
+        if let resolvedLayout {
+            snapshot.layout = resolvedLayout
+        }
         snapshot.wavelengths = values
         if snapshot.baseWavelengths == nil || snapshot.baseWavelengths?.count == values.count {
             snapshot.baseWavelengths = values
@@ -2635,9 +2653,10 @@ final class AppState: ObservableObject {
     }
     
     private func applySnapshot(_ snapshot: CubeSessionSnapshot) {
+        let restoredLayout = effectiveSnapshotLayout(for: snapshot, cube: cube)
         let baseChannelCount: Int = {
             if let cube {
-                return cube.channelCount(for: snapshot.layout)
+                return cube.channelCount(for: restoredLayout)
             }
             return channelCount
         }()
@@ -2666,7 +2685,7 @@ final class AppState: ObservableObject {
         autoScaleOnTypeConversion = snapshot.autoScaleOnTypeConversion
         pipelineOperations = snapshot.pipelineOperations
         pipelineAutoApply = snapshot.pipelineAutoApply
-        layout = snapshot.layout
+        layout = restoredLayout
         viewMode = snapshot.viewMode
         zoomScale = snapshot.zoomScale
         imageOffset = snapshot.imageOffset
@@ -2852,6 +2871,13 @@ final class AppState: ObservableObject {
             rangeMapping: colorSynthesisConfig.rangeMapping.clamped(maxChannelCount: channelCount),
             pcaConfig: clampedPCAConfig(colorSynthesisConfig.pcaConfig)
         )
+        let snapshotLayout: CubeLayout = {
+            if layout != .auto { return layout }
+            if (wavelengths?.isEmpty == false) || (baseWavelengths?.isEmpty == false) {
+                return activeLayout
+            }
+            return layout
+        }()
         
         return CubeSessionSnapshot(
             pipelineOperations: pipelineOperations,
@@ -2867,7 +2893,7 @@ final class AppState: ObservableObject {
             normalizationType: normalizationType,
             normalizationParams: normalizationParams,
             autoScaleOnTypeConversion: autoScaleOnTypeConversion,
-            layout: layout,
+            layout: snapshotLayout,
             viewMode: viewMode,
             currentChannel: currentChannel,
             zoomScale: zoomScale,
@@ -2898,7 +2924,7 @@ final class AppState: ObservableObject {
     
     private func prepareCubeForExport(cube: HyperCube, snapshot: CubeSessionSnapshot) -> (cube: HyperCube, wavelengths: [Double]?, layout: CubeLayout)? {
         var workingCube = cube
-        var layout = snapshot.layout
+        var layout = effectiveSnapshotLayout(for: snapshot, cube: cube)
         var wavelengths = snapshot.wavelengths ?? cube.wavelengths
         
         if let trimRange = snapshot.spectralTrimRange,
@@ -2932,6 +2958,67 @@ final class AppState: ObservableObject {
         
         let resolvedLayout = resolveLayout(for: workingCube, preferred: layout)
         return (workingCube, wavelengths, resolvedLayout)
+    }
+    
+    private func preferredLayoutForChannelCount(
+        in cube: HyperCube,
+        preferred: CubeLayout,
+        channelCount: Int
+    ) -> CubeLayout? {
+        guard channelCount > 0 else { return nil }
+        
+        if preferred != .auto, cube.channelCount(for: preferred) == channelCount {
+            return preferred
+        }
+        
+        let matches = CubeLayout.allCases.filter {
+            $0 != .auto && cube.channelCount(for: $0) == channelCount
+        }
+        guard !matches.isEmpty else { return nil }
+        
+        if matches.count == 1 {
+            return matches[0]
+        }
+        
+        let resolved = resolveLayout(for: cube, preferred: preferred)
+        if matches.contains(resolved) {
+            return resolved
+        }
+        
+        if matches.contains(.hwc) && !matches.contains(.chw) {
+            return .hwc
+        }
+        
+        if matches.contains(.chw) && !matches.contains(.hwc) {
+            return .chw
+        }
+        
+        return nil
+    }
+    
+    private func effectiveSnapshotLayout(for snapshot: CubeSessionSnapshot, cube: HyperCube?) -> CubeLayout {
+        guard let cube else { return snapshot.layout }
+        guard snapshot.layout == .auto else { return snapshot.layout }
+        
+        if let wavelengths = snapshot.wavelengths,
+           let inferred = preferredLayoutForChannelCount(
+               in: cube,
+               preferred: snapshot.layout,
+               channelCount: wavelengths.count
+           ) {
+            return inferred
+        }
+        
+        if let base = snapshot.baseWavelengths,
+           let inferred = preferredLayoutForChannelCount(
+               in: cube,
+               preferred: snapshot.layout,
+               channelCount: base.count
+           ) {
+            return inferred
+        }
+        
+        return snapshot.layout
     }
     
     private func resolveLayout(for cube: HyperCube, preferred: CubeLayout) -> CubeLayout {
