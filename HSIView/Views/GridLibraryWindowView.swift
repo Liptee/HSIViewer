@@ -383,6 +383,7 @@ struct GridLibraryWindowView: View {
                 Text(entry.displayName)
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
+                libraryEntryStatsRow(for: entry, compact: true)
             } else {
                 Text("Пусто")
                     .font(.system(size: 10, weight: .medium))
@@ -490,6 +491,7 @@ struct GridLibraryWindowView: View {
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(isActive ? .accentColor : .primary)
                 .lineLimit(1)
+            libraryEntryStatsRow(for: entry, compact: true)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -722,6 +724,24 @@ struct GridLibraryWindowView: View {
             return Color(NSColor.selectedControlColor)
         }
         return Color(NSColor.separatorColor.withAlphaComponent(0.6))
+    }
+    
+    private func libraryEntryStatsRow(for entry: CubeLibraryEntry, compact: Bool) -> some View {
+        let stats = state.libraryEntryStats(for: entry)
+        let fontSize: CGFloat = compact ? 8 : 9
+        let spacing: CGFloat = compact ? 8 : 10
+        
+        return HStack(spacing: spacing) {
+            statsBadge(systemImage: "point.topleft.down.to.point.bottomright.curvepath", count: stats.points, fontSize: fontSize)
+            statsBadge(systemImage: "rectangle.dashed", count: stats.roi, fontSize: fontSize)
+            statsBadge(systemImage: "line.3.horizontal.decrease.circle", count: stats.pipelineOperations, fontSize: fontSize)
+        }
+    }
+    
+    private func statsBadge(systemImage: String, count: Int, fontSize: CGFloat) -> some View {
+        Label("\(count)", systemImage: systemImage)
+            .font(.system(size: fontSize))
+            .foregroundColor(.secondary)
     }
 
     private func isCommandPressed() -> Bool {
