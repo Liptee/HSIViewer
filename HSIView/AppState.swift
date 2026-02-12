@@ -1472,6 +1472,7 @@ final class AppState: ObservableObject {
                 self.lastPipelineResult = currentCube
                 self.lastPipelineAppliedOperations = mutableOperations
                 self.lastPipelineBaseCubeID = original.id
+                self.syncDisplayedLayoutAfterPipeline(operations: mutableOperations)
                 self.updateWavelengthsFromPipelineResult()
                 self.updateSpectralTrimRangeFromPipeline()
                 self.updateChannelCount()
@@ -1532,6 +1533,7 @@ final class AppState: ObservableObject {
                     self.lastPipelineAppliedOperations = updatedOperations
                     self.pipelineOperations = updatedOperations
                     self.lastPipelineBaseCubeID = original.id
+                    self.syncDisplayedLayoutAfterPipeline(operations: updatedOperations)
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
@@ -1560,6 +1562,7 @@ final class AppState: ObservableObject {
                     self.lastPipelineAppliedOperations = mutableOperations
                     self.lastPipelineBaseCubeID = original.id
                     self.pipelineOperations = mutableOperations
+                    self.syncDisplayedLayoutAfterPipeline(operations: mutableOperations)
                     self.updateWavelengthsFromPipelineResult()
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
@@ -1599,6 +1602,22 @@ final class AppState: ObservableObject {
         guard let result = cube?.wavelengths, !result.isEmpty else { return }
         wavelengths = result
         updateLambdaRange(from: result)
+    }
+
+    private func syncDisplayedLayoutAfterPipeline(operations: [PipelineOperation]) {
+        guard let target = operations.reversed().compactMap({ operation -> CubeLayout? in
+            guard operation.type == .transpose,
+                  let params = operation.transposeParameters else {
+                return nil
+            }
+            return params.targetLayout
+        }).first else {
+            return
+        }
+        
+        if layout != target {
+            layout = target
+        }
     }
 
     private func updateSpectralTrimRangeFromPipeline() {
@@ -3348,7 +3367,7 @@ final class AppState: ObservableObject {
     private func spatialOperations(from operations: [PipelineOperation]) -> [PipelineOperation] {
         operations.filter {
             switch $0.type {
-            case .rotation, .resize, .spatialCrop:
+            case .rotation, .transpose, .resize, .spatialCrop:
                 return true
             default:
                 return false
@@ -3495,6 +3514,8 @@ final class AppState: ObservableObject {
                 return SpatialSize(width: size.height, height: size.width)
             }
             return size
+        case .transpose:
+            return size
         case .resize:
             guard let params = op.resizeParameters else { return size }
             let targetWidth = params.targetWidth
@@ -3626,6 +3647,8 @@ final class AppState: ObservableObject {
             let mappedX = mapCoordinate(point.x, from: fromSize.width, to: toSize.width)
             let mappedY = mapCoordinate(point.y, from: fromSize.height, to: toSize.height)
             return SpatialPoint(x: mappedX, y: mappedY)
+        case .transpose:
+            return point
         case .spatialCrop:
             guard var params = op.cropParameters else { return point }
             params.clamp(maxWidth: srcSize.width, maxHeight: srcSize.height)
@@ -3727,6 +3750,8 @@ final class AppState: ObservableObject {
                 width: upperX - lowerX + 1,
                 height: upperY - lowerY + 1
             ).clamped(maxWidth: toSize.width, maxHeight: toSize.height)
+        case .transpose:
+            return rect
         case .spatialCrop:
             guard var params = op.cropParameters else { return rect }
             params.clamp(maxWidth: srcSize.width, maxHeight: srcSize.height)

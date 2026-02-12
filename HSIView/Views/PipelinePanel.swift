@@ -219,11 +219,12 @@ struct PipelinePanel: View {
             OperationGroup(
                 id: "spatial",
                 title: "Геометрия",
-                subtitle: "Поворот, размер, обрезка",
+                subtitle: "Поворот, транспонирование, размер, обрезка",
                 iconName: "rectangle.compress.vertical",
                 accent: Color(NSColor.systemOrange),
                 types: [
                     .rotation,
+                    .transpose,
                     .resize,
                     .spatialCrop
                 ]
@@ -293,7 +294,7 @@ struct PipelinePanel: View {
         switch type {
         case .normalization, .channelwiseNormalization, .clipping, .dataTypeConversion:
             return Color(NSColor.systemTeal)
-        case .rotation, .resize, .spatialCrop:
+        case .rotation, .transpose, .resize, .spatialCrop:
             return Color(NSColor.systemOrange)
         case .spectralTrim, .spectralInterpolation, .spectralAlignment, .calibration:
             return Color(NSColor.systemGreen)
@@ -545,6 +546,7 @@ struct OperationEditorView: View {
     @State private var localAutoScale: Bool = true
     @State private var localClippingParams: ClippingParameters = .default
     @State private var localRotationAngle: RotationAngle = .degree90
+    @State private var localTransposeParams: TransposeParameters = .default
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
     @State private var autoCropEnabled: Bool = false
     @State private var autoCropReferenceEntryID: String?
@@ -630,6 +632,8 @@ struct OperationEditorView: View {
             return CGSize(width: 1120, height: 700)
         case .calibration:
             return CGSize(width: 500, height: 600)
+        case .transpose:
+            return CGSize(width: 460, height: 360)
         case .resize:
             return CGSize(width: 500, height: 520)
         case .spectralTrim:
@@ -658,6 +662,8 @@ struct OperationEditorView: View {
             localClippingParams = op.clippingParams ?? .default
         case .rotation:
             localRotationAngle = op.rotationAngle ?? .degree90
+        case .transpose:
+            localTransposeParams = op.transposeParameters ?? .default
         case .spatialCrop:
             if let params = op.cropParameters {
                 localCropParameters = params
@@ -716,6 +722,12 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].clippingParams = localClippingParams
         case .rotation:
             state.pipelineOperations[index].rotationAngle = localRotationAngle
+        case .transpose:
+            var normalized = localTransposeParams
+            let cleaned = normalized.normalizedOrder
+            normalized.order = cleaned.isEmpty ? localTransposeParams.order.uppercased() : cleaned
+            localTransposeParams = normalized
+            state.pipelineOperations[index].transposeParameters = normalized
         case .resize:
             state.pipelineOperations[index].resizeParameters = localResizeParams
         case .spatialCrop:
@@ -770,6 +782,8 @@ struct OperationEditorView: View {
             clippingEditor(for: op)
         case .rotation:
             rotationEditor(for: op)
+        case .transpose:
+            transposeEditor(for: op)
         case .resize:
             resizeEditor(for: op)
         case .spatialCrop:
@@ -2044,6 +2058,65 @@ struct OperationEditorView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
+        }
+    }
+    
+    private func transposeEditor(for op: PipelineOperation) -> some View {
+        let normalized = localTransposeParams.normalizedOrder
+        let resolvedLayout = localTransposeParams.targetLayout
+        
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Порядок осей HWC:")
+                .font(.system(size: 11, weight: .medium))
+            
+            TextField("Например: HWC, CHW, WCH", text: $localTransposeParams.order)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+            
+            HStack(spacing: 8) {
+                ForEach(CubeLayout.explicitCases) { layout in
+                    Button(layout.rawValue) {
+                        localTransposeParams.order = layout.rawValue
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+            
+            Divider()
+            
+            if let target = resolvedLayout {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Источник: \(op.layout.rawValue)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Text("Результат: \(target.rawValue)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    
+                    if op.layout == target {
+                        Text("Порядок не изменится (no-op).")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("После применения отображаемый layout переключится на \(target.rawValue).")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                Text("Некорректный порядок. Используйте ровно 3 символа H/W/C без повторов (например HWC).")
+                    .font(.system(size: 10))
+                    .foregroundColor(.red)
+            }
+            
+            if !normalized.isEmpty, normalized != localTransposeParams.order.uppercased() {
+                Text("Нормализованный ввод: \(normalized)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer(minLength: 0)
         }
     }
     

@@ -147,12 +147,16 @@ struct HyperCube {
             return dimsArr.min() ?? d0
         case .chw:
             return d0
+        case .cwh:
+            return d0
         case .hcw:
             return d1
         case .hwc:
             return d2
         case .wch:
             return d1
+        case .whc:
+            return d2
         }
     }
     
@@ -171,6 +175,9 @@ struct HyperCube {
         case .chw:
             return (0, 1, 2)
             
+        case .cwh:
+            return (0, 2, 1)
+            
         case .hcw:
             return (1, 0, 2)
             
@@ -179,6 +186,9 @@ struct HyperCube {
             
         case .wch:
             return (1, 2, 0)
+            
+        case .whc:
+            return (2, 1, 0)
         }
     }
     
@@ -211,11 +221,31 @@ struct HyperCube {
 enum CubeLayout: String, CaseIterable, Identifiable {
     case auto = "Auto"
     case chw  = "CHW"
+    case cwh  = "CWH"
     case hcw  = "HCW"
     case hwc  = "HWC"
     case wch  = "WCH"
+    case whc  = "WHC"
     
     var id: String { rawValue }
+}
+
+extension CubeLayout {
+    static var explicitCases: [CubeLayout] {
+        allCases.filter { $0 != .auto }
+    }
+    
+    static func parseHWCOrder(_ rawOrder: String) -> CubeLayout? {
+        let order = normalizeHWCOrder(rawOrder)
+        guard order.count == 3 else { return nil }
+        return CubeLayout.explicitCases.first(where: { $0.rawValue == order })
+    }
+    
+    static func normalizeHWCOrder(_ rawOrder: String) -> String {
+        rawOrder
+            .uppercased()
+            .filter { $0 == "H" || $0 == "W" || $0 == "C" }
+    }
 }
 
 enum ViewMode: String, CaseIterable, Identifiable {
