@@ -123,6 +123,7 @@ struct LibraryPanel: View {
             Text(entry.displayName)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isActive ? .accentColor : .primary)
+            libraryStatsRow(for: entry)
             Text(entry.url.deletingLastPathComponent().path)
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(.secondary)
@@ -257,6 +258,21 @@ struct LibraryPanel: View {
         } else {
             return Color(NSColor.separatorColor.withAlphaComponent(0.6))
         }
+    }
+
+    private func libraryStatsRow(for entry: CubeLibraryEntry) -> some View {
+        let stats = state.libraryEntryStats(for: entry)
+        return HStack(spacing: 10) {
+            statsBadge(systemImage: "point.topleft.down.to.point.bottomright.curvepath", count: stats.points)
+            statsBadge(systemImage: "rectangle.dashed", count: stats.roi)
+            statsBadge(systemImage: "line.3.horizontal.decrease.circle", count: stats.pipelineOperations)
+        }
+    }
+    
+    private func statsBadge(systemImage: String, count: Int) -> some View {
+        Label("\(count)", systemImage: systemImage)
+            .font(.system(size: 9))
+            .foregroundColor(.secondary)
     }
     
     private func deleteSelectedEntries() {

@@ -2007,6 +2007,27 @@ final class AppState: ObservableObject {
         let canonical = canonicalURL(url)
         return libraryEntries.first(where: { $0.canonicalPath == canonical.path })
     }
+    
+    func libraryEntryStats(for entry: CubeLibraryEntry) -> (points: Int, roi: Int, pipelineOperations: Int) {
+        let canonical = canonicalURL(entry.url)
+        if cubeURL?.standardizedFileURL == canonical {
+            return (
+                points: spectrumSamples.count,
+                roi: roiSamples.count,
+                pipelineOperations: pipelineOperations.count
+            )
+        }
+        
+        guard let snapshot = sessionSnapshots[canonical] else {
+            return (points: 0, roi: 0, pipelineOperations: 0)
+        }
+        
+        return (
+            points: snapshot.spectrumSamples.count,
+            roi: snapshot.roiSamples.count,
+            pipelineOperations: snapshot.pipelineOperations.count
+        )
+    }
 
     @discardableResult
     func addLibraryEntryIfPossible(from url: URL) -> CubeLibraryEntry? {
