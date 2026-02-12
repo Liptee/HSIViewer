@@ -6,6 +6,7 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case dataTypeConversion = "Тип данных"
     case clipping = "Клиппинг"
     case rotation = "Поворот"
+    case transpose = "Транспонирование"
     case resize = "Изменение размера"
     case spatialCrop = "Обрезка области"
     case spectralTrim = "Обрезка длин волн"
@@ -27,6 +28,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "arrow.up.and.down"
         case .rotation:
             return "rotate.right"
+        case .transpose:
+            return "arrow.left.and.right.righttriangle.left.righttriangle.right"
         case .resize:
             return "arrow.up.left.and.down.right.magnifyingglass"
         case .spatialCrop:
@@ -54,6 +57,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "Ограничить значения диапазоном"
         case .rotation:
             return "Повернуть изображение на 90°, 180° или 270°"
+        case .transpose:
+            return "Переставить оси массива в выбранный порядок HWC"
         case .resize:
             return "Изменить размер пространственных измерений"
         case .spatialCrop:
@@ -264,6 +269,20 @@ enum RotationAngle: String, CaseIterable, Identifiable {
         case .degree270: return 3
         }
     }
+}
+
+struct TransposeParameters: Equatable {
+    var order: String
+    
+    var normalizedOrder: String {
+        CubeLayout.normalizeHWCOrder(order)
+    }
+    
+    var targetLayout: CubeLayout? {
+        CubeLayout.parseHWCOrder(order)
+    }
+    
+    static let `default` = TransposeParameters(order: CubeLayout.hwc.rawValue)
 }
 
 struct CalibrationSpectrum: Equatable, Identifiable {
@@ -598,6 +617,7 @@ struct PipelineOperation: Identifiable, Equatable {
     var autoScale: Bool?
     var clippingParams: ClippingParameters?
     var rotationAngle: RotationAngle?
+    var transposeParameters: TransposeParameters?
     var layout: CubeLayout = .auto
     var cropParameters: SpatialCropParameters?
     var calibrationParams: CalibrationParameters?
@@ -621,6 +641,8 @@ struct PipelineOperation: Identifiable, Equatable {
             self.clippingParams = .default
         case .rotation:
             self.rotationAngle = .degree90
+        case .transpose:
+            self.transposeParameters = .default
         case .resize:
             self.resizeParameters = .default
         case .spatialCrop:
@@ -669,6 +691,10 @@ struct PipelineOperation: Identifiable, Equatable {
                     computePrecision: .float64
                 )
             }
+        case .transpose:
+            let sourceLayout = layout == .auto ? .hwc : layout
+            let targetLayout: CubeLayout = sourceLayout == .hwc ? .chw : .hwc
+            transposeParameters = TransposeParameters(order: targetLayout.rawValue)
         case .spectralTrim:
             let channelCount = cube.channelCount(for: layout)
             spectralTrimParams = SpectralTrimParameters(
@@ -726,6 +752,11 @@ struct PipelineOperation: Identifiable, Equatable {
             return "Клиппинг"
         case .rotation:
             return "Поворот \(rotationAngle?.rawValue ?? "")"
+        case .transpose:
+            if let params = transposeParameters {
+                return "Транспонирование в \(params.normalizedOrder)"
+            }
+            return "Транспонирование"
         case .resize:
             if let params = resizeParameters {
                 return "Ресайз до \(params.targetWidth)×\(params.targetHeight) (\(params.algorithm.rawValue))"
@@ -791,6 +822,12 @@ struct PipelineOperation: Identifiable, Equatable {
             return "Настройте диапазон"
         case .rotation:
             return "По часовой стрелке"
+        case .transpose:
+            guard let params = transposeParameters else { return "Введите порядок HWC" }
+            guard let target = params.targetLayout else {
+                return "Порядок: \(params.order) (некорректно)"
+            }
+            return "\(layout.rawValue) → \(target.rawValue)"
         case .resize:
             if let params = resizeParameters {
                 return "До \(params.targetWidth)×\(params.targetHeight), \(params.algorithm.rawValue)"
@@ -861,6 +898,10 @@ struct PipelineOperation: Identifiable, Equatable {
         case .rotation:
             guard let angle = rotationAngle else { return cube }
             return CubeRotator.rotate(cube, angle: angle, layout: layout)
+        case .transpose:
+            guard let params = transposeParameters,
+                  let targetLayout = params.targetLayout else { return cube }
+            return CubeTransposer.transpose(cube: cube, sourceLayout: layout, targetLayout: targetLayout)
         case .resize:
             guard let params = resizeParameters else { return cube }
             return CubeResizer.resize(cube: cube, parameters: params, layout: layout)
@@ -923,6 +964,7 @@ extension PipelineOperation {
         copy.autoScale = autoScale
         copy.clippingParams = clippingParams
         copy.rotationAngle = rotationAngle
+        copy.transposeParameters = transposeParameters
         copy.layout = layout
         copy.cropParameters = cropParameters
         copy.calibrationParams = calibrationParams
@@ -952,6 +994,11 @@ extension PipelineOperation {
         let channelCount = dims[axes.channel]
         
         switch type {
+        case .transpose:
+            guard let params = transposeParameters,
+                  let targetLayout = params.targetLayout else { return true }
+            let sourceLayout = self.layout == .auto ? layout : self.layout
+            return sourceLayout == targetLayout
         case .resize:
             guard let params = resizeParameters else { return true }
             return params.targetWidth == width && params.targetHeight == height
@@ -1324,6 +1371,182 @@ class CubeResizer {
         } else {
             return i2 + dims[2] * (i1 + dims[1] * i0)
         }
+    }
+}
+
+class CubeTransposer {
+    static func transpose(cube: HyperCube, sourceLayout: CubeLayout, targetLayout: CubeLayout) -> HyperCube? {
+        guard targetLayout != .auto else { return cube }
+        guard let sourceAxes = cube.axes(for: sourceLayout),
+              let targetAxes = cube.axes(for: targetLayout) else {
+            return cube
+        }
+        
+        if sourceAxes == targetAxes {
+            return cube
+        }
+        
+        let srcDims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        let channels = srcDims[sourceAxes.channel]
+        let height = srcDims[sourceAxes.height]
+        let width = srcDims[sourceAxes.width]
+        
+        var dstDims = [0, 0, 0]
+        dstDims[targetAxes.channel] = channels
+        dstDims[targetAxes.height] = height
+        dstDims[targetAxes.width] = width
+        
+        let totalElements = dstDims[0] * dstDims[1] * dstDims[2]
+        guard totalElements == cube.storage.count else { return cube }
+        
+        let suffix = sourceLayout == .auto
+            ? " [Transpose →\(targetLayout.rawValue)]"
+            : " [Transpose \(sourceLayout.rawValue)→\(targetLayout.rawValue)]"
+        
+        switch cube.storage {
+        case .float64(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .float64(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .float32(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .float32(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int8(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int8(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int16(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int16(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .int32(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int32(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .uint8(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .uint8(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        case .uint16(let arr):
+            var output = initializedBuffer(from: arr, count: totalElements)
+            remap(
+                source: arr,
+                output: &output,
+                srcDims: srcDims,
+                dstDims: dstDims,
+                sourceAxes: sourceAxes,
+                targetAxes: targetAxes,
+                isFortran: cube.isFortranOrder
+            )
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .uint16(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+        }
+    }
+    
+    private static func initializedBuffer<T>(from source: [T], count: Int) -> [T] {
+        guard count > 0, let first = source.first else { return [] }
+        return [T](repeating: first, count: count)
+    }
+    
+    private static func remap<T>(
+        source: [T],
+        output: inout [T],
+        srcDims: [Int],
+        dstDims: [Int],
+        sourceAxes: (channel: Int, height: Int, width: Int),
+        targetAxes: (channel: Int, height: Int, width: Int),
+        isFortran: Bool
+    ) {
+        let channelCount = srcDims[sourceAxes.channel]
+        let height = srcDims[sourceAxes.height]
+        let width = srcDims[sourceAxes.width]
+        
+        for c in 0..<channelCount {
+            for y in 0..<height {
+                for x in 0..<width {
+                    var srcIdx = [0, 0, 0]
+                    srcIdx[sourceAxes.channel] = c
+                    srcIdx[sourceAxes.height] = y
+                    srcIdx[sourceAxes.width] = x
+                    
+                    var dstIdx = [0, 0, 0]
+                    dstIdx[targetAxes.channel] = c
+                    dstIdx[targetAxes.height] = y
+                    dstIdx[targetAxes.width] = x
+                    
+                    let srcLinear = linearIndex(
+                        dims: srcDims,
+                        fortran: isFortran,
+                        i0: srcIdx[0],
+                        i1: srcIdx[1],
+                        i2: srcIdx[2]
+                    )
+                    let dstLinear = linearIndex(
+                        dims: dstDims,
+                        fortran: isFortran,
+                        i0: dstIdx[0],
+                        i1: dstIdx[1],
+                        i2: dstIdx[2]
+                    )
+                    output[dstLinear] = source[srcLinear]
+                }
+            }
+        }
+    }
+    
+    private static func linearIndex(dims: [Int], fortran: Bool, i0: Int, i1: Int, i2: Int) -> Int {
+        if fortran {
+            return i0 + dims[0] * (i1 + dims[1] * i2)
+        }
+        return i2 + dims[2] * (i1 + dims[1] * i0)
     }
 }
 
