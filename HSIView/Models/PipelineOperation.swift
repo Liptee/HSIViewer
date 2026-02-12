@@ -156,11 +156,63 @@ struct SpectralInterpolationParameters: Equatable {
     )
 }
 
+enum SpatialAutoCropMetric: String, CaseIterable, Identifiable {
+    case ssim = "SSIM"
+    case mse = "MSE"
+
+    var id: String { rawValue }
+}
+
+struct SpatialAutoCropSettings: Equatable {
+    var referenceLibraryID: String?
+    var metric: SpatialAutoCropMetric
+    var sourceChannels: [Int]
+    var referenceChannels: [Int]
+    var minWidth: Int?
+    var maxWidth: Int?
+    var minHeight: Int?
+    var maxHeight: Int?
+    var positionStep: Int
+    var sizeStep: Int
+    var useCoarseToFine: Bool
+    var keepRefinementReserve: Bool
+    var downsampleFactor: Int
+
+    static let `default` = SpatialAutoCropSettings(
+        referenceLibraryID: nil,
+        metric: .ssim,
+        sourceChannels: [0],
+        referenceChannels: [0],
+        minWidth: nil,
+        maxWidth: nil,
+        minHeight: nil,
+        maxHeight: nil,
+        positionStep: 4,
+        sizeStep: 4,
+        useCoarseToFine: true,
+        keepRefinementReserve: true,
+        downsampleFactor: 2
+    )
+}
+
+struct SpatialAutoCropResult: Equatable {
+    var metric: SpatialAutoCropMetric
+    var bestScore: Double
+    var evaluatedCandidates: Int
+    var referenceLibraryID: String?
+    var sourceChannels: [Int]
+    var referenceChannels: [Int]
+    var selectedWidth: Int
+    var selectedHeight: Int
+}
+
 struct SpatialCropParameters: Equatable {
     var left: Int
     var right: Int
     var top: Int
     var bottom: Int
+    var autoCropSettings: SpatialAutoCropSettings? = nil
+    var autoCropResult: SpatialAutoCropResult? = nil
     
     var width: Int { max(0, right - left + 1) }
     var height: Int { max(0, bottom - top + 1) }
@@ -180,6 +232,14 @@ struct SpatialCropParameters: Equatable {
         copy.clamp(maxWidth: maxWidth, maxHeight: maxHeight)
         return copy
     }
+}
+
+struct SpatialAutoCropProgressInfo {
+    var progress: Double
+    var message: String
+    var evaluatedCandidates: Int
+    var totalCandidates: Int
+    var bestCrop: SpatialCropParameters?
 }
 
 enum RotationAngle: String, CaseIterable, Identifiable {
@@ -738,7 +798,12 @@ struct PipelineOperation: Identifiable, Equatable {
             return "Изменение размера"
         case .spatialCrop:
             if let params = cropParameters {
-                return "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
+                var text = "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
+                if let auto = params.autoCropResult {
+                    let scoreText = String(format: auto.metric == .ssim ? "%.4f" : "%.6f", auto.bestScore)
+                    text += " • авто \(auto.metric.rawValue): \(scoreText)"
+                }
+                return text
             }
             return "Настройте границы"
         case .spectralTrim:
@@ -1594,6 +1659,635 @@ class CubeSpatialCropper {
         } else {
             return i2 + dims.2 * (i1 + dims.1 * i0)
         }
+    }
+}
+
+struct SpatialAutoCropComputationResult {
+    var crop: SpatialCropParameters
+    var score: Double
+    var evaluatedCandidates: Int
+}
+
+class CubeAutoSpatialCropper {
+    private struct CropCandidate: Hashable {
+        var x: Int
+        var y: Int
+        var width: Int
+        var height: Int
+    }
+
+    private struct ScoredCandidate {
+        var candidate: CropCandidate
+        var score: Double
+    }
+
+    static func findBestCrop(
+        sourceCube: HyperCube,
+        sourceLayout: CubeLayout,
+        referenceCube: HyperCube,
+        referenceLayout: CubeLayout,
+        settings: SpatialAutoCropSettings,
+        progressCallback: ((SpatialAutoCropProgressInfo) -> Void)? = nil
+    ) -> SpatialAutoCropComputationResult? {
+        guard let sourceAxes = sourceCube.axes(for: sourceLayout),
+              let referenceAxes = referenceCube.axes(for: referenceLayout) else {
+            return nil
+        }
+
+        let sourceDims = [sourceCube.dims.0, sourceCube.dims.1, sourceCube.dims.2]
+        let sourceWidth = sourceDims[sourceAxes.width]
+        let sourceHeight = sourceDims[sourceAxes.height]
+        let sourceChannels = sourceDims[sourceAxes.channel]
+
+        let referenceDims = [referenceCube.dims.0, referenceCube.dims.1, referenceCube.dims.2]
+        let referenceWidth = referenceDims[referenceAxes.width]
+        let referenceHeight = referenceDims[referenceAxes.height]
+        let referenceChannels = referenceDims[referenceAxes.channel]
+
+        guard sourceWidth > 0, sourceHeight > 0, sourceChannels > 0 else { return nil }
+        guard referenceWidth > 0, referenceHeight > 0, referenceChannels > 0 else { return nil }
+        guard settings.sourceChannels.count == settings.referenceChannels.count else { return nil }
+        guard !settings.sourceChannels.isEmpty else { return nil }
+        guard settings.sourceChannels.allSatisfy({ $0 >= 0 && $0 < sourceChannels }) else { return nil }
+        guard settings.referenceChannels.allSatisfy({ $0 >= 0 && $0 < referenceChannels }) else { return nil }
+
+        let minWidthDefault = min(sourceWidth, max(1, referenceWidth))
+        let minHeightDefault = min(sourceHeight, max(1, referenceHeight))
+
+        let minWidth = bounded(settings.minWidth ?? minWidthDefault, min: 1, max: sourceWidth)
+        let maxWidth = bounded(settings.maxWidth ?? sourceWidth, min: minWidth, max: sourceWidth)
+        let minHeight = bounded(settings.minHeight ?? minHeightDefault, min: 1, max: sourceHeight)
+        let maxHeight = bounded(settings.maxHeight ?? sourceHeight, min: minHeight, max: sourceHeight)
+
+        let positionStep = max(1, settings.positionStep)
+        let sizeStep = max(1, settings.sizeStep)
+        let downsampleFactor = max(1, settings.downsampleFactor)
+
+        let uniqueSourceChannels = Array(Set(settings.sourceChannels)).sorted()
+        let uniqueReferenceChannels = Array(Set(settings.referenceChannels)).sorted()
+        var sourceChannelData: [Int: [Double]] = [:]
+        var referenceChannelData: [Int: [Double]] = [:]
+
+        for ch in uniqueSourceChannels {
+            sourceChannelData[ch] = extractChannel(cube: sourceCube, channelIndex: ch, axes: sourceAxes)
+        }
+        for ch in uniqueReferenceChannels {
+            referenceChannelData[ch] = extractChannel(cube: referenceCube, channelIndex: ch, axes: referenceAxes)
+        }
+
+        if sourceChannelData.count != uniqueSourceChannels.count || referenceChannelData.count != uniqueReferenceChannels.count {
+            return nil
+        }
+
+        var referenceEvalData: [Int: [Double]] = [:]
+        var evalReferenceWidth = referenceWidth
+        var evalReferenceHeight = referenceHeight
+        for ch in uniqueReferenceChannels {
+            guard let channel = referenceChannelData[ch] else { return nil }
+            if downsampleFactor > 1 {
+                let downsampled = downsampleMean(channel, width: referenceWidth, height: referenceHeight, factor: downsampleFactor)
+                referenceEvalData[ch] = downsampled.data
+                evalReferenceWidth = downsampled.width
+                evalReferenceHeight = downsampled.height
+            } else {
+                referenceEvalData[ch] = channel
+            }
+        }
+
+        let coarsePositionStep = settings.useCoarseToFine ? max(positionStep * 2, positionStep) : positionStep
+        let coarseSizeStep = settings.useCoarseToFine ? max(sizeStep * 2, sizeStep) : sizeStep
+        let widthValues = steppedValues(min: minWidth, max: maxWidth, step: sizeStep)
+        let heightValues = steppedValues(min: minHeight, max: maxHeight, step: sizeStep)
+        let coarseWidthValues = settings.useCoarseToFine
+            ? steppedValues(min: minWidth, max: maxWidth, step: coarseSizeStep)
+            : widthValues
+        let coarseHeightValues = settings.useCoarseToFine
+            ? steppedValues(min: minHeight, max: maxHeight, step: coarseSizeStep)
+            : heightValues
+
+        let coarseCount = countCandidates(
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight,
+            widthValues: coarseWidthValues,
+            heightValues: coarseHeightValues,
+            positionStep: coarsePositionStep
+        )
+        let refinementReserve = (settings.useCoarseToFine && settings.keepRefinementReserve)
+            ? max(sizeStep, positionStep)
+            : 0
+        let refinePositionStep = max(1, positionStep / 2)
+        let refineSizeStep = max(1, sizeStep / 2)
+        let topCandidateLimit = 8
+        let sizeRefineRadius = sizeStep + refinementReserve
+        let positionRefineRadius = positionStep + refinementReserve
+        let refineEstimatePerSeed = max(1, (2 * sizeRefineRadius / refineSizeStep + 1) * (2 * sizeRefineRadius / refineSizeStep + 1))
+            * max(1, (2 * positionRefineRadius / refinePositionStep + 1) * (2 * positionRefineRadius / refinePositionStep + 1))
+        let estimatedTotalCandidates = settings.useCoarseToFine
+            ? coarseCount + topCandidateLimit * refineEstimatePerSeed
+            : coarseCount
+
+        var evaluatedCandidates = 0
+        var bestCandidate: CropCandidate?
+        var bestScore: Double?
+        var visited: Set<CropCandidate> = []
+        let progressInterval = max(1, estimatedTotalCandidates / 200)
+
+        func reportProgress(force: Bool = false) {
+            guard force || evaluatedCandidates % progressInterval == 0 else { return }
+            let progress = estimatedTotalCandidates > 0
+                ? min(0.99, Double(evaluatedCandidates) / Double(estimatedTotalCandidates))
+                : 0.0
+            let label = settings.metric == .ssim ? "SSIM" : "MSE"
+            let bestText: String
+            if let bestScore {
+                bestText = String(format: "%.6f", bestScore)
+            } else {
+                bestText = "—"
+            }
+            let bestCrop = bestCandidate.map {
+                SpatialCropParameters(
+                    left: $0.x,
+                    right: $0.x + $0.width - 1,
+                    top: $0.y,
+                    bottom: $0.y + $0.height - 1
+                )
+            }
+            progressCallback?(
+                SpatialAutoCropProgressInfo(
+                    progress: progress,
+                    message: "Перебор обрезок: \(label)=\(bestText)",
+                    evaluatedCandidates: evaluatedCandidates,
+                    totalCandidates: max(estimatedTotalCandidates, evaluatedCandidates),
+                    bestCrop: bestCrop
+                )
+            )
+        }
+
+        func maybeUpdateBest(candidate: CropCandidate, score: Double) -> Bool {
+            guard isFinite(score) else { return false }
+            if isBetter(score: score, than: bestScore, metric: settings.metric) {
+                bestScore = score
+                bestCandidate = candidate
+                return true
+            }
+            return false
+        }
+
+        func evaluateCandidate(_ candidate: CropCandidate) -> Double? {
+            guard candidate.width > 0, candidate.height > 0 else { return nil }
+            guard candidate.x >= 0, candidate.y >= 0 else { return nil }
+            guard candidate.x + candidate.width <= sourceWidth,
+                  candidate.y + candidate.height <= sourceHeight else {
+                return nil
+            }
+            guard visited.insert(candidate).inserted else { return nil }
+
+            evaluatedCandidates += 1
+
+            var metricSum = 0.0
+            let pairCount = settings.sourceChannels.count
+            for idx in 0..<pairCount {
+                let sourceChannelIndex = settings.sourceChannels[idx]
+                let referenceChannelIndex = settings.referenceChannels[idx]
+                guard let source = sourceChannelData[sourceChannelIndex],
+                      let reference = referenceEvalData[referenceChannelIndex] else {
+                    return nil
+                }
+
+                let cropped = cropChannel(
+                    source,
+                    sourceWidth: sourceWidth,
+                    x: candidate.x,
+                    y: candidate.y,
+                    width: candidate.width,
+                    height: candidate.height
+                )
+                let resized = resizeBilinear(
+                    data: cropped,
+                    srcWidth: candidate.width,
+                    srcHeight: candidate.height,
+                    dstWidth: referenceWidth,
+                    dstHeight: referenceHeight
+                )
+
+                let evalData: [Double]
+                if downsampleFactor > 1 {
+                    evalData = downsampleMean(
+                        resized,
+                        width: referenceWidth,
+                        height: referenceHeight,
+                        factor: downsampleFactor
+                    ).data
+                } else {
+                    evalData = resized
+                }
+
+                let score = computeMetric(
+                    candidate: evalData,
+                    reference: reference,
+                    width: evalReferenceWidth,
+                    height: evalReferenceHeight,
+                    metric: settings.metric
+                )
+                metricSum += score
+
+                if settings.metric == .mse, let currentBest = bestScore {
+                    let partial = metricSum / Double(idx + 1)
+                    if partial > currentBest {
+                        return nil
+                    }
+                }
+            }
+
+            let score = metricSum / Double(max(pairCount, 1))
+            let didImprove = maybeUpdateBest(candidate: candidate, score: score)
+            reportProgress(force: didImprove)
+            return score
+        }
+
+        var topCandidates: [ScoredCandidate] = []
+        func rememberTop(candidate: CropCandidate, score: Double) {
+            topCandidates.append(ScoredCandidate(candidate: candidate, score: score))
+            topCandidates.sort {
+                settings.metric == .ssim ? $0.score > $1.score : $0.score < $1.score
+            }
+            if topCandidates.count > topCandidateLimit {
+                topCandidates.removeLast(topCandidates.count - topCandidateLimit)
+            }
+        }
+
+        progressCallback?(
+            SpatialAutoCropProgressInfo(
+                progress: 0.0,
+                message: "Подготовка данных для автоподбора…",
+                evaluatedCandidates: 0,
+                totalCandidates: max(estimatedTotalCandidates, 1),
+                bestCrop: nil
+            )
+        )
+
+        enumerateCandidates(
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight,
+            widthValues: coarseWidthValues,
+            heightValues: coarseHeightValues,
+            positionStep: coarsePositionStep
+        ) { candidate in
+            guard let score = evaluateCandidate(candidate) else { return }
+            if settings.useCoarseToFine {
+                rememberTop(candidate: candidate, score: score)
+            }
+        }
+
+        if settings.useCoarseToFine {
+            let seeds = topCandidates.map { $0.candidate }
+            for seed in seeds {
+                let sizeRadius = sizeStep + refinementReserve
+                let positionRadius = positionStep + refinementReserve
+                let minLocalWidth = bounded(seed.width - sizeRadius, min: minWidth, max: maxWidth)
+                let maxLocalWidth = bounded(seed.width + sizeRadius, min: minLocalWidth, max: maxWidth)
+                let minLocalHeight = bounded(seed.height - sizeRadius, min: minHeight, max: maxHeight)
+                let maxLocalHeight = bounded(seed.height + sizeRadius, min: minLocalHeight, max: maxHeight)
+
+                let localWidths = steppedValues(min: minLocalWidth, max: maxLocalWidth, step: refineSizeStep)
+                let localHeights = steppedValues(min: minLocalHeight, max: maxLocalHeight, step: refineSizeStep)
+
+                for height in localHeights {
+                    for width in localWidths {
+                        let maxX = max(0, sourceWidth - width)
+                        let maxY = max(0, sourceHeight - height)
+                        let minLocalX = bounded(seed.x - positionRadius, min: 0, max: maxX)
+                        let maxLocalX = bounded(seed.x + positionRadius, min: minLocalX, max: maxX)
+                        let minLocalY = bounded(seed.y - positionRadius, min: 0, max: maxY)
+                        let maxLocalY = bounded(seed.y + positionRadius, min: minLocalY, max: maxY)
+
+                        let xValues = steppedValues(min: minLocalX, max: maxLocalX, step: refinePositionStep)
+                        let yValues = steppedValues(min: minLocalY, max: maxLocalY, step: refinePositionStep)
+                        for y in yValues {
+                            for x in xValues {
+                                _ = evaluateCandidate(CropCandidate(x: x, y: y, width: width, height: height))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        reportProgress(force: true)
+
+        guard let bestCandidate, let bestScore else { return nil }
+        let resultCrop = SpatialCropParameters(
+            left: bestCandidate.x,
+            right: bestCandidate.x + bestCandidate.width - 1,
+            top: bestCandidate.y,
+            bottom: bestCandidate.y + bestCandidate.height - 1,
+            autoCropSettings: settings,
+            autoCropResult: SpatialAutoCropResult(
+                metric: settings.metric,
+                bestScore: bestScore,
+                evaluatedCandidates: evaluatedCandidates,
+                referenceLibraryID: settings.referenceLibraryID,
+                sourceChannels: settings.sourceChannels,
+                referenceChannels: settings.referenceChannels,
+                selectedWidth: bestCandidate.width,
+                selectedHeight: bestCandidate.height
+            )
+        )
+
+        progressCallback?(
+            SpatialAutoCropProgressInfo(
+                progress: 1.0,
+                message: "Автоподбор завершён",
+                evaluatedCandidates: evaluatedCandidates,
+                totalCandidates: max(estimatedTotalCandidates, evaluatedCandidates),
+                bestCrop: resultCrop
+            )
+        )
+
+        return SpatialAutoCropComputationResult(
+            crop: resultCrop,
+            score: bestScore,
+            evaluatedCandidates: evaluatedCandidates
+        )
+    }
+
+    private static func enumerateCandidates(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        widthValues: [Int],
+        heightValues: [Int],
+        positionStep: Int,
+        body: (CropCandidate) -> Void
+    ) {
+        for height in heightValues where height > 0 && height <= sourceHeight {
+            let maxY = sourceHeight - height
+            let yValues = steppedValues(min: 0, max: maxY, step: positionStep)
+            for width in widthValues where width > 0 && width <= sourceWidth {
+                let maxX = sourceWidth - width
+                let xValues = steppedValues(min: 0, max: maxX, step: positionStep)
+                for y in yValues {
+                    for x in xValues {
+                        body(CropCandidate(x: x, y: y, width: width, height: height))
+                    }
+                }
+            }
+        }
+    }
+
+    private static func countCandidates(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        widthValues: [Int],
+        heightValues: [Int],
+        positionStep: Int
+    ) -> Int {
+        var total = 0
+        for height in heightValues where height > 0 && height <= sourceHeight {
+            let yCount = steppedValues(min: 0, max: sourceHeight - height, step: positionStep).count
+            for width in widthValues where width > 0 && width <= sourceWidth {
+                let xCount = steppedValues(min: 0, max: sourceWidth - width, step: positionStep).count
+                total += xCount * yCount
+            }
+        }
+        return total
+    }
+
+    private static func steppedValues(min: Int, max: Int, step: Int) -> [Int] {
+        guard min <= max else { return [] }
+        let safeStep = Swift.max(1, step)
+        var values = Array(stride(from: min, through: max, by: safeStep))
+        if values.last != max {
+            values.append(max)
+        }
+        return values
+    }
+
+    private static func extractChannel(
+        cube: HyperCube,
+        channelIndex: Int,
+        axes: (channel: Int, height: Int, width: Int)
+    ) -> [Double] {
+        let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+        let width = dims[axes.width]
+        let height = dims[axes.height]
+        var result = [Double](repeating: 0, count: width * height)
+        for y in 0..<height {
+            for x in 0..<width {
+                var idx = [0, 0, 0]
+                idx[axes.channel] = channelIndex
+                idx[axes.height] = y
+                idx[axes.width] = x
+                let linear = cube.linearIndex(i0: idx[0], i1: idx[1], i2: idx[2])
+                result[y * width + x] = cube.getValue(at: linear)
+            }
+        }
+        return result
+    }
+
+    private static func cropChannel(
+        _ data: [Double],
+        sourceWidth: Int,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int
+    ) -> [Double] {
+        var cropped = [Double](repeating: 0, count: width * height)
+        for row in 0..<height {
+            let srcBase = (y + row) * sourceWidth + x
+            let dstBase = row * width
+            for col in 0..<width {
+                cropped[dstBase + col] = data[srcBase + col]
+            }
+        }
+        return cropped
+    }
+
+    private static func resizeBilinear(
+        data: [Double],
+        srcWidth: Int,
+        srcHeight: Int,
+        dstWidth: Int,
+        dstHeight: Int
+    ) -> [Double] {
+        guard srcWidth > 0, srcHeight > 0, dstWidth > 0, dstHeight > 0 else { return [] }
+        if srcWidth == dstWidth && srcHeight == dstHeight {
+            return data
+        }
+
+        var resized = [Double](repeating: 0, count: dstWidth * dstHeight)
+        let scaleX = Double(srcWidth) / Double(dstWidth)
+        let scaleY = Double(srcHeight) / Double(dstHeight)
+
+        for y in 0..<dstHeight {
+            let srcY = (Double(y) + 0.5) * scaleY - 0.5
+            let y0 = Int(floor(srcY))
+            let y1 = y0 + 1
+            let fy = srcY - Double(y0)
+
+            for x in 0..<dstWidth {
+                let srcX = (Double(x) + 0.5) * scaleX - 0.5
+                let x0 = Int(floor(srcX))
+                let x1 = x0 + 1
+                let fx = srcX - Double(x0)
+
+                let p00 = sample(data: data, width: srcWidth, height: srcHeight, x: x0, y: y0)
+                let p10 = sample(data: data, width: srcWidth, height: srcHeight, x: x1, y: y0)
+                let p01 = sample(data: data, width: srcWidth, height: srcHeight, x: x0, y: y1)
+                let p11 = sample(data: data, width: srcWidth, height: srcHeight, x: x1, y: y1)
+
+                let top = p00 * (1.0 - fx) + p10 * fx
+                let bottom = p01 * (1.0 - fx) + p11 * fx
+                resized[y * dstWidth + x] = top * (1.0 - fy) + bottom * fy
+            }
+        }
+
+        return resized
+    }
+
+    private static func sample(
+        data: [Double],
+        width: Int,
+        height: Int,
+        x: Int,
+        y: Int
+    ) -> Double {
+        let clampedX = bounded(x, min: 0, max: max(width - 1, 0))
+        let clampedY = bounded(y, min: 0, max: max(height - 1, 0))
+        return data[clampedY * width + clampedX]
+    }
+
+    private static func downsampleMean(
+        _ data: [Double],
+        width: Int,
+        height: Int,
+        factor: Int
+    ) -> (data: [Double], width: Int, height: Int) {
+        let safeFactor = max(1, factor)
+        guard safeFactor > 1 else { return (data, width, height) }
+
+        let newWidth = max(1, width / safeFactor)
+        let newHeight = max(1, height / safeFactor)
+        var result = [Double](repeating: 0, count: newWidth * newHeight)
+
+        for y in 0..<newHeight {
+            for x in 0..<newWidth {
+                var sum = 0.0
+                var count = 0.0
+                for fy in 0..<safeFactor {
+                    for fx in 0..<safeFactor {
+                        let srcX = x * safeFactor + fx
+                        let srcY = y * safeFactor + fy
+                        if srcX < width && srcY < height {
+                            sum += data[srcY * width + srcX]
+                            count += 1.0
+                        }
+                    }
+                }
+                result[y * newWidth + x] = count > 0 ? sum / count : 0.0
+            }
+        }
+
+        return (result, newWidth, newHeight)
+    }
+
+    private static func computeMetric(
+        candidate: [Double],
+        reference: [Double],
+        width: Int,
+        height: Int,
+        metric: SpatialAutoCropMetric
+    ) -> Double {
+        guard !candidate.isEmpty,
+              candidate.count == reference.count,
+              width > 0, height > 0 else {
+            return metric == .ssim ? -1.0 : Double.infinity
+        }
+
+        let normCandidate = normalizeData(candidate)
+        let normReference = normalizeData(reference)
+        switch metric {
+        case .ssim:
+            return computeSSIMDirect(normCandidate, normReference)
+        case .mse:
+            var mse = 0.0
+            for i in 0..<normCandidate.count {
+                let diff = normCandidate[i] - normReference[i]
+                mse += diff * diff
+            }
+            return mse / Double(normCandidate.count)
+        }
+    }
+
+    private static func normalizeData(_ data: [Double]) -> [Double] {
+        guard !data.isEmpty else { return [] }
+        var minValue = Double.infinity
+        var maxValue = -Double.infinity
+        for value in data {
+            if value < minValue { minValue = value }
+            if value > maxValue { maxValue = value }
+        }
+        let range = maxValue - minValue
+        guard range > 1e-12 else {
+            return [Double](repeating: 0.0, count: data.count)
+        }
+        var normalized = [Double](repeating: 0, count: data.count)
+        for i in 0..<data.count {
+            normalized[i] = (data[i] - minValue) / range
+        }
+        return normalized
+    }
+
+    private static func computeSSIMDirect(_ lhs: [Double], _ rhs: [Double]) -> Double {
+        guard lhs.count == rhs.count, !lhs.isEmpty else { return -1.0 }
+        let count = Double(lhs.count)
+
+        var sumL = 0.0
+        var sumR = 0.0
+        var sumSqL = 0.0
+        var sumSqR = 0.0
+        var sumProd = 0.0
+
+        for i in 0..<lhs.count {
+            let l = lhs[i]
+            let r = rhs[i]
+            sumL += l
+            sumR += r
+            sumSqL += l * l
+            sumSqR += r * r
+            sumProd += l * r
+        }
+
+        let muL = sumL / count
+        let muR = sumR / count
+        let sigmaLSq = max(0, sumSqL / count - muL * muL)
+        let sigmaRSq = max(0, sumSqR / count - muR * muR)
+        let sigmaLR = sumProd / count - muL * muR
+
+        let c1 = 0.0001
+        let c2 = 0.0009
+        let numerator = (2.0 * muL * muR + c1) * (2.0 * sigmaLR + c2)
+        let denominator = (muL * muL + muR * muR + c1) * (sigmaLSq + sigmaRSq + c2)
+        guard denominator > 1e-12 else { return 0.0 }
+        return numerator / denominator
+    }
+
+    private static func isBetter(score: Double, than currentBest: Double?, metric: SpatialAutoCropMetric) -> Bool {
+        guard let currentBest else { return true }
+        switch metric {
+        case .ssim:
+            return score > currentBest
+        case .mse:
+            return score < currentBest
+        }
+    }
+
+    private static func bounded(_ value: Int, min: Int, max: Int) -> Int {
+        Swift.max(min, Swift.min(value, max))
+    }
+
+    private static func isFinite(_ value: Double) -> Bool {
+        value.isFinite && !value.isNaN
     }
 }
 

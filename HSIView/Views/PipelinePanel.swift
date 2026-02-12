@@ -546,6 +546,27 @@ struct OperationEditorView: View {
     @State private var localClippingParams: ClippingParameters = .default
     @State private var localRotationAngle: RotationAngle = .degree90
     @State private var localCropParameters: SpatialCropParameters = SpatialCropParameters(left: 0, right: 0, top: 0, bottom: 0)
+    @State private var autoCropEnabled: Bool = false
+    @State private var autoCropReferenceEntryID: String?
+    @State private var autoCropMetric: SpatialAutoCropMetric = .ssim
+    @State private var autoCropSourceChannelsText: String = "0"
+    @State private var autoCropReferenceChannelsText: String = "0"
+    @State private var autoCropLimitWidth: Bool = false
+    @State private var autoCropLimitHeight: Bool = false
+    @State private var autoCropMinWidth: Int = 1
+    @State private var autoCropMaxWidth: Int = 1
+    @State private var autoCropMinHeight: Int = 1
+    @State private var autoCropMaxHeight: Int = 1
+    @State private var autoCropPositionStep: Int = 4
+    @State private var autoCropSizeStep: Int = 4
+    @State private var autoCropUseCoarseToFine: Bool = true
+    @State private var autoCropKeepRefinementReserve: Bool = true
+    @State private var autoCropDownsampleFactor: Int = 2
+    @State private var autoCropProgress: Double = 0
+    @State private var autoCropProgressMessage: String = ""
+    @State private var autoCropInfoMessage: String?
+    @State private var autoCropErrorMessage: String?
+    @State private var isComputingAutoCrop: Bool = false
     @State private var localCalibrationParams: CalibrationParameters = .default
     @State private var localResizeParams: ResizeParameters = .default
     @State private var localSpectralTrimParams: SpectralTrimParameters = SpectralTrimParameters(startChannel: 0, endChannel: 0)
@@ -571,12 +592,19 @@ struct OperationEditorView: View {
                 headerView(for: op)
                 
                 Divider()
-                
-                ScrollView {
+
+                if op.type == .spatialCrop {
                     VStack(spacing: 16) {
                         editorContent(for: op)
                     }
                     .padding(16)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            editorContent(for: op)
+                        }
+                        .padding(16)
+                    }
                 }
                 
                 Divider()
@@ -599,7 +627,7 @@ struct OperationEditorView: View {
         }
         switch op.type {
         case .spatialCrop:
-        return CGSize(width: 960, height: 620)
+            return CGSize(width: 1120, height: 700)
         case .calibration:
             return CGSize(width: 500, height: 600)
         case .resize:
@@ -634,6 +662,16 @@ struct OperationEditorView: View {
             if let params = op.cropParameters {
                 localCropParameters = params
             }
+            if let size = spatialSize(for: op) {
+                syncAutoCropStateFromLocalParameters(size: size)
+            } else {
+                syncAutoCropStateFromLocalParameters(size: (width: 1, height: 1))
+            }
+            autoCropInfoMessage = nil
+            autoCropErrorMessage = nil
+            autoCropProgress = 0
+            autoCropProgressMessage = ""
+            isComputingAutoCrop = false
         case .calibration:
             localCalibrationParams = op.calibrationParams ?? .default
         case .resize:
@@ -681,7 +719,20 @@ struct OperationEditorView: View {
         case .resize:
             state.pipelineOperations[index].resizeParameters = localResizeParams
         case .spatialCrop:
-            state.pipelineOperations[index].cropParameters = localCropParameters
+            var updated = localCropParameters
+            if let size = spatialSize(for: op) {
+                updated = updated.clamped(maxWidth: max(size.width, 1), maxHeight: max(size.height, 1))
+            }
+            let newSettings = buildAutoCropSettingsIfEnabled()
+            if updated.autoCropSettings != newSettings {
+                updated.autoCropResult = nil
+            }
+            updated.autoCropSettings = newSettings
+            if newSettings == nil {
+                updated.autoCropResult = nil
+            }
+            localCropParameters = updated
+            state.pipelineOperations[index].cropParameters = updated
         case .spectralTrim:
             state.pipelineOperations[index].spectralTrimParams = localSpectralTrimParams
         case .calibration:
@@ -2012,57 +2063,64 @@ struct OperationEditorView: View {
                         pixelHeight: cropSize.height,
                         parameters: bindingForParameters(width: cropSize.width, height: cropSize.height)
                     )
-                    .frame(height: 420)
+                    .frame(height: 430)
                     .frame(maxWidth: .infinity)
                     .background(Color(NSColor.controlBackgroundColor).opacity(0.15))
                     .cornerRadius(14)
                     
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Размер области")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("\(cropSize.width) × \(cropSize.height) px")
-                                .font(.system(size: 24, weight: .semibold, design: .rounded))
-                            Text("Layout: \(op.layout.rawValue)")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Divider()
-                        
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Границы (px)")
-                                .font(.system(size: 11, weight: .semibold))
-                            
-                            VStack(spacing: 10) {
-                                cropValueField(
-                                    label: "Левая граница",
-                                    value: binding(for: \.left, width: cropSize.width, height: cropSize.height),
-                                    range: 0...max(cropSize.width - 1, 0)
-                                )
-                                
-                                cropValueField(
-                                    label: "Правая граница",
-                                    value: binding(for: \.right, width: cropSize.width, height: cropSize.height),
-                                    range: 0...max(cropSize.width - 1, 0)
-                                )
-                                
-                                cropValueField(
-                                    label: "Верхняя граница",
-                                    value: binding(for: \.top, width: cropSize.width, height: cropSize.height),
-                                    range: 0...max(cropSize.height - 1, 0)
-                                )
-                                
-                                cropValueField(
-                                    label: "Нижняя граница",
-                                    value: binding(for: \.bottom, width: cropSize.width, height: cropSize.height),
-                                    range: 0...max(cropSize.height - 1, 0)
-                                )
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Размер области")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("\(cropSize.width) × \(cropSize.height) px")
+                                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                                Text("Layout: \(op.layout.rawValue)")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
                             }
+
+                            Divider()
+
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Границы (px)")
+                                    .font(.system(size: 11, weight: .semibold))
+
+                                VStack(spacing: 10) {
+                                    cropValueField(
+                                        label: "Левая граница",
+                                        value: binding(for: \.left, width: cropSize.width, height: cropSize.height),
+                                        range: 0...max(cropSize.width - 1, 0)
+                                    )
+
+                                    cropValueField(
+                                        label: "Правая граница",
+                                        value: binding(for: \.right, width: cropSize.width, height: cropSize.height),
+                                        range: 0...max(cropSize.width - 1, 0)
+                                    )
+
+                                    cropValueField(
+                                        label: "Верхняя граница",
+                                        value: binding(for: \.top, width: cropSize.width, height: cropSize.height),
+                                        range: 0...max(cropSize.height - 1, 0)
+                                    )
+
+                                    cropValueField(
+                                        label: "Нижняя граница",
+                                        value: binding(for: \.bottom, width: cropSize.width, height: cropSize.height),
+                                        range: 0...max(cropSize.height - 1, 0)
+                                    )
+                                }
+                            }
+
+                            Divider()
+
+                            autoCropSettingsSection(for: op, cropSize: cropSize)
                         }
+                        .padding(14)
                     }
-                    .frame(width: 280)
-                    .padding(14)
+                    .frame(width: 380)
+                    .frame(maxHeight: .infinity)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color(NSColor.controlBackgroundColor).opacity(0.4))
@@ -2070,10 +2128,12 @@ struct OperationEditorView: View {
                 }
                 .onAppear {
                     clampCropParametersIfNeeded(width: cropSize.width, height: cropSize.height)
+                    syncAutoCropStateFromLocalParameters(size: cropSize)
                 }
                 .onChange(of: state.cube?.id) { _ in
                     if let freshSize = spatialSize(for: op) {
                         clampCropParametersIfNeeded(width: freshSize.width, height: freshSize.height)
+                        syncAutoCropStateFromLocalParameters(size: freshSize)
                     }
                 }
             } else {
@@ -2091,6 +2151,263 @@ struct OperationEditorView: View {
                         }
                     )
             }
+        }
+    }
+
+    @ViewBuilder
+    private func autoCropSettingsSection(for op: PipelineOperation, cropSize: (width: Int, height: Int)) -> some View {
+        let estimatedCandidates = estimatedAutoCropCandidates(cropSize: cropSize)
+
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $autoCropEnabled) {
+                HStack(spacing: 6) {
+                    Image(systemName: "wand.and.stars")
+                    Text("Автоподбор обрезки по ГСИ-референсу")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+
+            if autoCropEnabled {
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ГСИ-референс из библиотеки")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Picker("", selection: $autoCropReferenceEntryID) {
+                            Text("Не выбран").tag(String?.none)
+                            ForEach(state.libraryEntries) { entry in
+                                Text(entry.displayName).tag(Optional(entry.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Целевая метрика")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Picker("", selection: $autoCropMetric) {
+                            ForEach(SpatialAutoCropMetric.allCases) { metric in
+                                Text(metric.rawValue).tag(metric)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Каналы source/ref (через запятую)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        TextField("Source: 0, 3, 5", text: $autoCropSourceChannelsText)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Reference: 0, 2, 4", text: $autoCropReferenceChannelsText)
+                            .textFieldStyle(.roundedBorder)
+                        Text("Должно быть одинаковое количество каналов, минимум 1.")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Ограничить ширину", isOn: $autoCropLimitWidth)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.small)
+                        if autoCropLimitWidth {
+                            HStack(spacing: 8) {
+                                Text("Min")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                TextField("1", value: $autoCropMinWidth, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 64)
+                                Text("Max")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                TextField("\(cropSize.width)", value: $autoCropMaxWidth, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 64)
+                            }
+                        }
+
+                        Toggle("Ограничить высоту", isOn: $autoCropLimitHeight)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.small)
+                        if autoCropLimitHeight {
+                            HStack(spacing: 8) {
+                                Text("Min")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                TextField("1", value: $autoCropMinHeight, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 64)
+                                Text("Max")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                TextField("\(cropSize.height)", value: $autoCropMaxHeight, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 64)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Оптимизация перебора")
+                            .font(.system(size: 10, weight: .semibold))
+
+                        HStack(spacing: 8) {
+                            Text("Шаг позиции")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField("4", value: $autoCropPositionStep, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 56)
+                            Stepper("", value: $autoCropPositionStep, in: 1...64)
+                                .labelsHidden()
+                                .controlSize(.mini)
+                        }
+
+                        HStack(spacing: 8) {
+                            Text("Шаг размера")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField("4", value: $autoCropSizeStep, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 56)
+                            Stepper("", value: $autoCropSizeStep, in: 1...64)
+                                .labelsHidden()
+                                .controlSize(.mini)
+                        }
+
+                        Toggle("Грубый поиск + уточнение (coarse-to-fine)", isOn: $autoCropUseCoarseToFine)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.small)
+
+                        Toggle("Оставлять уточняющий резерв", isOn: $autoCropKeepRefinementReserve)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.small)
+                            .disabled(!autoCropUseCoarseToFine)
+
+                        HStack(spacing: 8) {
+                            Text("Downsample для метрики")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Picker("", selection: $autoCropDownsampleFactor) {
+                                Text("1x").tag(1)
+                                Text("2x").tag(2)
+                                Text("4x").tag(4)
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 140)
+                        }
+
+                        HStack(spacing: 6) {
+                            Button("Быстро") {
+                                applyAutoCropPreset(speed: .fast)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+
+                            Button("Баланс") {
+                                applyAutoCropPreset(speed: .balanced)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+
+                            Button("Точно") {
+                                applyAutoCropPreset(speed: .precise)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
+                    }
+
+                    Text("Оценка вариантов: ~\(estimatedCandidates) (зависит от ограничений и шага)")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Text("Для ускорения увеличьте шаги, включите coarse-to-fine и используйте downsample 2x/4x.")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button(action: {
+                        runAutoCropSearch(for: op, cropSize: cropSize)
+                    }) {
+                        HStack {
+                            Image(systemName: "scope")
+                            Text(isComputingAutoCrop ? "Подбор..." : "Подобрать обрезку")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .disabled(isComputingAutoCrop || autoCropReferenceEntryID == nil)
+
+                    if isComputingAutoCrop {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(autoCropProgressMessage.isEmpty ? "Вычисление..." : autoCropProgressMessage)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("\(Int(autoCropProgress * 100))%")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            }
+                            ProgressView(value: autoCropProgress)
+                                .progressViewStyle(.linear)
+                        }
+                        .padding(8)
+                        .background(Color.blue.opacity(0.08))
+                        .cornerRadius(8)
+                    }
+
+                    if let info = autoCropInfoMessage {
+                        Text(info)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let error = autoCropErrorMessage {
+                        Text(error)
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
+                    }
+
+                    if let result = localCropParameters.autoCropResult {
+                        let scoreText = String(format: result.metric == .ssim ? "%.4f" : "%.6f", result.bestScore)
+                        Text("Лучший результат: \(result.metric.rawValue)=\(scoreText), окно \(result.selectedWidth)×\(result.selectedHeight), проверено \(result.evaluatedCandidates)")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .onChange(of: autoCropMinWidth) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropMaxWidth) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropMinHeight) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropMaxHeight) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropPositionStep) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropSizeStep) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropDownsampleFactor) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropKeepRefinementReserve) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
         }
     }
     
@@ -3147,6 +3464,318 @@ struct OperationEditorView: View {
             localResizeParams.targetWidth = newWidth
         }
         isAdjustingResize = false
+    }
+
+    private enum AutoCropSpeedPreset {
+        case fast
+        case balanced
+        case precise
+    }
+
+    private func syncAutoCropStateFromLocalParameters(size: (width: Int, height: Int)) {
+        let settings = localCropParameters.autoCropSettings
+        autoCropEnabled = settings != nil
+        let effective = settings ?? .default
+
+        autoCropReferenceEntryID = effective.referenceLibraryID
+        autoCropMetric = effective.metric
+        autoCropSourceChannelsText = formatChannelList(effective.sourceChannels.isEmpty ? [0] : effective.sourceChannels)
+        autoCropReferenceChannelsText = formatChannelList(effective.referenceChannels.isEmpty ? [0] : effective.referenceChannels)
+
+        autoCropLimitWidth = (effective.minWidth != nil || effective.maxWidth != nil)
+        autoCropLimitHeight = (effective.minHeight != nil || effective.maxHeight != nil)
+
+        let widthLimit = max(size.width, 1)
+        let heightLimit = max(size.height, 1)
+        autoCropMinWidth = boundedInt(effective.minWidth ?? min(widthLimit, max(1, widthLimit / 2)), min: 1, max: widthLimit)
+        autoCropMaxWidth = boundedInt(effective.maxWidth ?? widthLimit, min: autoCropMinWidth, max: widthLimit)
+        autoCropMinHeight = boundedInt(effective.minHeight ?? min(heightLimit, max(1, heightLimit / 2)), min: 1, max: heightLimit)
+        autoCropMaxHeight = boundedInt(effective.maxHeight ?? heightLimit, min: autoCropMinHeight, max: heightLimit)
+        autoCropPositionStep = max(1, effective.positionStep)
+        autoCropSizeStep = max(1, effective.sizeStep)
+        autoCropUseCoarseToFine = effective.useCoarseToFine
+        autoCropKeepRefinementReserve = effective.keepRefinementReserve
+        autoCropDownsampleFactor = max(1, effective.downsampleFactor)
+    }
+
+    private func buildAutoCropSettingsIfEnabled() -> SpatialAutoCropSettings? {
+        guard autoCropEnabled else { return nil }
+
+        let sourceChannels = parseChannelList(autoCropSourceChannelsText)
+        let referenceChannels = parseChannelList(autoCropReferenceChannelsText)
+        let minWidth = autoCropLimitWidth ? min(autoCropMinWidth, autoCropMaxWidth) : nil
+        let maxWidth = autoCropLimitWidth ? max(autoCropMinWidth, autoCropMaxWidth) : nil
+        let minHeight = autoCropLimitHeight ? min(autoCropMinHeight, autoCropMaxHeight) : nil
+        let maxHeight = autoCropLimitHeight ? max(autoCropMinHeight, autoCropMaxHeight) : nil
+
+        return SpatialAutoCropSettings(
+            referenceLibraryID: autoCropReferenceEntryID,
+            metric: autoCropMetric,
+            sourceChannels: sourceChannels,
+            referenceChannels: referenceChannels,
+            minWidth: minWidth,
+            maxWidth: maxWidth,
+            minHeight: minHeight,
+            maxHeight: maxHeight,
+            positionStep: max(1, autoCropPositionStep),
+            sizeStep: max(1, autoCropSizeStep),
+            useCoarseToFine: autoCropUseCoarseToFine,
+            keepRefinementReserve: autoCropKeepRefinementReserve,
+            downsampleFactor: max(1, autoCropDownsampleFactor)
+        )
+    }
+
+    private func parseChannelList(_ text: String) -> [Int] {
+        let separators = CharacterSet(charactersIn: ",; \n\t")
+        let tokens = text
+            .components(separatedBy: separators)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var values: [Int] = []
+        for token in tokens {
+            guard let value = Int(token), value >= 0 else { continue }
+            if !values.contains(value) {
+                values.append(value)
+            }
+        }
+        return values
+    }
+
+    private func formatChannelList(_ channels: [Int]) -> String {
+        channels.map { String($0) }.joined(separator: ", ")
+    }
+
+    private func clampAutoCropLimitInputs(cropSize: (width: Int, height: Int)) {
+        let widthLimit = max(cropSize.width, 1)
+        let heightLimit = max(cropSize.height, 1)
+
+        autoCropMinWidth = boundedInt(autoCropMinWidth, min: 1, max: widthLimit)
+        autoCropMaxWidth = boundedInt(autoCropMaxWidth, min: autoCropMinWidth, max: widthLimit)
+        autoCropMinHeight = boundedInt(autoCropMinHeight, min: 1, max: heightLimit)
+        autoCropMaxHeight = boundedInt(autoCropMaxHeight, min: autoCropMinHeight, max: heightLimit)
+        autoCropPositionStep = max(1, autoCropPositionStep)
+        autoCropSizeStep = max(1, autoCropSizeStep)
+        autoCropDownsampleFactor = max(1, autoCropDownsampleFactor)
+    }
+
+    private func estimatedAutoCropCandidates(cropSize: (width: Int, height: Int)) -> Int {
+        let widthMin = autoCropLimitWidth ? min(autoCropMinWidth, autoCropMaxWidth) : 1
+        let widthMax = autoCropLimitWidth ? max(autoCropMinWidth, autoCropMaxWidth) : cropSize.width
+        let heightMin = autoCropLimitHeight ? min(autoCropMinHeight, autoCropMaxHeight) : 1
+        let heightMax = autoCropLimitHeight ? max(autoCropMinHeight, autoCropMaxHeight) : cropSize.height
+
+        let clampedWidthMin = boundedInt(widthMin, min: 1, max: max(cropSize.width, 1))
+        let clampedWidthMax = boundedInt(widthMax, min: clampedWidthMin, max: max(cropSize.width, 1))
+        let clampedHeightMin = boundedInt(heightMin, min: 1, max: max(cropSize.height, 1))
+        let clampedHeightMax = boundedInt(heightMax, min: clampedHeightMin, max: max(cropSize.height, 1))
+
+        let positionStep = max(1, autoCropPositionStep)
+        let sizeStep = max(1, autoCropSizeStep)
+        let coarsePositionStep = autoCropUseCoarseToFine ? max(positionStep * 2, positionStep) : positionStep
+        let coarseSizeStep = autoCropUseCoarseToFine ? max(sizeStep * 2, sizeStep) : sizeStep
+
+        func values(minValue: Int, maxValue: Int, step: Int) -> [Int] {
+            guard minValue <= maxValue else { return [] }
+            var result = Array(stride(from: minValue, through: maxValue, by: Swift.max(1, step)))
+            if result.last != maxValue {
+                result.append(maxValue)
+            }
+            return result
+        }
+
+        let widths = values(minValue: clampedWidthMin, maxValue: clampedWidthMax, step: coarseSizeStep)
+        let heights = values(minValue: clampedHeightMin, maxValue: clampedHeightMax, step: coarseSizeStep)
+        var coarseTotal = 0
+        for h in heights where h <= cropSize.height {
+            let yValues = values(minValue: 0, maxValue: max(cropSize.height - h, 0), step: coarsePositionStep)
+            for w in widths where w <= cropSize.width {
+                let xValues = values(minValue: 0, maxValue: max(cropSize.width - w, 0), step: coarsePositionStep)
+                coarseTotal += xValues.count * yValues.count
+            }
+        }
+
+        guard autoCropUseCoarseToFine else { return coarseTotal }
+        let refinePositionStep = max(1, positionStep / 2)
+        let refineSizeStep = max(1, sizeStep / 2)
+        let refinementReserve = autoCropKeepRefinementReserve ? max(positionStep, sizeStep) : 0
+        let sizeRadius = sizeStep + refinementReserve
+        let positionRadius = positionStep + refinementReserve
+        let refinePerSeed = max(1, (2 * sizeRadius / refineSizeStep + 1) * (2 * sizeRadius / refineSizeStep + 1))
+            * max(1, (2 * positionRadius / refinePositionStep + 1) * (2 * positionRadius / refinePositionStep + 1))
+        return coarseTotal + 8 * refinePerSeed
+    }
+
+    private func applyAutoCropPreset(speed: AutoCropSpeedPreset) {
+        switch speed {
+        case .fast:
+            autoCropPositionStep = 8
+            autoCropSizeStep = 8
+            autoCropDownsampleFactor = 4
+            autoCropUseCoarseToFine = true
+            autoCropKeepRefinementReserve = true
+        case .balanced:
+            autoCropPositionStep = 4
+            autoCropSizeStep = 4
+            autoCropDownsampleFactor = 2
+            autoCropUseCoarseToFine = true
+            autoCropKeepRefinementReserve = true
+        case .precise:
+            autoCropPositionStep = 1
+            autoCropSizeStep = 1
+            autoCropDownsampleFactor = 1
+            autoCropUseCoarseToFine = false
+        }
+    }
+
+    private func runAutoCropSearch(for op: PipelineOperation, cropSize: (width: Int, height: Int)) {
+        autoCropErrorMessage = nil
+        autoCropInfoMessage = nil
+
+        guard autoCropEnabled else {
+            autoCropErrorMessage = "Включите автоподбор обрезки"
+            return
+        }
+        guard let sourceCube = state.cube else {
+            autoCropErrorMessage = "Откройте ГСИ перед автоподбором"
+            return
+        }
+        guard let referenceID = autoCropReferenceEntryID,
+              let referenceEntry = state.libraryEntry(for: referenceID) else {
+            autoCropErrorMessage = "Выберите ГСИ-референс из библиотеки"
+            return
+        }
+
+        clampAutoCropLimitInputs(cropSize: cropSize)
+
+        let sourceChannels = parseChannelList(autoCropSourceChannelsText)
+        let referenceChannels = parseChannelList(autoCropReferenceChannelsText)
+        guard !sourceChannels.isEmpty, !referenceChannels.isEmpty else {
+            autoCropErrorMessage = "Укажите хотя бы один канал source и reference"
+            return
+        }
+        guard sourceChannels.count == referenceChannels.count else {
+            autoCropErrorMessage = "Количество каналов source и reference должно совпадать"
+            return
+        }
+
+        let sourceLayout = resolvedLayoutForAutoCrop(operation: op, cube: sourceCube)
+        let sourceChannelCount = sourceCube.channelCount(for: sourceLayout)
+        guard sourceChannels.allSatisfy({ $0 >= 0 && $0 < sourceChannelCount }) else {
+            autoCropErrorMessage = "Каналы source вне допустимого диапазона 0...\(max(0, sourceChannelCount - 1))"
+            return
+        }
+
+        let settings = SpatialAutoCropSettings(
+            referenceLibraryID: referenceID,
+            metric: autoCropMetric,
+            sourceChannels: sourceChannels,
+            referenceChannels: referenceChannels,
+            minWidth: autoCropLimitWidth ? min(autoCropMinWidth, autoCropMaxWidth) : nil,
+            maxWidth: autoCropLimitWidth ? max(autoCropMinWidth, autoCropMaxWidth) : nil,
+            minHeight: autoCropLimitHeight ? min(autoCropMinHeight, autoCropMaxHeight) : nil,
+            maxHeight: autoCropLimitHeight ? max(autoCropMinHeight, autoCropMaxHeight) : nil,
+            positionStep: max(1, autoCropPositionStep),
+            sizeStep: max(1, autoCropSizeStep),
+            useCoarseToFine: autoCropUseCoarseToFine,
+            keepRefinementReserve: autoCropKeepRefinementReserve,
+            downsampleFactor: max(1, autoCropDownsampleFactor)
+        )
+
+        isComputingAutoCrop = true
+        autoCropProgress = 0
+        autoCropProgressMessage = "Загрузка ГСИ-референса..."
+        localCropParameters.autoCropResult = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let payload = state.exportPayload(for: referenceEntry) else {
+                DispatchQueue.main.async {
+                    self.isComputingAutoCrop = false
+                    self.autoCropErrorMessage = "Не удалось загрузить ГСИ-референс"
+                }
+                return
+            }
+
+            let referenceCube = payload.cube
+            let referenceLayout = payload.layout
+            let referenceChannelCount = referenceCube.channelCount(for: referenceLayout)
+            guard referenceChannels.allSatisfy({ $0 >= 0 && $0 < referenceChannelCount }) else {
+                DispatchQueue.main.async {
+                    self.isComputingAutoCrop = false
+                    self.autoCropErrorMessage = "Каналы reference вне диапазона 0...\(max(0, referenceChannelCount - 1))"
+                }
+                return
+            }
+
+            let result = CubeAutoSpatialCropper.findBestCrop(
+                sourceCube: sourceCube,
+                sourceLayout: sourceLayout,
+                referenceCube: referenceCube,
+                referenceLayout: referenceLayout,
+                settings: settings
+            ) { info in
+                DispatchQueue.main.async {
+                    guard self.isComputingAutoCrop else { return }
+                    if let bestCrop = info.bestCrop {
+                        var preview = bestCrop.clamped(
+                            maxWidth: max(cropSize.width, 1),
+                            maxHeight: max(cropSize.height, 1)
+                        )
+                        preview.autoCropSettings = settings
+                        preview.autoCropResult = nil
+                        self.localCropParameters = preview
+                    }
+                    self.autoCropProgress = info.progress
+                    self.autoCropProgressMessage = info.message
+                }
+            }
+
+            DispatchQueue.main.async {
+                self.isComputingAutoCrop = false
+
+                guard let result else {
+                    self.autoCropErrorMessage = "Автоподбор не нашёл корректную область. Проверьте ограничения и каналы."
+                    return
+                }
+
+                var updated = result.crop.clamped(
+                    maxWidth: max(cropSize.width, 1),
+                    maxHeight: max(cropSize.height, 1)
+                )
+                updated.autoCropSettings = settings
+                self.localCropParameters = updated
+
+                self.autoCropProgress = 1.0
+                self.autoCropProgressMessage = "Готово"
+                let scoreText = String(format: settings.metric == .ssim ? "%.4f" : "%.6f", result.score)
+                self.autoCropInfoMessage = "Найдена область: \(updated.width)×\(updated.height), \(settings.metric.rawValue)=\(scoreText), проверено \(result.evaluatedCandidates)"
+            }
+        }
+    }
+
+    private func resolvedLayoutForAutoCrop(operation: PipelineOperation, cube: HyperCube) -> CubeLayout {
+        if operation.layout != .auto {
+            return operation.layout
+        }
+        if state.activeLayout != .auto {
+            return state.activeLayout
+        }
+        if let axes = cube.axes(for: .auto) {
+            switch axes.channel {
+            case 0:
+                return .chw
+            case 1:
+                return .hcw
+            case 2:
+                return .hwc
+            default:
+                return .chw
+            }
+        }
+        return .chw
+    }
+
+    private func boundedInt(_ value: Int, min: Int, max: Int) -> Int {
+        Swift.max(min, Swift.min(value, max))
     }
     
     private var footerView: some View {
