@@ -19,7 +19,7 @@ struct RangeWideColorControls: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Диапазоны цветосинтеза")
+                    Text(state.localized("rangewide.title"))
                         .font(.system(size: 11, weight: .medium))
                     rangeSummaryView(mapping: mapping, wavelengths: wavelengths)
                 }
@@ -38,7 +38,7 @@ struct RangeWideColorControls: View {
             if let wavelengths, !wavelengths.isEmpty {
                 wavelengthInputSection(mapping: mapping, wavelengths: wavelengths)
             } else {
-                Text("Длины волн недоступны — задавайте диапазоны по каналам на слайдере.")
+                Text(state.localized("rangewide.wavelengths_unavailable"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
@@ -77,9 +77,9 @@ struct RangeWideColorControls: View {
         let bounds = wavelengthBounds(wavelengths)
         VStack(alignment: .leading, spacing: 2) {
             if let bounds {
-                Text("Диапазон λ: \(formatWavelength(bounds.min)) – \(formatWavelength(bounds.max)) нм")
+                Text(state.localizedFormat("rangewide.range_available", formatWavelength(bounds.min), formatWavelength(bounds.max)))
             } else {
-                Text("Диапазон λ: нет данных")
+                Text(state.localized("rangewide.range_no_data"))
             }
             Text(rangeInfoText(label: "R", range: mapping.red, wavelengths: wavelengths))
             Text(rangeInfoText(label: "G", range: mapping.green, wavelengths: wavelengths))
@@ -122,7 +122,7 @@ struct RangeWideColorControls: View {
                     TextField("", value: start, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                    Text("нм")
+                    Text(state.localized("units.nm"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -135,13 +135,22 @@ struct RangeWideColorControls: View {
                     TextField("", value: end, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                    Text("нм")
+                    Text(state.localized("units.nm"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
             }
             
-            Text("Каналы \(normalized.start)–\(normalized.end) • λ \(formatWavelength(startLambda))–\(formatWavelength(endLambda)) нм • \(channelCount) каналов")
+            Text(
+                state.localizedFormat(
+                    "rangewide.channels_summary",
+                    normalized.start,
+                    normalized.end,
+                    formatWavelength(startLambda),
+                    formatWavelength(endLambda),
+                    channelCount
+                )
+            )
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(.secondary)
                 .padding(.leading, 24)
@@ -210,13 +219,26 @@ struct RangeWideColorControls: View {
         let normalized = range.normalized
         let channelCount = max(normalized.end - normalized.start + 1, 1)
         if let wavelengths, wavelengths.indices.contains(normalized.start), wavelengths.indices.contains(normalized.end) {
-            return "\(label): ch \(normalized.start)–\(normalized.end) (λ \(formatWavelength(wavelengths[normalized.start]))–\(formatWavelength(wavelengths[normalized.end])) нм, \(channelCount) каналов)"
+            return state.localizedFormat(
+                "rangewide.range_info_with_wavelength",
+                label,
+                normalized.start,
+                normalized.end,
+                formatWavelength(wavelengths[normalized.start]),
+                formatWavelength(wavelengths[normalized.end]),
+                channelCount
+            )
         }
-        return "\(label): ch \(normalized.start)–\(normalized.end) (\(channelCount) каналов)"
+        return state.localizedFormat(
+            "rangewide.range_info_channels_only",
+            label,
+            normalized.start,
+            normalized.end,
+            channelCount
+        )
     }
     
     private func formatWavelength(_ value: Double) -> String {
         String(format: "%.1f", value)
     }
 }
-

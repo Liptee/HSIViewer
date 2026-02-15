@@ -41,7 +41,7 @@ struct PipelinePanel: View {
         HStack {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 14))
-            Text("Пайплайн обработки")
+            Text(state.localized("Пайплайн обработки"))
                 .font(.system(size: 12, weight: .semibold))
             Spacer()
         }
@@ -55,7 +55,7 @@ struct PipelinePanel: View {
                 .font(.system(size: 32))
                 .foregroundColor(.secondary)
             
-            Text("Пайплайн пуст")
+            Text(state.localized("Пайплайн пуст"))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.secondary)
         }
@@ -149,7 +149,7 @@ struct PipelinePanel: View {
                     HStack(spacing: 4) {
                         Image(systemName: state.pipelineAutoApply ? "bolt.fill" : "hand.raised.fill")
                             .font(.system(size: 10))
-                        Text(state.pipelineAutoApply ? "Автоматическое применение" : "Ручной")
+                        Text(state.pipelineAutoApply ? state.localized("Автоматическое применение") : state.localized("Ручной"))
                             .font(.system(size: 10, weight: .medium))
                     }
                 }
@@ -160,7 +160,7 @@ struct PipelinePanel: View {
                     Button(action: { state.applyPipeline() }) {
                         HStack(spacing: 4) {
                             Image(systemName: "play.fill")
-                            Text("Применить")
+                            Text(state.localized("Применить"))
                         }
                         .font(.system(size: 11, weight: .medium))
                         .frame(maxWidth: .infinity)
@@ -205,8 +205,8 @@ struct PipelinePanel: View {
         [
             OperationGroup(
                 id: "values",
-                title: "Значения",
-                subtitle: "Нормализация, клиппинг, типы",
+                title: state.localized("Значения"),
+                subtitle: state.localized("Нормализация, клиппинг, типы"),
                 iconName: "slider.horizontal.3",
                 accent: Color(NSColor.systemTeal),
                 types: [
@@ -218,8 +218,8 @@ struct PipelinePanel: View {
             ),
             OperationGroup(
                 id: "spatial",
-                title: "Геометрия",
-                subtitle: "Поворот, транспонирование, размер, обрезка",
+                title: state.localized("Геометрия"),
+                subtitle: state.localized("Поворот, транспонирование, размер, обрезка"),
                 iconName: "rectangle.compress.vertical",
                 accent: Color(NSColor.systemOrange),
                 types: [
@@ -231,8 +231,8 @@ struct PipelinePanel: View {
             ),
             OperationGroup(
                 id: "spectral",
-                title: "Спектр",
-                subtitle: "Калибровка и спектральные операции",
+                title: state.localized("Спектр"),
+                subtitle: state.localized("Калибровка и спектральные операции"),
                 iconName: "waveform.path.ecg",
                 accent: Color(NSColor.systemGreen),
                 types: [
@@ -247,18 +247,18 @@ struct PipelinePanel: View {
 
     @ViewBuilder
     private var pipelineContextMenu: some View {
-        Button("Добавить обработку…") {
+        Button(state.localized("Добавить обработку…")) {
             showingAddMenu = true
         }
         
-        Button("Вставить") {
+        Button(state.localized("Вставить")) {
             state.pastePipelineOperation()
         }
         .disabled(state.pipelineOperationClipboard == nil)
         
         if !state.pipelineOperations.isEmpty {
             Divider()
-            Button("Очистить") {
+            Button(state.localized("Очистить")) {
                 state.clearPipeline()
             }
         }
@@ -313,7 +313,7 @@ struct PipelinePanel: View {
     }
 
     private func chipLineLimit(for type: PipelineOperationType) -> Int {
-        type.rawValue.count <= 12 ? 1 : 2
+        type.localizedTitle.count <= 12 ? 1 : 2
     }
 }
 
@@ -330,7 +330,7 @@ private struct OperationChip: View {
                 Image(systemName: type.iconName)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(accent)
-                Text(type.rawValue)
+                Text(type.localizedTitle)
                     .font(.system(size: 10, weight: .medium))
                     .multilineTextAlignment(.center)
                     .lineLimit(lineLimit)
@@ -461,7 +461,7 @@ struct OperationRow: View {
         .shadow(color: accent.opacity(isHovered ? 0.35 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
         .animation(.easeInOut(duration: 0.12), value: isHovered)
         .contextMenu {
-            Button("Копировать") {
+            Button(state.localized("Копировать")) {
                 state.copyPipelineOperation(operation)
             }
         }
@@ -511,9 +511,9 @@ private enum SpectralTrimInputMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .channels:
-            return "Каналы"
+            return L("Каналы")
         case .wavelengths:
-            return "Длины волн"
+            return L("Длины волн")
         }
     }
 }
@@ -527,9 +527,9 @@ private enum SpectralInterpolationTargetMode: String, CaseIterable, Identifiable
     var title: String {
         switch self {
         case .manual:
-            return "Ручной ввод"
+            return L("Ручной ввод")
         case .fromFile:
-            return "Из txt"
+            return L("Из txt")
         }
     }
 }
@@ -763,7 +763,7 @@ struct OperationEditorView: View {
         HStack {
             Image(systemName: op.type.iconName)
                 .font(.system(size: 16))
-            Text("Настройка: \(op.type.rawValue)")
+            Text(LF("pipeline.setting.current", op.type.localizedTitle))
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
         }
@@ -801,12 +801,12 @@ struct OperationEditorView: View {
     
     private func normalizationEditor(for op: PipelineOperation) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Тип нормализации:")
+            Text(state.localized("Тип нормализации:"))
                 .font(.system(size: 11, weight: .medium))
             
             Picker("", selection: $localNormalizationType) {
                 ForEach(CubeNormalizationType.allCases) { type in
-                    Text(type.rawValue).tag(type)
+                    Text(type.localizedTitle).tag(type)
                 }
             }
             .pickerStyle(.menu)
@@ -816,14 +816,14 @@ struct OperationEditorView: View {
                 
                 if localNormalizationType == .minMaxCustom {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Диапазон:")
+                        Text(state.localized("Диапазон:"))
                             .font(.system(size: 11, weight: .medium))
                         
                         HStack {
                             TextField("Min", value: $localNormalizationParams.minValue, format: .number)
                                 .textFieldStyle(.roundedBorder)
                             
-                            Text("→")
+                            Text(state.localized("→"))
                             
                             TextField("Max", value: $localNormalizationParams.maxValue, format: .number)
                                 .textFieldStyle(.roundedBorder)
@@ -831,27 +831,27 @@ struct OperationEditorView: View {
                     }
                 } else if localNormalizationType == .manualRange {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Исходный диапазон:")
+                        Text(state.localized("Исходный диапазон:"))
                             .font(.system(size: 11, weight: .medium))
                         
                         HStack {
                             TextField("Min", value: $localNormalizationParams.sourceMin, format: .number)
                                 .textFieldStyle(.roundedBorder)
                             
-                            Text("→")
+                            Text(state.localized("→"))
                             
                             TextField("Max", value: $localNormalizationParams.sourceMax, format: .number)
                                 .textFieldStyle(.roundedBorder)
                         }
                         
-                        Text("Новый диапазон:")
+                        Text(state.localized("Новый диапазон:"))
                             .font(.system(size: 11, weight: .medium))
                         
                         HStack {
                             TextField("Min", value: $localNormalizationParams.targetMin, format: .number)
                                 .textFieldStyle(.roundedBorder)
                             
-                            Text("→")
+                            Text(state.localized("→"))
                             
                             TextField("Max", value: $localNormalizationParams.targetMax, format: .number)
                                 .textFieldStyle(.roundedBorder)
@@ -859,7 +859,7 @@ struct OperationEditorView: View {
                     }
                 } else if localNormalizationType == .percentile {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Процентили:")
+                        Text(state.localized("Процентили:"))
                             .font(.system(size: 11, weight: .medium))
                         
                         HStack {
@@ -867,7 +867,7 @@ struct OperationEditorView: View {
                                 .textFieldStyle(.roundedBorder)
                             
                             Text("%")
-                            Text("→")
+                            Text(state.localized("→"))
                             
                             TextField("Upper", value: $localNormalizationParams.upperPercentile, format: .number)
                                 .textFieldStyle(.roundedBorder)
@@ -880,7 +880,7 @@ struct OperationEditorView: View {
             
             Divider()
             
-            Text("Точность вычислений:")
+            Text(state.localized("Точность вычислений:"))
                 .font(.system(size: 11, weight: .medium))
             
             Picker("", selection: $localNormalizationParams.computePrecision) {
@@ -892,17 +892,17 @@ struct OperationEditorView: View {
             
             Divider()
             
-            Toggle("Сохранить тип данных", isOn: $localPreserveDataType)
+            Toggle(state.localized("Сохранить тип данных"), isOn: $localPreserveDataType)
                 .font(.system(size: 11))
                 .disabled(localNormalizationParams.computePrecision == .float32)
             
             Group {
                 if localNormalizationParams.computePrecision == .float32 {
-                    Text("При выборе Float32 результат всегда будет Float32, независимо от исходного типа")
+                    Text(state.localized("При выборе Float32 результат всегда будет Float32, независимо от исходного типа"))
                 } else if localPreserveDataType {
-                    Text("При нормализации тип данных будет сохранён, если диапазон позволяет (например, UInt8 для [0, 255])")
+                    Text(state.localized("При нормализации тип данных будет сохранён, если диапазон позволяет (например, UInt8 для [0, 255])"))
                 } else {
-                    Text("Результат нормализации всегда будет Float64")
+                    Text(state.localized("Результат нормализации всегда будет Float64"))
                 }
             }
             .font(.system(size: 10))
@@ -920,12 +920,12 @@ struct OperationEditorView: View {
 
     private func resizeEditor(for op: PipelineOperation) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Размер:")
+            Text(state.localized("Размер:"))
                 .font(.system(size: 11, weight: .medium))
             
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Ширина")
+                    Text(state.localized("Ширина"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     TextField("Width", value: $localResizeParams.targetWidth, format: .number)
@@ -950,16 +950,16 @@ struct OperationEditorView: View {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .stroke(localResizeParams.lockAspectRatio ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 1)
                             )
-                            .help("Фиксировать соотношение сторон")
+                            .help(state.localized("Фиксировать соотношение сторон"))
                     }
                     
-                    Text("Соотношение")
+                    Text(state.localized("Соотношение"))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Высота")
+                    Text(state.localized("Высота"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     TextField("Height", value: $localResizeParams.targetHeight, format: .number)
@@ -969,19 +969,19 @@ struct OperationEditorView: View {
             }
             
             if localResizeParams.lockAspectRatio {
-                Text(String(format: "Будет сохранено соотношение: %.3f", resizeAspectRatio))
+                Text(LF("pipeline.resize.aspect_ratio_preserved", resizeAspectRatio))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
             
             Divider()
             
-            Text("Алгоритм интерполяции:")
+            Text(state.localized("Алгоритм интерполяции:"))
                 .font(.system(size: 11, weight: .medium))
             
             Picker("", selection: $localResizeParams.algorithm) {
                 ForEach(ResizeAlgorithm.allCases) { algo in
-                    Text(algo.rawValue).tag(algo)
+                    Text(algo.localizedTitle).tag(algo)
                 }
             }
             .pickerStyle(.menu)
@@ -989,7 +989,7 @@ struct OperationEditorView: View {
             switch localResizeParams.algorithm {
             case .bicubic:
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Параметр a (Catmull-Rom = -0.5):")
+                    Text(state.localized("Параметр a (Catmull-Rom = -0.5):"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     TextField("-0.5", value: $localResizeParams.bicubicA, format: .number)
@@ -998,7 +998,7 @@ struct OperationEditorView: View {
                 }
             case .lanczos:
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Число лепестков (a):")
+                    Text(state.localized("Число лепестков (a):"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Stepper(value: $localResizeParams.lanczosA, in: 1...8) {
@@ -1014,7 +1014,7 @@ struct OperationEditorView: View {
             if localResizeParams.algorithm != .nearest {
                 Divider()
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Точность вычислений")
+                    Text(state.localized("Точность вычислений"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $localResizeParams.computePrecision) {
@@ -1029,7 +1029,7 @@ struct OperationEditorView: View {
             
             Divider()
             
-            Text("Каждый канал будет ресайзнут отдельно в выбранном алгоритме.")
+            Text(state.localized("Каждый канал будет ресайзнут отдельно в выбранном алгоритме."))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
@@ -1054,21 +1054,21 @@ struct OperationEditorView: View {
         let hasCustomTargets = !customTargets.isEmpty
         
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Спектральная интерполяция")
+            Text(state.localized("Спектральная интерполяция"))
                 .font(.system(size: 11, weight: .medium))
             
             if hasWavelengths {
-                Text(String(format: "Исходный диапазон: %.2f – %.2f нм", sourceMin, sourceMax))
+                Text(LF("pipeline.spectral_interp.source_range", sourceMin, sourceMax))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             } else {
-                Text("Длины волн не заданы — интерполяция невозможна")
+                Text(state.localized("Длины волн не заданы — интерполяция невозможна"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Целевая сетка")
+                Text(state.localized("Целевая сетка"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                 Picker("", selection: $spectralInterpolationTargetMode) {
@@ -1083,7 +1083,7 @@ struct OperationEditorView: View {
             if spectralInterpolationTargetMode == .manual {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Целевое число каналов")
+                        Text(state.localized("Целевое число каналов"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         HStack(spacing: 8) {
@@ -1097,14 +1097,14 @@ struct OperationEditorView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Диапазон λ")
+                        Text(state.localized("Диапазон λ"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         HStack(spacing: 8) {
                             TextField("Min", value: $localSpectralInterpolationParams.targetMinLambda, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 90)
-                            Text("–")
+                            Text(state.localized("–"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             TextField("Max", value: $localSpectralInterpolationParams.targetMaxLambda, format: .number)
@@ -1116,12 +1116,12 @@ struct OperationEditorView: View {
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        Button("Загрузить λ из txt…") {
+                        Button(state.localized("Загрузить λ из txt…")) {
                             importSpectralInterpolationTargetsFromFile()
                         }
                         .buttonStyle(.bordered)
 
-                        Button("Очистить") {
+                        Button(state.localized("Очистить")) {
                             localSpectralInterpolationParams.targetWavelengths = nil
                             spectralInterpolationImportError = nil
                             spectralInterpolationImportInfo = nil
@@ -1133,11 +1133,11 @@ struct OperationEditorView: View {
                     if hasCustomTargets {
                         let minLambda = customTargets.min() ?? 0
                         let maxLambda = customTargets.max() ?? 0
-                        Text(String(format: "Из файла: %d каналов, %.2f – %.2f нм", customTargets.count, minLambda, maxLambda))
+                        Text(LF("pipeline.spectral_interp.file_channels_range", customTargets.count, minLambda, maxLambda))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     } else {
-                        Text("Файл не загружен. Интерполяция будет использовать ручные параметры как fallback.")
+                        Text(state.localized("Файл не загружен. Интерполяция будет использовать ручные параметры как fallback."))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -1160,12 +1160,12 @@ struct OperationEditorView: View {
             
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Метод")
+                    Text(state.localized("Метод"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $localSpectralInterpolationParams.method) {
                         ForEach(SpectralInterpolationMethod.allCases) { method in
-                            Text(method.rawValue).tag(method)
+                            Text(AppLocalizer.localized(method.rawValue)).tag(method)
                         }
                     }
                     .pickerStyle(.menu)
@@ -1173,7 +1173,7 @@ struct OperationEditorView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("За пределами")
+                    Text(state.localized("За пределами"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $localSpectralInterpolationParams.extrapolation) {
@@ -1186,7 +1186,7 @@ struct OperationEditorView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Тип данных")
+                    Text(state.localized("Тип данных"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $localSpectralInterpolationParams.dataType) {
@@ -1200,7 +1200,7 @@ struct OperationEditorView: View {
             }
             
             if localSpectralInterpolationParams.extrapolation == .extrapolate {
-                Text("Экстраполяция может давать нефизические значения за пределами диапазона.")
+                Text(state.localized("Экстраполяция может давать нефизические значения за пределами диапазона."))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
@@ -1228,10 +1228,10 @@ struct OperationEditorView: View {
         let wavelengths = state.cube?.wavelengths ?? state.wavelengths
         
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Спектральное выравнивание")
+            Text(state.localized("Спектральное выравнивание"))
                 .font(.system(size: 11, weight: .medium))
             
-            Text("Выравнивает все каналы относительно эталонного канала, оптимизируя целевую метрику.")
+            Text(state.localized("Выравнивает все каналы относительно эталонного канала, оптимизируя целевую метрику."))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
             
@@ -1239,11 +1239,11 @@ struct OperationEditorView: View {
             
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Эталонный канал")
+                    Text(state.localized("Эталонный канал"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     HStack(spacing: 8) {
-                        TextField("Канал", value: $localSpectralAlignmentParams.referenceChannel, format: .number)
+                        TextField(state.localized("Канал"), value: $localSpectralAlignmentParams.referenceChannel, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                         Stepper("", value: $localSpectralAlignmentParams.referenceChannel, in: 0...maxIndex)
@@ -1251,19 +1251,19 @@ struct OperationEditorView: View {
                             .controlSize(.small)
                     }
                     if let wavelengths, localSpectralAlignmentParams.referenceChannel < wavelengths.count {
-                        Text("λ = \(String(format: "%.1f", wavelengths[localSpectralAlignmentParams.referenceChannel])) нм")
+                        Text(LF("pipeline.alignment.reference_lambda", wavelengths[localSpectralAlignmentParams.referenceChannel]))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Метод оптимизации")
+                    Text(state.localized("Метод оптимизации"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $localSpectralAlignmentParams.method) {
                         ForEach(SpectralAlignmentMethod.allCases) { method in
-                            Text(method.rawValue).tag(method)
+                            Text(AppLocalizer.localized(method.rawValue)).tag(method)
                         }
                     }
                     .pickerStyle(.menu)
@@ -1275,14 +1275,14 @@ struct OperationEditorView: View {
             
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Диапазон смещений")
+                    Text(state.localized("Диапазон смещений"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     HStack(spacing: 8) {
                         TextField("Min", value: $localSpectralAlignmentParams.offsetMin, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 60)
-                        Text("до")
+                        Text(state.localized("до"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("Max", value: $localSpectralAlignmentParams.offsetMax, format: .number)
@@ -1295,11 +1295,11 @@ struct OperationEditorView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Шаг поиска")
+                    Text(state.localized("Шаг поиска"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     HStack(spacing: 8) {
-                        TextField("Шаг", value: $localSpectralAlignmentParams.step, format: .number)
+                        TextField(state.localized("Шаг"), value: $localSpectralAlignmentParams.step, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 50)
                         Stepper("", value: $localSpectralAlignmentParams.step, in: 1...10)
@@ -1313,7 +1313,7 @@ struct OperationEditorView: View {
             
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Итерации оптимизации")
+                    Text(state.localized("Итерации оптимизации"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     HStack(spacing: 8) {
@@ -1327,12 +1327,12 @@ struct OperationEditorView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Целевая метрика")
+                    Text(state.localized("Целевая метрика"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     Picker("", selection: $localSpectralAlignmentParams.metric) {
                         ForEach(SpectralAlignmentMetric.allCases) { metric in
-                            Text(metric.rawValue).tag(metric)
+                            Text(AppLocalizer.localized(metric.rawValue)).tag(metric)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -1343,16 +1343,16 @@ struct OperationEditorView: View {
             Divider()
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("Дополнительные опции")
+                Text(state.localized("Дополнительные опции"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
                 
                 HStack(spacing: 16) {
                     Toggle(isOn: $localSpectralAlignmentParams.enableMultiscale) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Многомасштабный поиск")
+                            Text(state.localized("Многомасштабный поиск"))
                                 .font(.system(size: 10))
-                            Text("Ускоряет вычисление")
+                            Text(state.localized("Ускоряет вычисление"))
                                 .font(.system(size: 8))
                                 .foregroundColor(.secondary)
                         }
@@ -1362,9 +1362,9 @@ struct OperationEditorView: View {
                     
                     Toggle(isOn: $localSpectralAlignmentParams.enableSubpixel) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Субпиксельное уточнение")
+                            Text(state.localized("Субпиксельное уточнение"))
                                 .font(.system(size: 10))
-                            Text("Повышает точность")
+                            Text(state.localized("Повышает точность"))
                                 .font(.system(size: 8))
                                 .foregroundColor(.secondary)
                         }
@@ -1386,12 +1386,12 @@ struct OperationEditorView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
-                            Text("Вычислено")
+                            Text(state.localized("Вычислено"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.green)
                         }
                         if let result = currentResult {
-                            Text("Ср. \(result.metricName): \(String(format: "%.4f", result.averageScore))")
+                            Text(LF("pipeline.alignment.average_metric", result.metricName, String(format: "%.4f", result.averageScore)))
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
@@ -1399,7 +1399,7 @@ struct OperationEditorView: View {
                         HStack(spacing: 4) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Вычисление…")
+                            Text(state.localized("Вычисление…"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.blue)
                         }
@@ -1407,12 +1407,12 @@ struct OperationEditorView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
                                 .foregroundColor(.orange)
-                            Text("Не вычислено")
+                            Text(state.localized("Не вычислено"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.orange)
                         }
                         
-                        Text("Ожидаемое время: \(localSpectralAlignmentParams.formattedEstimatedTime(channelCount: channels))")
+                        Text(LF("pipeline.alignment.estimated_time", localSpectralAlignmentParams.formattedEstimatedTime(channelCount: channels)))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
@@ -1428,7 +1428,7 @@ struct OperationEditorView: View {
                     Button(action: {
                         showAlignmentDetails = true
                     }) {
-                        Text("Подробнее")
+                        Text(state.localized("Подробнее"))
                             .font(.system(size: 10))
                     }
                     .buttonStyle(.bordered)
@@ -1442,7 +1442,7 @@ struct OperationEditorView: View {
                         localSpectralAlignmentParams.shouldCompute = false
                         saveLocalState()
                     }) {
-                        Text("Сбросить")
+                        Text(state.localized("Сбросить"))
                             .font(.system(size: 10))
                     }
                     .buttonStyle(.bordered)
@@ -1456,19 +1456,19 @@ struct OperationEditorView: View {
                 let canExport = (currentParams?.isComputed ?? false) || localSpectralAlignmentParams.isComputed
                 
                 HStack(spacing: 8) {
-                    Button("Экспорт гомографий в txt…") {
+                    Button(state.localized("Экспорт гомографий в txt…")) {
                         exportSpectralAlignmentPreset(for: op)
                     }
                     .buttonStyle(.bordered)
                     .disabled(!canExport)
                     
-                    Button("Загрузить гомографии из txt…") {
+                    Button(state.localized("Загрузить гомографии из txt…")) {
                         importSpectralAlignmentPreset(for: op)
                     }
                     .buttonStyle(.bordered)
                 }
                 
-                Text("Файл содержит layout, пространственные/спектральные характеристики и матрицы гомографии для быстрого повторного применения.")
+                Text(state.localized("Файл содержит layout, пространственные/спектральные характеристики и матрицы гомографии для быстрого повторного применения."))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
                 
@@ -1506,7 +1506,7 @@ struct OperationEditorView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "square.stack.3d.up")
                                     .font(.system(size: 9))
-                                Text("Канал \(state.alignmentCurrentChannel)/\(state.alignmentTotalChannels)")
+                                Text(LF("pipeline.alignment.channel_progress", state.alignmentCurrentChannel, state.alignmentTotalChannels))
                                     .font(.system(size: 9))
                             }
                             .foregroundColor(.secondary)
@@ -1516,7 +1516,7 @@ struct OperationEditorView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock")
                                     .font(.system(size: 9))
-                                Text("Прошло: \(state.alignmentElapsedTime)")
+                                Text(LF("pipeline.alignment.elapsed", state.alignmentElapsedTime))
                                     .font(.system(size: 9))
                             }
                             .foregroundColor(.secondary)
@@ -1526,7 +1526,7 @@ struct OperationEditorView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "hourglass")
                                     .font(.system(size: 9))
-                                Text("Осталось: \(state.alignmentEstimatedTimeRemaining)")
+                                Text(LF("pipeline.alignment.remaining", state.alignmentEstimatedTimeRemaining))
                                     .font(.system(size: 9))
                             }
                             .foregroundColor(.cyan)
@@ -1560,7 +1560,7 @@ struct OperationEditorView: View {
                     }) {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("Вычислить выравнивание")
+                            Text(state.localized("Вычислить выравнивание"))
                         }
                         .font(.system(size: 11, weight: .medium))
                         .frame(maxWidth: .infinity)
@@ -1577,7 +1577,7 @@ struct OperationEditorView: View {
                     Toggle(isOn: $state.showAlignmentVisualization) {
                         HStack(spacing: 4) {
                             Image(systemName: "scope")
-                            Text("Показать точки на изображении")
+                            Text(state.localized("Показать точки на изображении"))
                                 .font(.system(size: 10))
                         }
                     }
@@ -1592,7 +1592,7 @@ struct OperationEditorView: View {
                         Toggle(isOn: $state.alignmentPointsEditable) {
                             HStack(spacing: 4) {
                                 Image(systemName: "hand.point.up.left")
-                                Text("Редактировать точки")
+                                Text(state.localized("Редактировать точки"))
                                     .font(.system(size: 10))
                             }
                         }
@@ -1605,7 +1605,7 @@ struct OperationEditorView: View {
                         }) {
                             HStack(spacing: 2) {
                                 Image(systemName: "arrow.counterclockwise")
-                                Text("По умолчанию")
+                                Text(state.localized("По умолчанию"))
                             }
                             .font(.system(size: 9))
                         }
@@ -1616,7 +1616,7 @@ struct OperationEditorView: View {
                     }
                     
                     if state.alignmentPointsEditable {
-                        Text("Перетащите точки на изображении для настройки области выравнивания")
+                        Text(state.localized("Перетащите точки на изображении для настройки области выравнивания"))
                             .font(.system(size: 9))
                             .foregroundColor(.cyan)
                     }
@@ -1637,27 +1637,27 @@ struct OperationEditorView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark.seal.fill")
                                 .foregroundColor(.green)
-                            Text("Кэшированные гомографии готовы к применению")
+                            Text(state.localized("Кэшированные гомографии готовы к применению"))
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.green)
                         }
-                        Text("При применении к изображению с \(channels) каналами будут использованы сохранённые параметры без пересчёта.")
+                        Text(LF("pipeline.alignment.apply_cached_for_channels", channels))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     } else if cachedCount > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
-                            Text("Несовпадение числа каналов")
+                            Text(state.localized("Несовпадение числа каналов"))
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.orange)
                         }
-                        Text("Кэш содержит \(cachedCount) гомографий, а изображение имеет \(channels) каналов. При применении будет выполнен пересчёт.")
+                        Text(LF("pipeline.alignment.cache_mismatch", cachedCount, channels))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
                 } else {
-                    Text("При копировании обработки в другое изображение будут применены сохранённые параметры гомографии без пересчёта.")
+                    Text(state.localized("При копировании обработки в другое изображение будут применены сохранённые параметры гомографии без пересчёта."))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
@@ -1710,13 +1710,13 @@ struct OperationEditorView: View {
     
     private func stageName(for stage: String) -> String {
         switch stage {
-        case "init": return "Инициализация"
-        case "extract_ref": return "Извлечение референса"
-        case "extract": return "Извлечение канала"
-        case "homography": return "Поиск гомографии"
-        case "apply": return "Применение преобразования"
-        case "done": return "Канал обработан"
-        case "complete": return "Завершено"
+        case "init": return AppLocalizer.localized("Инициализация")
+        case "extract_ref": return AppLocalizer.localized("Извлечение референса")
+        case "extract": return AppLocalizer.localized("Извлечение канала")
+        case "homography": return AppLocalizer.localized("Поиск гомографии")
+        case "apply": return AppLocalizer.localized("Применение преобразования")
+        case "done": return AppLocalizer.localized("Канал обработан")
+        case "complete": return AppLocalizer.localized("Завершено")
         default: return stage
         }
     }
@@ -1744,33 +1744,33 @@ struct OperationEditorView: View {
         )
         
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Обрезка спектра")
+            Text(state.localized("Обрезка спектра"))
                 .font(.system(size: 11, weight: .medium))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Диапазон каналов: 0–\(maxIndex) (\(channels) всего)")
+                Text(LF("pipeline.trim.channel_range_total", maxIndex, channels))
                 if let range = wavelengthRange {
-                    Text("Диапазон λ: \(formatWavelength(range.min)) – \(formatWavelength(range.max)) нм")
+                    Text(LF("pipeline.trim.lambda_range", formatWavelength(range.min), formatWavelength(range.max)))
                 } else {
-                    Text("Длины волн недоступны")
+                    Text(state.localized("Длины волн недоступны"))
                 }
-                Text("Останется: \(remainingChannels) каналов")
+                Text(LF("pipeline.trim.remaining_channels", remainingChannels))
             }
             .font(.system(size: 10))
             .foregroundColor(.secondary)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Текущая обрезка: каналы \(localSpectralTrimParams.startChannel) – \(localSpectralTrimParams.endChannel)")
+                Text(LF("pipeline.trim.current_channels", localSpectralTrimParams.startChannel, localSpectralTrimParams.endChannel))
                     .font(.system(size: 10))
                 if let startLambda, let endLambda {
-                    Text("Будет обрезано до λ \(formatWavelength(startLambda)) – \(formatWavelength(endLambda)) нм")
+                    Text(LF("pipeline.trim.will_clip_to_lambda", formatWavelength(startLambda), formatWavelength(endLambda)))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
             }
             
             if hasWavelengths {
-                Picker("Ввод", selection: $spectralTrimInputMode) {
+                Picker(state.localized("Ввод"), selection: $spectralTrimInputMode) {
                     ForEach(SpectralTrimInputMode.allCases) { mode in
                         Text(mode.title).tag(mode)
                     }
@@ -1781,7 +1781,7 @@ struct OperationEditorView: View {
             if spectralTrimInputMode == .channels || !hasWavelengths {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Начальный канал")
+                        Text(state.localized("Начальный канал"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         HStack(spacing: 6) {
@@ -1795,7 +1795,7 @@ struct OperationEditorView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Конечный канал")
+                        Text(state.localized("Конечный канал"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         HStack(spacing: 6) {
@@ -1814,28 +1814,28 @@ struct OperationEditorView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Начальная λ")
+                            Text(state.localized("Начальная λ"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             HStack(spacing: 6) {
                                 TextField("", value: $trimStartWavelength, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 90)
-                                Text("нм")
+                                Text(state.localized("нм"))
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
                             }
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Конечная λ")
+                            Text(state.localized("Конечная λ"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             HStack(spacing: 6) {
                                 TextField("", value: $trimEndWavelength, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 90)
-                                Text("нм")
+                                Text(state.localized("нм"))
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
                             }
@@ -1843,7 +1843,7 @@ struct OperationEditorView: View {
                     }
                     
                     if let startLambda, let endLambda {
-                        Text("Ближайшие каналы: \(localSpectralTrimParams.startChannel) – \(localSpectralTrimParams.endChannel) (λ \(formatWavelength(startLambda)) – \(formatWavelength(endLambda)) нм)")
+                        Text(LF("pipeline.trim.nearest_channels", localSpectralTrimParams.startChannel, localSpectralTrimParams.endChannel, formatWavelength(startLambda), formatWavelength(endLambda)))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -1951,7 +1951,7 @@ struct OperationEditorView: View {
     
     private func dataTypeEditor(for op: PipelineOperation) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Целевой тип данных:")
+            Text(state.localized("Целевой тип данных:"))
                 .font(.system(size: 11, weight: .medium))
             
             Picker("", selection: $localTargetDataType) {
@@ -1969,12 +1969,12 @@ struct OperationEditorView: View {
             
             Divider()
             
-            Toggle("Автоматическое масштабирование", isOn: $localAutoScale)
+            Toggle(state.localized("Автоматическое масштабирование"), isOn: $localAutoScale)
                 .font(.system(size: 11))
             
-            Text(localAutoScale 
-                 ? "Данные будут масштабированы в диапазон целевого типа"
-                 : "Значения будут обрезаны (clamped)")
+            Text(localAutoScale
+                 ? state.localized("Данные будут масштабированы в диапазон целевого типа")
+                 : state.localized("Значения будут обрезаны (clamped)"))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1983,12 +1983,12 @@ struct OperationEditorView: View {
 
     private func clippingEditor(for op: PipelineOperation) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Ограничение значений (clipping):")
+            Text(state.localized("Ограничение значений (clipping):"))
                 .font(.system(size: 11, weight: .medium))
             
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Нижний порог")
+                    Text(state.localized("Нижний порог"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     TextField("0", value: $localClippingParams.lower, format: .number)
@@ -1997,7 +1997,7 @@ struct OperationEditorView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Верхний порог")
+                    Text(state.localized("Верхний порог"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     TextField("1", value: $localClippingParams.upper, format: .number)
@@ -2007,7 +2007,7 @@ struct OperationEditorView: View {
             }
             
             if localClippingParams.upper < localClippingParams.lower {
-                Text("Верхний порог меньше нижнего — значения будут поменяны местами при применении.")
+                Text(state.localized("Верхний порог меньше нижнего — значения будут поменяны местами при применении."))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
@@ -2016,7 +2016,7 @@ struct OperationEditorView: View {
     
     private func rotationEditor(for op: PipelineOperation) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Угол поворота:")
+            Text(state.localized("Угол поворота:"))
                 .font(.system(size: 11, weight: .medium))
             
             HStack(spacing: 12) {
@@ -2039,7 +2039,7 @@ struct OperationEditorView: View {
                                     .stroke(localRotationAngle == angle ? Color.accentColor : Color.clear, lineWidth: 2)
                             )
                             
-                            Text(angle.rawValue)
+                            Text(AppLocalizer.localized(angle.rawValue))
                                 .font(.system(size: 12, weight: localRotationAngle == angle ? .semibold : .regular))
                                 .foregroundColor(localRotationAngle == angle ? .accentColor : .primary)
                         }
@@ -2054,7 +2054,7 @@ struct OperationEditorView: View {
             HStack(spacing: 8) {
                 Image(systemName: "info.circle")
                     .foregroundColor(.secondary)
-                Text("Поворот выполняется по часовой стрелке относительно центра изображения")
+                Text(state.localized("Поворот выполняется по часовой стрелке относительно центра изображения"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
@@ -2066,10 +2066,10 @@ struct OperationEditorView: View {
         let resolvedLayout = localTransposeParams.targetLayout
         
         return VStack(alignment: .leading, spacing: 14) {
-            Text("Порядок осей HWC:")
+            Text(state.localized("Порядок осей HWC:"))
                 .font(.system(size: 11, weight: .medium))
             
-            TextField("Например: HWC, CHW, WCH", text: $localTransposeParams.order)
+            TextField(state.localized("Например: HWC, CHW, WCH"), text: $localTransposeParams.order)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
             
@@ -2087,31 +2087,31 @@ struct OperationEditorView: View {
             
             if let target = resolvedLayout {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Источник: \(op.layout.rawValue)")
+                    Text(LF("pipeline.transpose.source_layout", op.layout.rawValue))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
-                    Text("Результат: \(target.rawValue)")
+                    Text(LF("pipeline.transpose.result_layout", target.rawValue))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     
                     if op.layout == target {
-                        Text("Порядок не изменится (no-op).")
+                        Text(state.localized("Порядок не изменится (no-op)."))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     } else {
-                        Text("После применения отображаемый layout переключится на \(target.rawValue).")
+                        Text(LF("pipeline.transpose.after_apply_layout", target.rawValue))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
                 }
             } else {
-                Text("Некорректный порядок. Используйте ровно 3 символа H/W/C без повторов (например HWC).")
+                Text(state.localized("Некорректный порядок. Используйте ровно 3 символа H/W/C без повторов (например HWC)."))
                     .font(.system(size: 10))
                     .foregroundColor(.red)
             }
             
             if !normalized.isEmpty, normalized != localTransposeParams.order.uppercased() {
-                Text("Нормализованный ввод: \(normalized)")
+                Text(LF("pipeline.transpose.normalized_input", normalized))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
@@ -2125,7 +2125,7 @@ struct OperationEditorView: View {
         let currentSpatialSize = spatialSize(for: op)
         
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Выбор области обрезки:")
+            Text(state.localized("Выбор области обрезки:"))
                 .font(.system(size: 11, weight: .medium))
             
             if let cropSize = currentSpatialSize, cropSize.width > 0, cropSize.height > 0 {
@@ -2144,9 +2144,9 @@ struct OperationEditorView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("Размер области")
+                                Text(state.localized("Размер области"))
                                     .font(.system(size: 11, weight: .semibold))
-                                Text("\(cropSize.width) × \(cropSize.height) px")
+                                Text(LF("pipeline.crop.size_px", cropSize.width, cropSize.height))
                                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                                 Text("Layout: \(op.layout.rawValue)")
                                     .font(.system(size: 10))
@@ -2156,7 +2156,7 @@ struct OperationEditorView: View {
                             Divider()
 
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Границы (px)")
+                                Text(state.localized("Границы (px)"))
                                     .font(.system(size: 11, weight: .semibold))
 
                                 VStack(spacing: 10) {
@@ -2218,7 +2218,7 @@ struct OperationEditorView: View {
                             Image(systemName: "photo")
                                 .font(.system(size: 28))
                                 .foregroundColor(.secondary)
-                            Text("Предпросмотр недоступен")
+                            Text(state.localized("Предпросмотр недоступен"))
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
@@ -2235,7 +2235,7 @@ struct OperationEditorView: View {
             Toggle(isOn: $autoCropEnabled) {
                 HStack(spacing: 6) {
                     Image(systemName: "wand.and.stars")
-                    Text("Автоподбор обрезки по ГСИ-референсу")
+                    Text(state.localized("Автоподбор обрезки по ГСИ-референсу"))
                         .font(.system(size: 11, weight: .semibold))
                 }
             }
@@ -2245,11 +2245,11 @@ struct OperationEditorView: View {
             if autoCropEnabled {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ГСИ-референс из библиотеки")
+                        Text(state.localized("ГСИ-референс из библиотеки"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         Picker("", selection: $autoCropReferenceEntryID) {
-                            Text("Не выбран").tag(String?.none)
+                            Text(state.localized("Не выбран")).tag(String?.none)
                             ForEach(state.libraryEntries) { entry in
                                 Text(entry.displayName).tag(Optional(entry.id))
                             }
@@ -2258,12 +2258,12 @@ struct OperationEditorView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Целевая метрика")
+                        Text(state.localized("Целевая метрика"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         Picker("", selection: $autoCropMetric) {
                             ForEach(SpatialAutoCropMetric.allCases) { metric in
-                                Text(metric.rawValue).tag(metric)
+                                Text(AppLocalizer.localized(metric.rawValue)).tag(metric)
                             }
                         }
                         .pickerStyle(.segmented)
@@ -2271,20 +2271,20 @@ struct OperationEditorView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Каналы source/ref (через запятую)")
+                        Text(state.localized("Каналы source/ref (через запятую)"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("Source: 0, 3, 5", text: $autoCropSourceChannelsText)
                             .textFieldStyle(.roundedBorder)
                         TextField("Reference: 0, 2, 4", text: $autoCropReferenceChannelsText)
                             .textFieldStyle(.roundedBorder)
-                        Text("Должно быть одинаковое количество каналов, минимум 1.")
+                        Text(state.localized("Должно быть одинаковое количество каналов, минимум 1."))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Ограничить ширину", isOn: $autoCropLimitWidth)
+                        Toggle(state.localized("Ограничить ширину"), isOn: $autoCropLimitWidth)
                             .toggleStyle(.checkbox)
                             .controlSize(.small)
                         if autoCropLimitWidth {
@@ -2304,7 +2304,7 @@ struct OperationEditorView: View {
                             }
                         }
 
-                        Toggle("Ограничить высоту", isOn: $autoCropLimitHeight)
+                        Toggle(state.localized("Ограничить высоту"), isOn: $autoCropLimitHeight)
                             .toggleStyle(.checkbox)
                             .controlSize(.small)
                         if autoCropLimitHeight {
@@ -2326,11 +2326,11 @@ struct OperationEditorView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Оптимизация перебора")
+                        Text(state.localized("Оптимизация перебора"))
                             .font(.system(size: 10, weight: .semibold))
 
                         HStack(spacing: 8) {
-                            Text("Шаг позиции")
+                            Text(state.localized("Шаг позиции"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             TextField("4", value: $autoCropPositionStep, format: .number)
@@ -2342,7 +2342,7 @@ struct OperationEditorView: View {
                         }
 
                         HStack(spacing: 8) {
-                            Text("Шаг размера")
+                            Text(state.localized("Шаг размера"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             TextField("4", value: $autoCropSizeStep, format: .number)
@@ -2353,17 +2353,17 @@ struct OperationEditorView: View {
                                 .controlSize(.mini)
                         }
 
-                        Toggle("Грубый поиск + уточнение (coarse-to-fine)", isOn: $autoCropUseCoarseToFine)
+                        Toggle(state.localized("Грубый поиск + уточнение (coarse-to-fine)"), isOn: $autoCropUseCoarseToFine)
                             .toggleStyle(.checkbox)
                             .controlSize(.small)
 
-                        Toggle("Оставлять уточняющий резерв", isOn: $autoCropKeepRefinementReserve)
+                        Toggle(state.localized("Оставлять уточняющий резерв"), isOn: $autoCropKeepRefinementReserve)
                             .toggleStyle(.checkbox)
                             .controlSize(.small)
                             .disabled(!autoCropUseCoarseToFine)
 
                         HStack(spacing: 8) {
-                            Text("Downsample для метрики")
+                            Text(state.localized("Downsample для метрики"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             Picker("", selection: $autoCropDownsampleFactor) {
@@ -2376,19 +2376,19 @@ struct OperationEditorView: View {
                         }
 
                         HStack(spacing: 6) {
-                            Button("Быстро") {
+                            Button(state.localized("Быстро")) {
                                 applyAutoCropPreset(speed: .fast)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.mini)
 
-                            Button("Баланс") {
+                            Button(state.localized("Баланс")) {
                                 applyAutoCropPreset(speed: .balanced)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.mini)
 
-                            Button("Точно") {
+                            Button(state.localized("Точно")) {
                                 applyAutoCropPreset(speed: .precise)
                             }
                             .buttonStyle(.bordered)
@@ -2396,10 +2396,10 @@ struct OperationEditorView: View {
                         }
                     }
 
-                    Text("Оценка вариантов: ~\(estimatedCandidates) (зависит от ограничений и шага)")
+                    Text(LF("pipeline.auto_crop.candidate_estimate", estimatedCandidates))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
-                    Text("Для ускорения увеличьте шаги, включите coarse-to-fine и используйте downsample 2x/4x.")
+                    Text(state.localized("Для ускорения увеличьте шаги, включите coarse-to-fine и используйте downsample 2x/4x."))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2450,7 +2450,16 @@ struct OperationEditorView: View {
 
                     if let result = localCropParameters.autoCropResult {
                         let scoreText = String(format: result.metric == .ssim ? "%.4f" : "%.6f", result.bestScore)
-                        Text("Лучший результат: \(result.metric.rawValue)=\(scoreText), окно \(result.selectedWidth)×\(result.selectedHeight), проверено \(result.evaluatedCandidates)")
+                        Text(
+                            LF(
+                                "pipeline.auto_crop.best_result",
+                                result.metric.rawValue,
+                                scoreText,
+                                result.selectedWidth,
+                                result.selectedHeight,
+                                result.evaluatedCandidates
+                            )
+                        )
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -2512,10 +2521,10 @@ struct OperationEditorView: View {
         let scanAxisSize = spatial?.width
         
         return VStack(alignment: .leading, spacing: 16) {
-            Text("Калибровка изображения")
+            Text(state.localized("Калибровка изображения"))
                 .font(.system(size: 11, weight: .medium))
             
-            Text("Выберите спектры или REF файлы для белой и/или чёрной точки калибровки.")
+            Text(state.localized("Выберите спектры или REF файлы для белой и/или чёрной точки калибровки."))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -2526,7 +2535,7 @@ struct OperationEditorView: View {
                 HStack {
                     Image(systemName: "sun.max.fill")
                         .foregroundColor(.yellow)
-                    Text("Белая точка (эталон белого)")
+                    Text(state.localized("Белая точка (эталон белого)"))
                         .font(.system(size: 11, weight: .semibold))
                 }
                 
@@ -2542,7 +2551,7 @@ struct OperationEditorView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         Spacer()
-                        Button("Убрать") {
+                        Button(state.localized("Убрать")) {
                             localCalibrationParams.whiteSpectrum = nil
                         }
                         .buttonStyle(.borderless)
@@ -2563,7 +2572,7 @@ struct OperationEditorView: View {
                             calibrationRefError = nil
                         }
                         
-                        Button("Выбрать файл REF") {
+                        Button(state.localized("Выбрать файл REF")) {
                             selectCalibrationRef(
                                 forWhite: true,
                                 expectedChannels: channelCount
@@ -2582,7 +2591,7 @@ struct OperationEditorView: View {
                 HStack {
                     Image(systemName: "moon.fill")
                         .foregroundColor(.gray)
-                    Text("Чёрная точка (эталон чёрного)")
+                    Text(state.localized("Чёрная точка (эталон чёрного)"))
                         .font(.system(size: 11, weight: .semibold))
                 }
                 
@@ -2598,7 +2607,7 @@ struct OperationEditorView: View {
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         Spacer()
-                        Button("Убрать") {
+                        Button(state.localized("Убрать")) {
                             localCalibrationParams.blackSpectrum = nil
                         }
                         .buttonStyle(.borderless)
@@ -2619,7 +2628,7 @@ struct OperationEditorView: View {
                             calibrationRefError = nil
                         }
                         
-                        Button("Выбрать файл REF") {
+                        Button(state.localized("Выбрать файл REF")) {
                             selectCalibrationRef(
                                 forWhite: false,
                                 expectedChannels: channelCount
@@ -2635,22 +2644,22 @@ struct OperationEditorView: View {
             Divider()
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Направление сканирования:")
+                Text(state.localized("Направление сканирования:"))
                     .font(.system(size: 11, weight: .medium))
 
-                Toggle("Использовать параметры сканирования", isOn: $localCalibrationParams.useScanDirection)
+                Toggle(state.localized("Использовать параметры сканирования"), isOn: $localCalibrationParams.useScanDirection)
                     .font(.system(size: 10))
                 
                 if !localCalibrationParams.useScanDirection,
                    localCalibrationParams.whiteRef != nil || localCalibrationParams.blackRef != nil {
-                    Text("REF файлы обнаружены — возможно, стоит включить параметры сканирования.")
+                    Text(state.localized("REF файлы обнаружены — возможно, стоит включить параметры сканирования."))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
                 
                 Picker("", selection: $localCalibrationParams.scanDirection) {
                     ForEach(CalibrationScanDirection.allCases) { direction in
-                        Text(direction.rawValue).tag(direction)
+                        Text(direction.localizedTitle).tag(direction)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -2660,16 +2669,16 @@ struct OperationEditorView: View {
                 if let scanAxisSize,
                    (localCalibrationParams.whiteRef?.scanLength != nil || localCalibrationParams.blackRef?.scanLength != nil) {
                     if localCalibrationParams.whiteRef?.scanLength != nil && localCalibrationParams.whiteRef?.scanLength != scanAxisSize {
-                        calibrationRefWarning(text: "REF белого не совпадает с размером скана (\(scanAxisSize) px).")
+                        calibrationRefWarning(text: LF("pipeline.calibration.white_ref_scan_size_mismatch", scanAxisSize))
                     }
                     if localCalibrationParams.blackRef?.scanLength != nil && localCalibrationParams.blackRef?.scanLength != scanAxisSize {
-                        calibrationRefWarning(text: "REF чёрного не совпадает с размером скана (\(scanAxisSize) px).")
+                        calibrationRefWarning(text: LF("pipeline.calibration.black_ref_scan_size_mismatch", scanAxisSize))
                     }
                 }
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Целевой диапазон:")
+                Text(state.localized("Целевой диапазон:"))
                     .font(.system(size: 11, weight: .medium))
                 
                 HStack {
@@ -2688,7 +2697,7 @@ struct OperationEditorView: View {
                         .frame(width: 80)
                 }
                 
-                Toggle("Ограничивать в диапазоне", isOn: $localCalibrationParams.clampOutput)
+                Toggle(state.localized("Ограничивать в диапазоне"), isOn: $localCalibrationParams.clampOutput)
                     .font(.system(size: 10))
             }
             
@@ -2696,7 +2705,7 @@ struct OperationEditorView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundColor(.orange)
-                    Text("Выберите хотя бы одну точку или REF для калибровки")
+                    Text(state.localized("Выберите хотя бы одну точку или REF для калибровки"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -2729,12 +2738,12 @@ struct OperationEditorView: View {
     ) -> some View {
         Menu {
             if pointSamples.isEmpty && roiSamples.isEmpty {
-                Text("Нет сохранённых спектров")
+                Text(state.localized("Нет сохранённых спектров"))
                     .foregroundColor(.secondary)
             }
             
             if !pointSamples.isEmpty {
-                Section("Точки") {
+                Section(state.localized("Точки")) {
                     ForEach(pointSamples) { sample in
                         Button(sample.effectiveName) {
                             onSelect(CalibrationSpectrum.from(sample: sample))
@@ -2744,7 +2753,7 @@ struct OperationEditorView: View {
             }
             
             if !roiSamples.isEmpty {
-                Section("Области ROI") {
+                Section(state.localized("Области ROI")) {
                     ForEach(roiSamples) { sample in
                         Button(sample.effectiveName) {
                             onSelect(CalibrationSpectrum.from(roiSample: sample))
@@ -2755,7 +2764,7 @@ struct OperationEditorView: View {
         } label: {
             HStack {
                 Image(systemName: "plus.circle")
-                Text(label)
+                Text(state.localized(label))
             }
             .font(.system(size: 11))
         }
@@ -2769,12 +2778,12 @@ struct OperationEditorView: View {
                 Text(ref.sourceName)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                Text("REF \(ref.channels)×\(ref.scanLength)")
+                Text(LF("pipeline.calibration.ref_dimensions", ref.channels, ref.scanLength))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
             Spacer()
-            Button("Убрать") {
+            Button(state.localized("Убрать")) {
                 onClear()
             }
             .buttonStyle(.borderless)
@@ -2803,7 +2812,7 @@ struct OperationEditorView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = "Выберите REF файл (HDR/RAW)"
+        panel.message = state.localized("Выберите REF файл (HDR/RAW)")
         
         let hdrType = UTType(filenameExtension: "hdr") ?? .data
         let rawType = UTType(filenameExtension: "raw") ?? .data
@@ -2850,8 +2859,8 @@ struct OperationEditorView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = "Выберите txt файл со списком длин волн (по одному значению на строку)"
-        panel.prompt = "Загрузить"
+        panel.message = state.localized("Выберите txt файл со списком длин волн (по одному значению на строку)")
+        panel.prompt = state.localized("Загрузить")
         panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -2864,7 +2873,7 @@ struct OperationEditorView: View {
             localSpectralInterpolationParams.targetMaxLambda = wavelengths.max() ?? 0
             spectralInterpolationTargetMode = .fromFile
             spectralInterpolationImportError = nil
-            spectralInterpolationImportInfo = "Загружено \(wavelengths.count) длин волн из \(url.lastPathComponent)"
+            spectralInterpolationImportInfo = LF("pipeline.spectral_interp.loaded_wavelengths", wavelengths.count, url.lastPathComponent)
         } catch {
             spectralInterpolationImportError = error.localizedDescription
             spectralInterpolationImportInfo = nil
@@ -2879,11 +2888,11 @@ struct OperationEditorView: View {
         var errorDescription: String? {
             switch self {
             case .readFailed:
-                return "Не удалось прочитать txt файл длин волн"
+                return L("Не удалось прочитать txt файл длин волн")
             case .empty:
-                return "Файл длин волн пуст"
+                return L("Файл длин волн пуст")
             case .invalidValue(let line):
-                return "Некорректная длина волны в строке \(line)"
+                return LF("pipeline.spectral_interp.invalid_wavelength_line", line)
             }
         }
     }
@@ -3004,43 +3013,43 @@ struct OperationEditorView: View {
         var errorDescription: String? {
             switch self {
             case .cubeUnavailable:
-                return "Откройте куб перед экспортом/импортом гомографий"
+                return L("Откройте куб перед экспортом/импортом гомографий")
             case .dataUnavailable:
-                return "Нет рассчитанных гомографий для экспорта"
+                return L("Нет рассчитанных гомографий для экспорта")
             case .readFailed:
-                return "Не удалось прочитать файл гомографий"
+                return L("Не удалось прочитать файл гомографий")
             case .writeFailed:
-                return "Не удалось сохранить файл гомографий"
+                return L("Не удалось сохранить файл гомографий")
             case .invalidFormat:
-                return "Некорректный формат файла гомографий"
+                return L("Некорректный формат файла гомографий")
             case .unsupportedVersion(let version):
-                return "Неподдерживаемая версия файла: \(version)"
+                return LF("pipeline.alignment.error.unsupported_version", version)
             case .invalidLayout(let value):
-                return "Неизвестный layout в файле: \(value)"
+                return LF("pipeline.alignment.error.invalid_layout", value)
             case .invalidMethod(let value):
-                return "Неизвестный метод оптимизации: \(value)"
+                return LF("pipeline.alignment.error.invalid_method", value)
             case .invalidMetric(let value):
-                return "Неизвестная метрика: \(value)"
+                return LF("pipeline.alignment.error.invalid_metric", value)
             case .invalidReferenceChannel(let value, let max):
-                return "Эталонный канал \(value) вне диапазона 0...\(max)"
+                return LF("pipeline.alignment.error.invalid_reference_channel", value, max)
             case .invalidReferencePoints:
-                return "Некорректные опорные точки в файле"
+                return L("Некорректные опорные точки в файле")
             case .invalidHomography(let index):
-                return "Некорректная матрица гомографии для канала \(index)"
+                return LF("pipeline.alignment.error.invalid_homography", index)
             case .incompatibleLayout(let expected, let actual):
-                return "Layout не совпадает: в файле \(expected), в текущем кубе \(actual)"
+                return LF("pipeline.alignment.error.layout_mismatch", expected, actual)
             case .incompatibleSpatial(let expected, let actual):
-                return "Пространственные характеристики не совпадают: файл \(expected), текущий куб \(actual)"
+                return LF("pipeline.alignment.error.spatial_mismatch", expected, actual)
             case .incompatibleChannels(let expected, let actual):
-                return "Число каналов не совпадает: файл \(expected), текущий куб \(actual)"
+                return LF("pipeline.alignment.error.channels_mismatch", expected, actual)
             case .missingCurrentWavelengths:
-                return "В файле есть длины волн, но в текущем кубе они не заданы"
+                return L("В файле есть длины волн, но в текущем кубе они не заданы")
             case .incompatibleWavelengthCount(let expected, let actual):
-                return "Число длин волн не совпадает: файл \(expected), текущий куб \(actual)"
+                return LF("pipeline.alignment.error.wavelength_count_mismatch", expected, actual)
             case .incompatibleWavelength(let index):
-                return "Спектральные характеристики отличаются (канал \(index))"
+                return LF("pipeline.alignment.error.wavelength_mismatch", index)
             case .invalidResult:
-                return "Сводка результата в файле повреждена"
+                return L("Сводка результата в файле повреждена")
             }
         }
     }
@@ -3074,8 +3083,8 @@ struct OperationEditorView: View {
             panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
             let baseName = state.cubeURL?.deletingPathExtension().lastPathComponent ?? "alignment"
             panel.nameFieldStringValue = "\(baseName)_spectral_alignment.txt"
-            panel.message = "Сохранить рассчитанные параметры спектрального выравнивания"
-            panel.prompt = "Сохранить"
+            panel.message = state.localized("Сохранить рассчитанные параметры спектрального выравнивания")
+            panel.prompt = state.localized("Сохранить")
             
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do {
@@ -3085,7 +3094,7 @@ struct OperationEditorView: View {
             }
             
             spectralAlignmentIOError = nil
-            spectralAlignmentIOInfo = "Гомографии сохранены: \(url.lastPathComponent)"
+            spectralAlignmentIOInfo = LF("pipeline.alignment.homographies_saved", url.lastPathComponent)
         } catch {
             spectralAlignmentIOError = error.localizedDescription
             spectralAlignmentIOInfo = nil
@@ -3103,8 +3112,8 @@ struct OperationEditorView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = "Выберите txt файл с рассчитанными гомографиями"
-        panel.prompt = "Загрузить"
+        panel.message = state.localized("Выберите txt файл с рассчитанными гомографиями")
+        panel.prompt = state.localized("Загрузить")
         panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
         
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -3128,7 +3137,7 @@ struct OperationEditorView: View {
             }
             
             spectralAlignmentIOError = nil
-            spectralAlignmentIOInfo = "Гомографии загружены из \(url.lastPathComponent)"
+            spectralAlignmentIOInfo = LF("pipeline.alignment.homographies_loaded", url.lastPathComponent)
         } catch {
             spectralAlignmentIOError = error.localizedDescription
             spectralAlignmentIOInfo = nil
@@ -3473,7 +3482,7 @@ struct OperationEditorView: View {
     
     private func cropValueField(label: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label)
+            Text(state.localized(label))
                 .font(.system(size: 10, weight: .medium))
             HStack(spacing: 8) {
                 TextField("0", value: value, format: .number)
@@ -3705,16 +3714,16 @@ struct OperationEditorView: View {
         autoCropInfoMessage = nil
 
         guard autoCropEnabled else {
-            autoCropErrorMessage = "Включите автоподбор обрезки"
+            autoCropErrorMessage = state.localized("Включите автоподбор обрезки")
             return
         }
         guard let sourceCube = state.cube else {
-            autoCropErrorMessage = "Откройте ГСИ перед автоподбором"
+            autoCropErrorMessage = state.localized("Откройте ГСИ перед автоподбором")
             return
         }
         guard let referenceID = autoCropReferenceEntryID,
               let referenceEntry = state.libraryEntry(for: referenceID) else {
-            autoCropErrorMessage = "Выберите ГСИ-референс из библиотеки"
+            autoCropErrorMessage = state.localized("Выберите ГСИ-референс из библиотеки")
             return
         }
 
@@ -3723,18 +3732,18 @@ struct OperationEditorView: View {
         let sourceChannels = parseChannelList(autoCropSourceChannelsText)
         let referenceChannels = parseChannelList(autoCropReferenceChannelsText)
         guard !sourceChannels.isEmpty, !referenceChannels.isEmpty else {
-            autoCropErrorMessage = "Укажите хотя бы один канал source и reference"
+            autoCropErrorMessage = state.localized("Укажите хотя бы один канал source и reference")
             return
         }
         guard sourceChannels.count == referenceChannels.count else {
-            autoCropErrorMessage = "Количество каналов source и reference должно совпадать"
+            autoCropErrorMessage = state.localized("Количество каналов source и reference должно совпадать")
             return
         }
 
         let sourceLayout = resolvedLayoutForAutoCrop(operation: op, cube: sourceCube)
         let sourceChannelCount = sourceCube.channelCount(for: sourceLayout)
         guard sourceChannels.allSatisfy({ $0 >= 0 && $0 < sourceChannelCount }) else {
-            autoCropErrorMessage = "Каналы source вне допустимого диапазона 0...\(max(0, sourceChannelCount - 1))"
+            autoCropErrorMessage = LF("pipeline.auto_crop.source_channels_out_of_range", max(0, sourceChannelCount - 1))
             return
         }
 
@@ -3756,14 +3765,14 @@ struct OperationEditorView: View {
 
         isComputingAutoCrop = true
         autoCropProgress = 0
-        autoCropProgressMessage = "Загрузка ГСИ-референса..."
+        autoCropProgressMessage = state.localized("Загрузка ГСИ-референса...")
         localCropParameters.autoCropResult = nil
 
         DispatchQueue.global(qos: .userInitiated).async {
             guard let payload = state.exportPayload(for: referenceEntry) else {
                 DispatchQueue.main.async {
                     self.isComputingAutoCrop = false
-                    self.autoCropErrorMessage = "Не удалось загрузить ГСИ-референс"
+                    self.autoCropErrorMessage = self.state.localized("Не удалось загрузить ГСИ-референс")
                 }
                 return
             }
@@ -3774,7 +3783,7 @@ struct OperationEditorView: View {
             guard referenceChannels.allSatisfy({ $0 >= 0 && $0 < referenceChannelCount }) else {
                 DispatchQueue.main.async {
                     self.isComputingAutoCrop = false
-                    self.autoCropErrorMessage = "Каналы reference вне диапазона 0...\(max(0, referenceChannelCount - 1))"
+                    self.autoCropErrorMessage = LF("pipeline.auto_crop.reference_channels_out_of_range", max(0, referenceChannelCount - 1))
                 }
                 return
             }
@@ -3806,7 +3815,7 @@ struct OperationEditorView: View {
                 self.isComputingAutoCrop = false
 
                 guard let result else {
-                    self.autoCropErrorMessage = "Автоподбор не нашёл корректную область. Проверьте ограничения и каналы."
+                    self.autoCropErrorMessage = self.state.localized("Автоподбор не нашёл корректную область. Проверьте ограничения и каналы.")
                     return
                 }
 
@@ -3818,9 +3827,16 @@ struct OperationEditorView: View {
                 self.localCropParameters = updated
 
                 self.autoCropProgress = 1.0
-                self.autoCropProgressMessage = "Готово"
+                self.autoCropProgressMessage = self.state.localized("Готово")
                 let scoreText = String(format: settings.metric == .ssim ? "%.4f" : "%.6f", result.score)
-                self.autoCropInfoMessage = "Найдена область: \(updated.width)×\(updated.height), \(settings.metric.rawValue)=\(scoreText), проверено \(result.evaluatedCandidates)"
+                self.autoCropInfoMessage = LF(
+                    "pipeline.auto_crop.area_found",
+                    updated.width,
+                    updated.height,
+                    settings.metric.rawValue,
+                    scoreText,
+                    result.evaluatedCandidates
+                )
             }
         }
     }
@@ -3860,7 +3876,7 @@ struct OperationEditorView: View {
                 }) {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text("Применить изменения")
+                        Text(state.localized("Применить изменения"))
                     }
                 }
                 .buttonStyle(.bordered)
@@ -3869,7 +3885,7 @@ struct OperationEditorView: View {
             
             Spacer()
             
-            Button("Готово") {
+            Button(state.localized("Готово")) {
                 saveLocalState()
                 if state.pipelineAutoApply {
                     state.applyPipeline()
@@ -3908,7 +3924,7 @@ struct SpatialCropPreview: View {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color(NSColor.windowBackgroundColor))
                         .overlay(
-                            Text("Нет предпросмотра")
+                            Text(AppLocalizer.localized("Нет предпросмотра"))
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         )
@@ -4093,7 +4109,7 @@ struct SpectralAlignmentDetailsView: View {
             HStack {
                 Image(systemName: "chart.bar.doc.horizontal")
                     .font(.system(size: 16))
-                Text("Результаты выравнивания")
+                Text(AppLocalizer.localized("Результаты выравнивания"))
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button(action: { dismiss() }) {
@@ -4112,7 +4128,7 @@ struct SpectralAlignmentDetailsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 20) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Метрика")
+                            Text(AppLocalizer.localized("Метрика"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             Text(result.metricName)
@@ -4120,7 +4136,7 @@ struct SpectralAlignmentDetailsView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Среднее значение")
+                            Text(AppLocalizer.localized("Среднее значение"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             Text(String(format: "%.6f", result.averageScore))
@@ -4129,11 +4145,17 @@ struct SpectralAlignmentDetailsView: View {
                         }
                         
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Эталонный канал")
+                            Text(AppLocalizer.localized("Эталонный канал"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             if let wavelengths, result.referenceChannel < wavelengths.count {
-                                Text("\(result.referenceChannel) (λ=\(String(format: "%.1f", wavelengths[result.referenceChannel])) нм)")
+                                Text(
+                                    LF(
+                                        "pipeline.alignment.reference_channel_with_lambda",
+                                        result.referenceChannel,
+                                        wavelengths[result.referenceChannel]
+                                    )
+                                )
                                     .font(.system(size: 12, weight: .medium))
                             } else {
                                 Text("\(result.referenceChannel)")
@@ -4149,16 +4171,16 @@ struct SpectralAlignmentDetailsView: View {
                     Divider()
                         .padding(.horizontal, 16)
                     
-                    Text("Результаты по каналам")
+                    Text(AppLocalizer.localized("Результаты по каналам"))
                         .font(.system(size: 11, weight: .medium))
                         .padding(.horizontal, 16)
                     
                     ScrollView {
                         LazyVStack(spacing: 2) {
                             HStack {
-                                Text("Канал")
+                                Text(AppLocalizer.localized("Канал"))
                                     .frame(width: 50, alignment: .leading)
-                                Text("λ (нм)")
+                                Text(AppLocalizer.localized("λ (нм)"))
                                     .frame(width: 70, alignment: .trailing)
                                 Text("dx")
                                     .frame(width: 40, alignment: .trailing)
@@ -4204,7 +4226,7 @@ struct SpectralAlignmentDetailsView: View {
                                         .foregroundColor(scoreColor(score, isRef: isRef))
                                     
                                     if isRef {
-                                        Text("(эталон)")
+                                        Text(AppLocalizer.localized("(эталон)"))
                                             .font(.system(size: 8))
                                             .foregroundColor(.blue)
                                     }
@@ -4225,7 +4247,7 @@ struct SpectralAlignmentDetailsView: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 40))
                         .foregroundColor(.secondary)
-                    Text("Нет данных о результатах")
+                    Text(AppLocalizer.localized("Нет данных о результатах"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -4237,7 +4259,7 @@ struct SpectralAlignmentDetailsView: View {
             
             HStack {
                 Spacer()
-                Button("Закрыть") {
+                Button(AppLocalizer.localized("Закрыть")) {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

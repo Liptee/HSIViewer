@@ -52,37 +52,37 @@ struct GridLibraryWindowView: View {
             let freeIDs = Set(freeLibraryEntries.map(\.id))
             selectedEntryIDs = selectedEntryIDs.intersection(freeIDs)
         }
-        .alert("Переименовать куб", isPresented: $isEntryRenaming) {
-            TextField("Название", text: $entryRenameText)
-            Button("Сохранить") { commitEntryRename() }
-            Button("Отмена", role: .cancel) { cancelEntryRename() }
+        .alert(state.localized("library.rename_cube.title"), isPresented: $isEntryRenaming) {
+            TextField(state.localized("library.rename_cube.field_name"), text: $entryRenameText)
+            Button(state.localized("common.save")) { commitEntryRename() }
+            Button(state.localized("common.cancel"), role: .cancel) { cancelEntryRename() }
         } message: {
-            Text("Введите новое имя для выбранного куба.")
+            Text(state.localized("library.rename_cube.message"))
         }
-        .alert("Переименовать ряд", isPresented: $isRowRenaming) {
-            TextField("Название ряда", text: $rowRenameText)
-            Button("Сохранить") { commitRowRename() }
-            Button("Отмена", role: .cancel) { cancelRowRename() }
+        .alert(state.localized("grid.rename_row.title"), isPresented: $isRowRenaming) {
+            TextField(state.localized("grid.rename_row.field_name"), text: $rowRenameText)
+            Button(state.localized("common.save")) { commitRowRename() }
+            Button(state.localized("common.cancel"), role: .cancel) { cancelRowRename() }
         } message: {
-            Text("Введите новое имя ряда.")
+            Text(state.localized("grid.rename_row.message"))
         }
-        .alert("Переименовать столбец", isPresented: $isColumnRenaming) {
-            TextField("Название столбца", text: $columnRenameText)
-            Button("Сохранить") { commitColumnRename() }
-            Button("Отмена", role: .cancel) { cancelColumnRename() }
+        .alert(state.localized("grid.rename_column.title"), isPresented: $isColumnRenaming) {
+            TextField(state.localized("grid.rename_column.field_name"), text: $columnRenameText)
+            Button(state.localized("common.save")) { commitColumnRename() }
+            Button(state.localized("common.cancel"), role: .cancel) { cancelColumnRename() }
         } message: {
-            Text("Введите новое имя столбца.")
+            Text(state.localized("grid.rename_column.message"))
         }
     }
 
     private var librarySidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("ГСИ")
+                Text(state.localized("grid.sidebar.hsi"))
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
                 if isLibraryDropTargeted {
-                    Text("Отпустите для импорта")
+                    Text(state.localized("grid.sidebar.release_to_import"))
                         .font(.system(size: 10))
                         .foregroundColor(.accentColor)
                 }
@@ -94,7 +94,7 @@ struct GridLibraryWindowView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if state.libraryEntries.isEmpty {
-                        Text("Перетащите файлы .mat, .tiff, .npy или .dat, чтобы добавить ГСИ в библиотеку.")
+                        Text(state.localized("grid.sidebar.empty_library"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                             .padding(10)
@@ -104,7 +104,7 @@ struct GridLibraryWindowView: View {
                                     .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
                             )
                     } else if freeLibraryEntries.isEmpty {
-                        Text("Все элементы размещены в Grid-таблице. Удалите элемент из ячейки или удалите ряд/столбец, чтобы вернуть его в список.")
+                        Text(state.localized("grid.sidebar.all_assigned"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                             .padding(10)
@@ -146,10 +146,10 @@ struct GridLibraryWindowView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("Grid-библиотека")
+            Text(state.localized("grid.title"))
                 .font(.system(size: 14, weight: .semibold))
 
-            Text("\(state.gridLibraryRows.count) ряд(ов) • \(state.gridLibraryColumns.count) столбец(ов)")
+            Text(state.localizedFormat("grid.header.counts", state.gridLibraryRows.count, state.gridLibraryColumns.count))
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
 
@@ -159,14 +159,14 @@ struct GridLibraryWindowView: View {
 
     private var emptyGridState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Таблица пока не готова")
+            Text(state.localized("grid.empty_state.title"))
                 .font(.system(size: 13, weight: .semibold))
             HStack(spacing: 8) {
                 if state.gridLibraryRows.isEmpty {
-                    Button("Создать ряд") { state.addGridLibraryRow() }
+                    Button(state.localized("grid.create_row")) { state.addGridLibraryRow() }
                 }
                 if state.gridLibraryColumns.isEmpty {
-                    Button("Создать столбец") { state.addGridLibraryColumn() }
+                    Button(state.localized("grid.create_column")) { state.addGridLibraryColumn() }
                 }
             }
         }
@@ -246,7 +246,7 @@ struct GridLibraryWindowView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.accentColor.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         )
-        .help("Добавить столбец")
+        .help(state.localized("grid.help.add_column"))
     }
 
     private var addRowButton: some View {
@@ -256,7 +256,7 @@ struct GridLibraryWindowView: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .font(.system(size: 10, weight: .semibold))
-                Text("Добавить ряд")
+                Text(state.localized("grid.add_row"))
                     .font(.system(size: 10, weight: .medium))
             }
             .foregroundColor(.accentColor)
@@ -272,7 +272,7 @@ struct GridLibraryWindowView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.accentColor.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         )
-        .help("Добавить ряд")
+        .help(state.localized("grid.help.add_row"))
     }
 
     private func columnHeader(for column: GridLibraryAxisItem) -> some View {
@@ -309,14 +309,14 @@ struct GridLibraryWindowView: View {
         .highPriorityGesture(doubleTap)
         .simultaneousGesture(singleTap)
         .contextMenu {
-            Button("Переименовать…") { startColumnRename(column) }
-            Button("Сдвинуть влево") { state.moveGridLibraryColumn(id: column.id, by: -1) }
+            Button(state.localized("grid.context.rename")) { startColumnRename(column) }
+            Button(state.localized("grid.context.move_left")) { state.moveGridLibraryColumn(id: column.id, by: -1) }
                 .disabled(index == 0)
-            Button("Сдвинуть вправо") { state.moveGridLibraryColumn(id: column.id, by: 1) }
+            Button(state.localized("grid.context.move_right")) { state.moveGridLibraryColumn(id: column.id, by: 1) }
                 .disabled(index >= state.gridLibraryColumns.count - 1)
             Divider()
             Button(role: .destructive) { state.removeGridLibraryColumn(id: column.id) } label: {
-                Text("Удалить столбец")
+                Text(state.localized("grid.context.delete_column"))
             }
         }
     }
@@ -355,14 +355,14 @@ struct GridLibraryWindowView: View {
         .highPriorityGesture(doubleTap)
         .simultaneousGesture(singleTap)
         .contextMenu {
-            Button("Переименовать…") { startRowRename(row) }
-            Button("Сдвинуть вверх") { state.moveGridLibraryRow(id: row.id, by: -1) }
+            Button(state.localized("grid.context.rename")) { startRowRename(row) }
+            Button(state.localized("grid.context.move_up")) { state.moveGridLibraryRow(id: row.id, by: -1) }
                 .disabled(index == 0)
-            Button("Сдвинуть вниз") { state.moveGridLibraryRow(id: row.id, by: 1) }
+            Button(state.localized("grid.context.move_down")) { state.moveGridLibraryRow(id: row.id, by: 1) }
                 .disabled(index >= state.gridLibraryRows.count - 1)
             Divider()
             Button(role: .destructive) { state.removeGridLibraryRow(id: row.id) } label: {
-                Text("Удалить ряд")
+                Text(state.localized("grid.context.delete_row"))
             }
         }
     }
@@ -386,7 +386,7 @@ struct GridLibraryWindowView: View {
                 libraryEntryStatsRow(for: entry, compact: true)
                 wavelengthRangeLabel(for: entry, compact: true)
             } else {
-                Text("Пусто")
+                Text(state.localized("grid.cell.empty"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
             }
@@ -448,11 +448,11 @@ struct GridLibraryWindowView: View {
             if let entry {
                 entryContextMenu(for: [entry])
                 Divider()
-                Button("Вернуть в библиотеку") {
+                Button(state.localized("grid.context.return_to_library")) {
                     state.clearGridLibraryCell(rowID: row.id, columnID: column.id)
                 }
             } else {
-                Button("Вернуть в библиотеку") {
+                Button(state.localized("grid.context.return_to_library")) {
                     state.clearGridLibraryCell(rowID: row.id, columnID: column.id)
                 }
                 .disabled(true)
@@ -534,45 +534,45 @@ struct GridLibraryWindowView: View {
         let canPasteROI = state.canPasteSpectrumROI
         let canRename = targets.count == 1
 
-        Button("Копировать обработку") {
+        Button(state.localized("library.context.copy_processing")) {
             if let target = targets.first { state.copyProcessing(from: target) }
         }
         .disabled(!canCopyFromSingle)
 
         if state.hasProcessingClipboard {
-            Button("Вставить обработку") {
+            Button(state.localized("library.context.paste_processing")) {
                 for target in targets { state.pasteProcessing(to: target) }
             }
         }
 
         Divider()
 
-        Button("Копировать длины волн") {
+        Button(state.localized("library.context.copy_wavelengths")) {
             if let target = targets.first { state.copyWavelengths(from: target) }
         }
         .disabled(!canCopyWavelengths)
 
         if state.hasWavelengthClipboard {
-            Button("Вставить длины волн") {
+            Button(state.localized("library.context.paste_wavelengths")) {
                 for target in targets { state.pasteWavelengths(to: target) }
             }
         }
 
         Divider()
 
-        Button("Вставить точку") {
+        Button(state.localized("library.context.paste_point")) {
             for target in targets { state.pasteSpectrumPoint(to: target) }
         }
         .disabled(!canPastePoint)
 
-        Button("Вставить область") {
+        Button(state.localized("library.context.paste_area")) {
             for target in targets { state.pasteSpectrumROI(to: target) }
         }
         .disabled(!canPasteROI)
 
         Divider()
 
-        Button("Переименовать…") {
+        Button(state.localized("library.context.rename")) {
             if let target = targets.first { startEntryRename(for: target) }
         }
         .disabled(!canRename)
@@ -582,7 +582,7 @@ struct GridLibraryWindowView: View {
         Button(role: .destructive) {
             removeEntries(targets)
         } label: {
-            Text("Удалить из библиотеки")
+            Text(state.localized("library.context.remove_from_library"))
         }
     }
 

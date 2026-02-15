@@ -28,7 +28,7 @@ struct MaskEditorView: View {
                                 y: state.imageOffset.height + dragOffset.height
                             )
                     } else {
-                        Text("Нет данных")
+                        Text(AppLocalizer.localized("Нет данных"))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -272,7 +272,7 @@ struct MaskLayersPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Слои")
+                Text(AppLocalizer.localized("Слои"))
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
                 Button(action: { maskState.addMaskLayer() }) {
@@ -280,7 +280,7 @@ struct MaskLayersPanelView: View {
                         .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
-                .help("Добавить слой маски")
+                .help(AppLocalizer.localized("Добавить слой маски"))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -344,7 +344,7 @@ struct MaskLayersPanelView: View {
             
             Divider()
             
-            Text("↑↓ для изменения порядка слоёв")
+            Text(AppLocalizer.localized("↑↓ для изменения порядка слоёв"))
                 .font(.system(size: 9))
                 .foregroundColor(.secondary)
                 .padding(8)
@@ -401,7 +401,7 @@ struct LayerRowView: View {
                 }
                 
                 if isEditing {
-                    TextField("Имя", text: $editingName, onCommit: onFinishEditing)
+                    TextField(AppLocalizer.localized("Имя"), text: $editingName, onCommit: onFinishEditing)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
                 } else {
@@ -453,7 +453,7 @@ struct LayerRowView: View {
             
             if let mask = maskLayer, isActive {
                 HStack(spacing: 6) {
-                    Text("Прозрачность:")
+                    Text(AppLocalizer.localized("Прозрачность:"))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                     
@@ -505,7 +505,7 @@ struct MaskToolsPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Инструменты")
+                Text(AppLocalizer.localized("Инструменты"))
                     .font(.system(size: 12, weight: .semibold))
                 
                 HStack(spacing: 8) {
@@ -523,7 +523,7 @@ struct MaskToolsPanelView: View {
             Divider()
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Размер кисти: \(maskState.brushSize) px")
+                Text(LF("mask.brush_size_px", maskState.brushSize))
                     .font(.system(size: 11))
                 
                 Slider(value: Binding(
@@ -546,7 +546,7 @@ struct MaskToolsPanelView: View {
             
             if let activeID = maskState.activeLayerID {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Действия")
+                    Text(AppLocalizer.localized("Действия"))
                         .font(.system(size: 12, weight: .semibold))
                     
                     Button(action: { maskState.undo(for: activeID) }) {
@@ -560,16 +560,16 @@ struct MaskToolsPanelView: View {
             Spacer()
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Подсказки")
+                Text(AppLocalizer.localized("Подсказки"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
-                Text("• Shift — показать только активный слой")
+                Text(AppLocalizer.localized("• Shift — показать только активный слой"))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
-                Text("• ⌘Z — отмена последнего действия")
+                Text(AppLocalizer.localized("• ⌘Z — отмена последнего действия"))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
-                Text("• File → Экспорт для сохранения маски")
+                Text(AppLocalizer.localized("• File → Экспорт для сохранения маски"))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
@@ -592,7 +592,7 @@ private struct MaskToolButton: View {
             VStack(spacing: 4) {
                 Image(systemName: tool.iconName)
                     .font(.system(size: 16))
-                Text(tool.rawValue)
+                Text(tool.localizedTitle)
                     .font(.system(size: 9))
             }
             .frame(width: 50, height: 44)
@@ -606,4 +606,3 @@ private struct MaskToolButton: View {
         .buttonStyle(.plain)
     }
 }
-

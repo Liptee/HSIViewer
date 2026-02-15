@@ -34,7 +34,7 @@ struct ContentView: View {
                     ZStack {
                         Color.black.opacity(0.25)
                             .ignoresSafeArea()
-                        BusyOverlayView(message: state.busyMessage ?? "Выполнение…")
+                        BusyOverlayView(message: state.localized(state.busyMessage ?? "Выполнение…"))
                     }
                     .transition(.opacity)
                     }
@@ -91,12 +91,12 @@ struct ContentView: View {
                                 )
                         } else {
                             VStack(spacing: 8) {
-                                Text("Открой гиперспектральный куб")
+                                Text(state.localized("content_view.open_cube"))
                                     .font(.system(size: 14, weight: .medium))
                                 Text("Cmd + O")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
-                                Text("Здесь могла бы быть ваша реклама")
+                                Text(state.localized("content_view.empty_hint"))
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                             }
@@ -302,8 +302,8 @@ struct ContentView: View {
             panel.canChooseDirectories = true
             panel.canChooseFiles = false
             panel.allowsMultipleSelection = false
-            panel.prompt = "Выбрать папку"
-            panel.message = "Выберите папку для сохранения экспортированных файлов библиотеки"
+            panel.prompt = state.localized("Выбрать папку")
+            panel.message = state.localized("Выберите папку для сохранения экспортированных файлов библиотеки")
             
             let response = panel.runModal()
             guard response == .OK, let folderURL = panel.url else {
@@ -333,8 +333,8 @@ struct ContentView: View {
             openPanel.canChooseFiles = false
             openPanel.canCreateDirectories = true
             openPanel.allowsMultipleSelection = false
-            openPanel.prompt = "Выбрать папку"
-            openPanel.message = "Выберите папку для сохранения PNG каналов (\(defaultBaseName)_channel_XXX.png)"
+            openPanel.prompt = state.localized("Выбрать папку")
+            openPanel.message = LF("content.export.png_channels.choose_folder_message", defaultBaseName)
             
             openPanel.begin { response in
                 print("ContentView: Open panel response: \(response == .OK ? "OK" : "Cancel")")
@@ -377,19 +377,19 @@ struct ContentView: View {
         case .quickPNG:
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType.png]
-            panel.message = "Выберите путь для сохранения PNG изображения"
+            panel.message = state.localized("Выберите путь для сохранения PNG изображения")
         case .npy:
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType(filenameExtension: "npy") ?? .data]
-            panel.message = "Выберите путь для сохранения"
+            panel.message = state.localized("Выберите путь для сохранения")
         case .mat:
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType(filenameExtension: "mat") ?? .data]
-            panel.message = "Выберите путь для сохранения"
+            panel.message = state.localized("Выберите путь для сохранения")
         case .tiff:
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType.tiff]
-            panel.message = "Выберите путь для сохранения TIFF"
+            panel.message = state.localized("Выберите путь для сохранения TIFF")
         case .maskPNG, .maskNpy, .maskMat:
             return // Маска экспортируется через ExportView
         }
@@ -472,7 +472,7 @@ struct ContentView: View {
                         allSuccess = false
                         completed += 1
                         state.updateLibraryExportProgress(completed: completed, total: entries.count)
-                        print("Пропуск \(entry.displayName) — нет данных для экспорта")
+                        print(LF("content.export.log.skip_no_data", entry.displayName))
                         return
                     }
                     
@@ -522,9 +522,9 @@ struct ContentView: View {
                     
                     switch result {
                     case .success:
-                        print("Экспортирован \(entry.displayName)")
+                        print(LF("content.export.log.exported", entry.displayName))
                     case .failure(let error):
-                        print("Ошибка экспорта \(entry.displayName): \(error.localizedDescription)")
+                        print(LF("content.export.log.error", entry.displayName, error.localizedDescription))
                         allSuccess = false
                     }
                     
@@ -555,15 +555,15 @@ struct ContentView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             } else {
-                Text("Файл не выбран")
+                Text(state.localized("Файл не выбран"))
                         .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
             
-            if let error = state.loadError {
+                if let error = state.loadError {
                     Text("•")
                         .foregroundColor(.secondary)
-                Text(error)
+                Text(state.localized(error))
                         .font(.system(size: 10))
                     .foregroundColor(.red)
                         .lineLimit(1)
@@ -607,7 +607,7 @@ struct ContentView: View {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
                 } else {
                 view = AnyView(
-                    Text("Не удалось построить изображение")
+                    Text(state.localized("Не удалось построить изображение"))
                         .foregroundColor(.red)
                 )
                 }
@@ -638,7 +638,7 @@ struct ContentView: View {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
                 view = AnyView(
-                    Text(config.mode == .pcaVisualization ? "Нажмите «Применить PCA»" : "Не удалось построить RGB изображение")
+                    Text(state.localized(config.mode == .pcaVisualization ? "Нажмите «Применить PCA»" : "Не удалось построить RGB изображение"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 )
@@ -660,7 +660,7 @@ struct ContentView: View {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
                 view = AnyView(
-                    Text("Не удалось построить ND")
+                    Text(state.localized("Не удалось построить ND"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 )
@@ -727,7 +727,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 if cube.is2D {
-                    Text("Режим: 2D изображение")
+                    Text(state.localized("Режим: 2D изображение"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
                 } else {
@@ -762,7 +762,7 @@ struct ContentView: View {
                             .frame(height: 18)
                             .padding(.leading, 8)
                         
-                        Text("Цветосинтез:")
+                        Text(state.localized("Цветосинтез:"))
                             .font(.system(size: 11))
                             .padding(.leading, 4)
                         
@@ -789,7 +789,7 @@ struct ContentView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "arrow.clockwise")
                                 .font(.system(size: 10))
-                            Text("Центрировать")
+                            Text(state.localized("Центрировать"))
                                 .font(.system(size: 11))
                         }
                     }
@@ -802,7 +802,7 @@ struct ContentView: View {
                     if cube.is2D, let dims2D = cube.dims2D {
                         Divider()
                             .frame(height: 18)
-                        Text("размер: \(dims2D.width) × \(dims2D.height)")
+                        Text(LF("content.dimensions.2d", dims2D.width, dims2D.height))
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     } else {
@@ -831,7 +831,7 @@ struct ContentView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "wave.3.right")
                                 .font(.system(size: 10))
-                            Text("Длины волн")
+                            Text(state.localized("Длины волн"))
                                 .font(.system(size: 11))
                         }
                     }
@@ -840,16 +840,16 @@ struct ContentView: View {
                     }
                     
                     if let lambda = state.wavelengths {
-                        Text("λ: \(lambda.count) каналов")
+                        Text(LF("content.lambda.channels_count", lambda.count))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         if let first = lambda.first, let last = lambda.last {
-                            Text("(\(String(format: "%.0f", first)) – \(String(format: "%.0f", last)) нм)")
+                            Text(LF("content.lambda.range_brackets", String(format: "%.0f", first), String(format: "%.0f", last)))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
                     } else {
-                        Text("λ не заданы")
+                        Text(state.localized("λ не заданы"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -901,7 +901,7 @@ struct ContentView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 10))
-                        Text("Центрировать")
+                        Text(state.localized("Центрировать"))
                             .font(.system(size: 11))
                     }
                 }
@@ -915,7 +915,7 @@ struct ContentView: View {
                     .frame(height: 18)
                 
                 if let firstMask = state.maskEditorState.maskLayers.first {
-                    Text("Маска: \(firstMask.width) × \(firstMask.height)")
+                    Text(LF("content.mask.size", firstMask.width, firstMask.height))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -929,13 +929,13 @@ struct ContentView: View {
                     let wavelengthText: String = {
                         if let wavelengths = state.wavelengths,
                            channelIdx < wavelengths.count {
-                            return String(format: " (%.2f нм)", wavelengths[channelIdx])
+                            return LF("content.channel.wavelength_suffix", String(format: "%.2f", wavelengths[channelIdx]))
                         }
                         return ""
                     }()
                     
                     HStack {
-                        Text("Канал: \(channelIdx) / \(max(state.channelCount - 1, 0))\(wavelengthText)")
+                        Text(LF("content.channel.current", channelIdx, max(state.channelCount - 1, 0), wavelengthText))
                             .font(.system(size: 11))
                             .monospacedDigit()
                         
@@ -971,7 +971,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Каналы цветосинтеза")
+                        Text(state.localized("Каналы цветосинтеза"))
                             .font(.system(size: 11, weight: .medium))
                         Text(colorMappingDescription(mapping: mapping))
                             .font(.system(size: 10, design: .monospaced))
@@ -1002,9 +1002,9 @@ struct ContentView: View {
     private func colorMappingDescription(mapping: RGBChannelMapping) -> String {
         func channelInfo(label: String, index: Int) -> String {
             if let wavelengths = state.wavelengths, index < wavelengths.count {
-                return "\(label): ch \(index) (\(String(format: "%.1f", wavelengths[index])) нм)"
+                return LF("content.color_mapping.channel_nm", label, index, String(format: "%.1f", wavelengths[index]))
             }
-            return "\(label): ch \(index)"
+            return LF("content.color_mapping.channel", label, index)
         }
         
         let red = channelInfo(label: "R", index: mapping.red)
@@ -1016,7 +1016,7 @@ struct ContentView: View {
     private func ndControls() -> some View {
         let menuLabelInset: CGFloat = 6
         return VStack(alignment: .leading, spacing: 8) {
-            Text("ND индексы")
+            Text(state.localized("ND индексы"))
                 .font(.system(size: 11, weight: .medium))
             
             HStack(spacing: 12) {
@@ -1027,7 +1027,7 @@ struct ContentView: View {
                         .padding(.leading, menuLabelInset)
                     Picker("", selection: $state.ndPreset) {
                         ForEach(NDIndexPreset.allCases) { preset in
-                            Text(preset.title).tag(preset)
+                            Text(preset.localizedTitle).tag(preset)
                         }
                     }
                     .pickerStyle(.menu)
@@ -1037,16 +1037,16 @@ struct ContentView: View {
                 switch state.ndPreset {
                 case .ndvi:
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Red (нм)")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                        Text(state.localized("Red (нм)"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                         TextField("660", text: $state.ndviRedTarget)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("NIR (нм)")
+                        Text(state.localized("NIR (нм)"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("840", text: $state.ndviNIRTarget)
@@ -1055,7 +1055,7 @@ struct ContentView: View {
                     }
                 case .ndsi:
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Green (нм)")
+                        Text(state.localized("Green (нм)"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("555", text: $state.ndsiGreenTarget)
@@ -1064,7 +1064,7 @@ struct ContentView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("SWIR (нм)")
+                        Text(state.localized("SWIR (нм)"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("1610", text: $state.ndsiSWIRTarget)
@@ -1073,7 +1073,7 @@ struct ContentView: View {
                     }
                 case .wdvi:
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Red (нм)")
+                        Text(state.localized("Red (нм)"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("660", text: $state.ndviRedTarget)
@@ -1082,7 +1082,7 @@ struct ContentView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("NIR (нм)")
+                        Text(state.localized("NIR (нм)"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         TextField("840", text: $state.ndviNIRTarget)
@@ -1124,20 +1124,20 @@ struct ContentView: View {
                     } label: {
                         HStack(spacing: 4) {
                                 Image(systemName: "wand.and.stars")
-                                Text("Автооценка почвы…")
+                                Text(state.localized("Автооценка почвы…"))
                             }
                         }
                     }
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Палитра")
+                    Text(state.localized("Палитра"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .padding(.leading, menuLabelInset)
                     Picker("", selection: $state.ndPalette) {
                         ForEach(NDPalette.allCases) { palette in
-                            Text(palette.rawValue).tag(palette)
+                            Text(palette.localizedTitle).tag(palette)
                         }
                     }
                     .pickerStyle(.menu)
@@ -1147,7 +1147,7 @@ struct ContentView: View {
                 
                 if state.ndPalette == .binaryVegetation {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Порог ND")
+                        Text(state.localized("Порог ND"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         HStack {
@@ -1167,25 +1167,25 @@ struct ContentView: View {
         let rois = state.roiSamples
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Автооценка линии почвы (WDVI)")
+                Text(state.localized("Автооценка линии почвы (WDVI)"))
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
             }
             
             if rois.isEmpty {
-                Text("Сохранённых ROI нет — добавьте области на изображении и повторите.")
+                Text(state.localized("Сохранённых ROI нет — добавьте области на изображении и повторите."))
                                 .font(.system(size: 11))
                     .foregroundColor(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("ROI для оценки")
+                        Text(state.localized("ROI для оценки"))
                             .font(.system(size: 11, weight: .medium))
                         Spacer()
-                        Button("Выбрать все") {
+                        Button(state.localized("Выбрать все")) {
                             wdviAutoConfig.selectedROIIDs = Set(rois.map { $0.id })
                         }
-                        Button("Очистить") {
+                        Button(state.localized("Очистить")) {
                             wdviAutoConfig.selectedROIIDs.removeAll()
                         }
                     }
@@ -1218,15 +1218,15 @@ struct ContentView: View {
             Divider()
             
             VStack(alignment: .leading, spacing: 16) {
-                Text("Фильтрация и регрессия")
+                Text(state.localized("Фильтрация и регрессия"))
                     .font(.system(size: 11, weight: .medium))
                 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Обрезка по перцентилям")
+                    Text(state.localized("Обрезка по перцентилям"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     HStack(spacing: 12) {
-                        Text("Нижний")
+                        Text(state.localized("Нижний"))
                             .font(.system(size: 10))
                             .frame(width: 60, alignment: .leading)
                         Slider(value: Binding(
@@ -1238,7 +1238,7 @@ struct ContentView: View {
                             .frame(width: 60, alignment: .trailing)
                     }
                     HStack(spacing: 12) {
-                        Text("Верхний")
+                        Text(state.localized("Верхний"))
                             .font(.system(size: 10))
                             .frame(width: 60, alignment: .leading)
                         Slider(value: Binding(
@@ -1253,7 +1253,7 @@ struct ContentView: View {
                 
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Отсечение по z-score")
+                        Text(state.localized("Отсечение по z-score"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         HStack(spacing: 12) {
@@ -1266,12 +1266,12 @@ struct ContentView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Метод регрессии")
+                        Text(state.localized("Метод регрессии"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         Picker("", selection: $wdviAutoConfig.method) {
                             ForEach(WDVIAutoRegressionMethod.allCases) { method in
-                                Text(method.rawValue).tag(method)
+                                Text(method.localizedTitle).tag(method)
                             }
                         }
                         .pickerStyle(.menu)
@@ -1284,10 +1284,10 @@ struct ContentView: View {
             
             HStack {
                 Spacer()
-                Button("Отмена") {
+                Button(state.localized("Отмена")) {
                     showWDVIAutoSheet = false
                 }
-                Button("Рассчитать") {
+                Button(state.localized("Рассчитать")) {
                     var normalizedConfig = wdviAutoConfig
                     normalizedConfig.lowerPercentile = max(0, min(0.5, normalizedConfig.lowerPercentile))
                     normalizedConfig.upperPercentile = min(1, max(normalizedConfig.lowerPercentile + 0.01, normalizedConfig.upperPercentile))
@@ -1310,7 +1310,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Область расчёта PCA")
+                    Text(state.localized("Область расчёта PCA"))
                         .font(.system(size: 10, weight: .medium))
                     Picker("", selection: Binding(
                         get: { config.computeScope },
@@ -1318,7 +1318,7 @@ struct ContentView: View {
                             state.updatePCAConfig { $0.computeScope = newValue }
                         })) {
                         ForEach(PCAComputeScope.allCases) { scope in
-                            Text(scope.rawValue).tag(scope)
+                            Text(scope.localizedTitle).tag(scope)
                         }
                     }
                     .pickerStyle(.menu)
@@ -1339,7 +1339,7 @@ struct ContentView: View {
                             }
                         })) {
                         ForEach(PCAPreprocess.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                            Text(mode.localizedTitle).tag(mode)
                         }
                     }
                     .pickerStyle(.menu)
@@ -1347,7 +1347,7 @@ struct ContentView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Маппинг компонентов → RGB")
+                    Text(state.localized("Маппинг компонентов → RGB"))
                         .font(.system(size: 10, weight: .medium))
                     HStack(spacing: 8) {
                         pcaComponentPicker(label: "R", value: config.mapping.red, options: componentOptions) { newVal in
@@ -1375,7 +1375,7 @@ struct ContentView: View {
             
             if config.computeScope == .roi {
                 HStack(spacing: 10) {
-                    Text("ROI для PCA")
+                    Text(state.localized("ROI для PCA"))
                         .font(.system(size: 10, weight: .medium))
                     Picker("ROI", selection: Binding(
                         get: { config.selectedROI ?? state.displayedROISamples.first?.id },
@@ -1383,7 +1383,7 @@ struct ContentView: View {
                             state.updatePCAConfig { $0.selectedROI = newID }
                         })) {
                         if state.displayedROISamples.isEmpty {
-                            Text("Нет сохранённых ROI").tag(Optional<UUID>.none)
+                            Text(state.localized("Нет сохранённых ROI")).tag(Optional<UUID>.none)
                         } else {
                             ForEach(state.displayedROISamples) { sample in
                                 Text(sample.displayName ?? "ROI \(sample.id.uuidString.prefix(6))")
@@ -1397,7 +1397,7 @@ struct ContentView: View {
             }
             
             HStack(spacing: 10) {
-                Text("Отрезать верхние выбросы")
+                Text(state.localized("Отрезать верхние выбросы"))
                     .font(.system(size: 10, weight: .medium))
                 Slider(
                     value: Binding(
@@ -1444,7 +1444,7 @@ struct ContentView: View {
                 } label: {
                     HStack {
                         Image(systemName: "play.fill")
-                        Text("Применить PCA")
+                        Text(state.localized("Применить PCA"))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -1456,18 +1456,18 @@ struct ContentView: View {
                 )
                 
                 if state.isPCAApplying {
-                    ProgressView(state.pcaProgressMessage ?? "Обработка…")
+                    ProgressView(state.localized(state.pcaProgressMessage ?? "Обработка…"))
                         .progressViewStyle(.linear)
                         .frame(width: 160)
                 } else if state.pcaRenderedImage == nil {
-                    Text("Настройте параметры и нажмите «Применить»")
+                    Text(state.localized("Настройте параметры и нажмите «Применить»"))
                         .font(.system(size: 9))
                         .foregroundColor(.secondary)
                 }
                 
                 Spacer()
                 
-                Text("PCA: спектры пикселей; lock basis сохраняет базис до смены параметров.")
+                Text(state.localized("PCA: спектры пикселей; lock basis сохраняет базис до смены параметров."))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
             }
@@ -1511,7 +1511,7 @@ struct ContentView: View {
                 TrimActionButton(
                     icon: "checkmark",
                     color: .green,
-                    tooltip: "Применить обрезку"
+                    tooltip: state.localized("Применить обрезку")
                 ) {
                     state.applyTrim()
                 }
@@ -1519,7 +1519,7 @@ struct ContentView: View {
                 TrimActionButton(
                     icon: "xmark",
                     color: .red,
-                    tooltip: "Отменить"
+                    tooltip: state.localized("Отменить")
                 ) {
                     state.exitTrimMode()
                 }
@@ -1534,7 +1534,7 @@ struct ContentView: View {
                 .frame(width: 28, height: 28)
                 .background(Color.secondary.opacity(0.1))
                 .cornerRadius(6)
-                .help("Обрезать каналы")
+                .help(state.localized("Обрезать каналы"))
             }
         }
     }
@@ -1548,17 +1548,17 @@ struct ContentView: View {
             if let wavelengths = state.wavelengths,
                startCh < wavelengths.count,
                endCh < wavelengths.count {
-                Text("Обрезка: \(String(format: "%.0f", wavelengths[startCh])) – \(String(format: "%.0f", wavelengths[endCh])) нм")
+                Text(LF("content.trim.range_nm", String(format: "%.0f", wavelengths[startCh]), String(format: "%.0f", wavelengths[endCh])))
                     .font(.system(size: 10))
                     .foregroundColor(.yellow)
-                Text("(\(trimCount) кан.)")
+                Text(LF("content.trim.channels_count", trimCount))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             } else {
-                Text("Обрезка: канал \(startCh) – \(endCh)")
+                Text(LF("content.trim.range_channel", startCh, endCh))
                     .font(.system(size: 10))
                     .foregroundColor(.yellow)
-                Text("(\(trimCount) кан.)")
+                Text(LF("content.trim.channels_count", trimCount))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
@@ -1571,24 +1571,24 @@ struct ContentView: View {
     
     private var wavelengthPopoverContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Настройка длин волн")
+            Text(state.localized("Настройка длин волн"))
                 .font(.system(size: 12, weight: .semibold))
             
             Divider()
             
             VStack(alignment: .leading, spacing: 8) {
-                Text("Диапазон (нм):")
+                Text(state.localized("Диапазон (нм):"))
                     .font(.system(size: 11))
                 
                 HStack(spacing: 8) {
-                    Text("от")
+                    Text(state.localized("от"))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     TextField("400", text: $state.lambdaStart)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
                     
-                    Text("до")
+                    Text(state.localized("до"))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     TextField("1000", text: $state.lambdaEnd)
@@ -1598,12 +1598,12 @@ struct ContentView: View {
                 
                 if state.channelCount > 1 {
                     let step = calculateDisplayStep()
-                    Text("Шаг: \(String(format: "%.2f", step)) нм")
+                    Text(LF("content.lambda.step", String(format: "%.2f", step)))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
                 
-                Button("Применить диапазон") {
+                Button(state.localized("Применить диапазон")) {
                     state.generateWavelengthsFromParams()
                     showWavelengthPopover = false
                 }
@@ -1614,10 +1614,10 @@ struct ContentView: View {
             Divider()
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("Или загрузить из файла:")
+                Text(state.localized("Или загрузить из файла:"))
                     .font(.system(size: 11))
                 
-                Button("Выбрать .txt файл…") {
+                Button(state.localized("Выбрать .txt файл…")) {
                     openWavelengthTXT()
                     showWavelengthPopover = false
                 }
@@ -1627,14 +1627,14 @@ struct ContentView: View {
             if let lambda = state.wavelengths {
                 Divider()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Текущие значения:")
+                    Text(state.localized("Текущие значения:"))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
-                    Text("\(lambda.count) каналов")
+                    Text(LF("content.channels_count", lambda.count))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                     if let first = lambda.first, let last = lambda.last {
-                        Text("\(String(format: "%.1f", first)) – \(String(format: "%.1f", last)) нм")
+                        Text(LF("content.lambda.range", String(format: "%.1f", first), String(format: "%.1f", last)))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
@@ -1659,7 +1659,7 @@ struct ContentView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Выбрать txt"
+        panel.prompt = state.localized("Выбрать txt")
         panel.allowedContentTypes = [.plainText]
         
         let response = panel.runModal()
@@ -1786,7 +1786,7 @@ private struct LibraryExportToastView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
             case .success, .failure:
-                Text(state.message ?? defaultMessage)
+                Text(AppLocalizer.localized(state.message ?? defaultMessage))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
@@ -1799,11 +1799,11 @@ private struct LibraryExportToastView: View {
     private var titleText: String {
         switch state.phase {
         case .running:
-            return "Экспорт библиотеки"
+            return AppLocalizer.localized("Экспорт библиотеки")
         case .success:
-            return "Готово"
+            return AppLocalizer.localized("Готово")
         case .failure:
-            return "Ошибка экспорта"
+            return AppLocalizer.localized("Ошибка экспорта")
         }
     }
     
@@ -1832,9 +1832,9 @@ private struct LibraryExportToastView: View {
     private var defaultMessage: String {
         switch state.phase {
         case .success:
-            return "Все файлы успешно экспортированы"
+            return AppLocalizer.localized("Все файлы успешно экспортированы")
         case .failure:
-            return "При экспорте возникли ошибки"
+            return AppLocalizer.localized("При экспорте возникли ошибки")
         case .running:
             return ""
         }
@@ -2093,10 +2093,10 @@ struct AlignmentPointsOverlay: View {
             }
             
             VStack(alignment: .leading, spacing: 2) {
-                Text("Канал \(currentChannel)")
+                Text(LF("content.alignment.channel", currentChannel))
                     .font(.system(size: 10, weight: .semibold))
                 if result != nil && isReference {
-                    Text("(эталон)")
+                    Text(AppLocalizer.localized("(эталон)"))
                         .font(.system(size: 9))
                         .foregroundColor(.blue)
                 } else if result != nil {
@@ -2105,7 +2105,7 @@ struct AlignmentPointsOverlay: View {
                         .foregroundColor(.orange)
                 }
                 if isEditable {
-                    Text("Перетащите точки")
+                    Text(AppLocalizer.localized("Перетащите точки"))
                         .font(.system(size: 8))
                         .foregroundColor(.cyan)
                 }

@@ -15,6 +15,7 @@ final class GraphWindowManager: NSObject, NSWindowDelegate {
         
         let content = GraphWindowView(spectrumCache: appState.librarySpectrumCache)
             .environmentObject(appState)
+            .environment(\.locale, appState.appLocale)
         
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(
@@ -24,7 +25,7 @@ final class GraphWindowManager: NSObject, NSWindowDelegate {
             defer: false
         )
         window.contentViewController = hosting
-        window.title = "График"
+        window.title = appState.localized("window.graph.title")
         window.center()
         window.delegate = self
         window.isReleasedWhenClosed = false

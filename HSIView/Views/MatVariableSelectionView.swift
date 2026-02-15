@@ -28,7 +28,7 @@ struct MatVariableSelectionView: View {
     
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Выберите переменную для импорта")
+            Text(state.localized("mat.select_variable.title"))
                 .font(.system(size: 13, weight: .semibold))
             Text(request.fileURL.lastPathComponent)
                 .font(.system(size: 11, design: .monospaced))
@@ -81,7 +81,7 @@ struct MatVariableSelectionView: View {
     
     private var footer: some View {
         HStack {
-            Button("Отмена") {
+            Button(state.localized("common.cancel")) {
                 state.cancelMatSelection()
             }
             .buttonStyle(.bordered)
@@ -89,7 +89,7 @@ struct MatVariableSelectionView: View {
             
             Spacer()
             
-            Button("Открыть") {
+            Button(state.localized("common.open")) {
                 if let option = selectedOption {
                     state.confirmMatSelection(option: option)
                 }

@@ -28,7 +28,7 @@ final class MaskEditorState: ObservableObject {
         
         let refLayer = ReferenceLayer(
             id: UUID(),
-            name: "Референс",
+            name: L("Референс"),
             width: width,
             height: height,
             visible: true,
@@ -38,7 +38,7 @@ final class MaskEditorState: ObservableObject {
         
         let maskLayer = MaskLayer(
             id: UUID(),
-            name: "Класс 1",
+            name: L("Класс 1"),
             width: width,
             height: height,
             classValue: 1,
@@ -55,7 +55,7 @@ final class MaskEditorState: ObservableObject {
         let colorIndex = (nextClassValue - 1) % MaskClassColor.palette.count
         let layer = MaskLayer(
             id: UUID(),
-            name: name ?? "Класс \(nextClassValue)",
+            name: name ?? LF("mask.class_name_numbered", nextClassValue),
             width: firstMask.width,
             height: firstMask.height,
             classValue: UInt8(nextClassValue),
@@ -253,6 +253,10 @@ enum ReferenceDisplayMode: String, CaseIterable, Identifiable {
     case singleChannel = "Канал"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 struct MaskLayer: MaskLayerProtocol {
@@ -410,6 +414,10 @@ enum MaskDrawingTool: String, CaseIterable, Identifiable {
     case fill = "Заливка"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
     
     var iconName: String {
         switch self {
@@ -449,4 +457,3 @@ struct MaskClassMetadata: Codable {
         self.colorB = Double(rgb.blueComponent)
     }
 }
-

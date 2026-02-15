@@ -9,9 +9,9 @@ enum SeriesLinePattern: String, CaseIterable, Identifiable {
     
     var title: String {
         switch self {
-        case .solid: return "Сплошная"
-        case .dotted: return "Точечная"
-        case .dashed: return "Пунктирная"
+        case .solid: return L("Сплошная")
+        case .dotted: return L("Точечная")
+        case .dashed: return L("Пунктирная")
         }
     }
     

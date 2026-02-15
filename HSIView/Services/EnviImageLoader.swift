@@ -30,8 +30,8 @@ class EnviImageLoader: ImageLoader {
         
         let showPanel = {
             let panel = NSOpenPanel()
-            panel.message = "ENVI формат требует доступ к директории с парными файлами"
-            panel.prompt = "Разрешить доступ"
+            panel.message = L("ENVI формат требует доступ к директории с парными файлами")
+            panel.prompt = L("Разрешить доступ")
             panel.allowsMultipleSelection = false
             panel.canChooseDirectories = true
             panel.canChooseFiles = false
@@ -77,16 +77,16 @@ class EnviImageLoader: ImageLoader {
         
         if !FileManager.default.isReadableFile(atPath: hdrURL.path) || !FileManager.default.isReadableFile(atPath: datURL.path) {
             guard requestAccessToDirectory(for: url) else {
-                return .failure(.readError("Нет доступа к директории с ENVI файлами"))
+                return .failure(.readError(L("Нет доступа к директории с ENVI файлами")))
             }
         }
         
         guard FileManager.default.fileExists(atPath: hdrURL.path) else {
-            return .failure(.readError("Не найден .hdr файл: \(hdrURL.lastPathComponent)"))
+            return .failure(.readError(LF("loader.envi.hdr_not_found", hdrURL.lastPathComponent)))
         }
         
         guard FileManager.default.fileExists(atPath: datURL.path) else {
-            return .failure(.readError("Не найден бинарный файл. Ожидается: \(datURL.lastPathComponent)"))
+            return .failure(.readError(LF("loader.envi.binary_not_found_expected", datURL.lastPathComponent)))
         }
         
         let header: EnviHeader
@@ -99,12 +99,12 @@ class EnviImageLoader: ImageLoader {
         }
         
         guard let data = try? Data(contentsOf: datURL) else {
-            return .failure(.readError("Не удалось прочитать бинарный файл: \(datURL.lastPathComponent)"))
+            return .failure(.readError(LF("loader.envi.binary_read_failed", datURL.lastPathComponent)))
         }
         
         let expectedSize = header.height * header.width * header.channels * header.bytesPerPixel + header.headerOffset
         guard data.count >= expectedSize - header.headerOffset else {
-            return .failure(.readError("Размер файла не соответствует заголовку"))
+            return .failure(.readError(L("Размер файла не соответствует заголовку")))
         }
         
         let dataStart = header.headerOffset

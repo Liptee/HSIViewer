@@ -10,11 +10,11 @@ enum ColorSynthesisMode: String, CaseIterable, Identifiable, Equatable {
     var description: String {
         switch self {
         case .trueColorRGB:
-            return "R=630нм, G=530нм, B=450нм"
+            return L("R=630нм, G=530нм, B=450нм")
         case .rangeWideRGB:
-            return "Усреднение диапазонов λ для R/G/B"
+            return L("Усреднение диапазонов λ для R/G/B")
         case .pcaVisualization:
-            return "Информативная псевдо-цветность через PCA"
+            return L("Информативная псевдо-цветность через PCA")
         }
     }
     
@@ -36,6 +36,10 @@ enum PCAComputeScope: String, CaseIterable, Identifiable {
     case masked = "Маска"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 enum PCAPreprocess: String, CaseIterable, Identifiable {
@@ -45,6 +49,10 @@ enum PCAPreprocess: String, CaseIterable, Identifiable {
     case log = "Log(x+1)"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 struct PCAComponentMapping: Equatable {

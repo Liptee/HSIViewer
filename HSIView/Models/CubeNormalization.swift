@@ -11,6 +11,10 @@ enum CubeNormalizationType: String, CaseIterable, Identifiable {
     case sqrt = "Sqrt"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
     
     var hasParameters: Bool {
         switch self {
@@ -24,21 +28,21 @@ enum CubeNormalizationType: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .none:
-            return "Исходные данные без преобразований"
+            return L("Исходные данные без преобразований")
         case .minMax:
-            return "Линейная нормализация в диапазон [0, 1]"
+            return L("Линейная нормализация в диапазон [0, 1]")
         case .minMaxCustom:
-            return "Линейная нормализация в заданный диапазон [min, max]"
+            return L("Линейная нормализация в заданный диапазон [min, max]")
         case .manualRange:
-            return "Линейное преобразование из указанного диапазона в новый диапазон"
+            return L("Линейное преобразование из указанного диапазона в новый диапазон")
         case .percentile:
-            return "Обрезка выбросов по процентилям"
+            return L("Обрезка выбросов по процентилям")
         case .zScore:
-            return "Стандартизация: (x - mean) / std"
+            return L("Стандартизация: (x - mean) / std")
         case .log:
-            return "Логарифмическая: log(x + 1)"
+            return L("Логарифмическая: log(x + 1)")
         case .sqrt:
-            return "Квадратный корень: sqrt(x)"
+            return L("Квадратный корень: sqrt(x)")
         }
     }
 }

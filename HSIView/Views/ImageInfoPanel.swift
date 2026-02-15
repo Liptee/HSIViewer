@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ImageInfoPanel: View {
+    @EnvironmentObject var state: AppState
     let cube: HyperCube
     let layout: CubeLayout
     @State private var isExpanded: Bool = true
@@ -13,7 +14,7 @@ struct ImageInfoPanel: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
-                Text("Информация об изображении")
+                Text(state.localized("imageinfo.title"))
                     .font(.system(size: 11, weight: .semibold))
                 
                 Spacer()
@@ -30,33 +31,33 @@ struct ImageInfoPanel: View {
             
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    infoRow(title: "Формат", value: cube.sourceFormat)
-                    infoRow(title: "Тип данных", value: cube.originalDataType.rawValue)
+                    infoRow(title: state.localized("imageinfo.format"), value: cube.sourceFormat)
+                    infoRow(title: state.localized("imageinfo.data_type"), value: cube.originalDataType.rawValue)
                     
                     if cube.is2D {
-                        infoRow(title: "Тип", value: "2D изображение")
+                        infoRow(title: state.localized("imageinfo.kind"), value: state.localized("imageinfo.kind.2d"))
                         if let dims2D = cube.dims2D {
-                            infoRow(title: "Размер", value: "\(dims2D.width) × \(dims2D.height)")
+                            infoRow(title: state.localized("imageinfo.size"), value: "\(dims2D.width) × \(dims2D.height)")
                         }
                     } else {
-                        infoRow(title: "Разрешение", value: cube.resolution)
-                        infoRow(title: "Каналы", value: "\(cube.channelCount(for: layout))")
+                        infoRow(title: state.localized("imageinfo.resolution"), value: cube.resolution)
+                        infoRow(title: state.localized("imageinfo.channels"), value: "\(cube.channelCount(for: layout))")
                     }
                     
                     Divider()
                         .padding(.vertical, 4)
                     
                     if let stats = cachedStats {
-                        infoRow(title: "Мин. значение", value: String(format: "%.4g", stats.min))
-                        infoRow(title: "Макс. значение", value: String(format: "%.4g", stats.max))
-                        infoRow(title: "Среднее", value: String(format: "%.4g", stats.mean))
-                        infoRow(title: "Станд. откл.", value: String(format: "%.4g", stats.stdDev))
+                        infoRow(title: state.localized("imageinfo.min_value"), value: String(format: "%.4g", stats.min))
+                        infoRow(title: state.localized("imageinfo.max_value"), value: String(format: "%.4g", stats.max))
+                        infoRow(title: state.localized("imageinfo.mean_value"), value: String(format: "%.4g", stats.mean))
+                        infoRow(title: state.localized("imageinfo.std_dev"), value: String(format: "%.4g", stats.stdDev))
                     }
                     
                     Divider()
                         .padding(.vertical, 4)
                     
-                    infoRow(title: "Размер в памяти", value: formatMemorySize(bytes: cube.storage.sizeInBytes))
+                    infoRow(title: state.localized("imageinfo.memory_size"), value: formatMemorySize(bytes: cube.storage.sizeInBytes))
                 }
                 .padding(8)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -96,11 +97,10 @@ struct ImageInfoPanel: View {
         let sizeInGB = Double(bytes) / (1024 * 1024 * 1024)
         
         if sizeInGB >= 1.0 {
-            return String(format: "%.2f ГБ", sizeInGB)
+            return state.localizedFormat("units.size.gb", sizeInGB)
         } else {
-            return String(format: "%.1f МБ", sizeInMB)
+            return state.localizedFormat("units.size.mb", sizeInMB)
         }
     }
 }
-
 

@@ -10,8 +10,8 @@ private enum GraphWindowDataset: String, CaseIterable, Identifiable {
     
     var title: String {
         switch self {
-        case .points: return "Точки"
-        case .roi: return "ROI"
+        case .points: return L("graph.window.dataset.points")
+        case .roi: return L("graph.window.dataset.roi")
         }
     }
 }
@@ -25,9 +25,9 @@ private enum GraphWindowStyle: String, CaseIterable, Identifiable {
     
     var title: String {
         switch self {
-        case .lines: return "Линии"
-        case .linesAndPoints: return "Линии + точки"
-        case .area: return "Площадь"
+        case .lines: return L("graph.window.style.lines")
+        case .linesAndPoints: return L("graph.window.style.lines_points")
+        case .area: return L("graph.window.style.area")
         }
     }
 }
@@ -42,10 +42,10 @@ private enum GraphPalette: String, CaseIterable, Identifiable {
     
     var title: String {
         switch self {
-        case .default: return "Стандартная"
-        case .warm: return "Тёплая"
-        case .cool: return "Холодная"
-        case .mono: return "Монохром"
+        case .default: return L("graph.window.palette.default")
+        case .warm: return L("graph.window.palette.warm")
+        case .cool: return L("graph.window.palette.cool")
+        case .mono: return L("graph.window.palette.mono")
         }
     }
     
@@ -287,7 +287,7 @@ struct GraphWindowView: View {
                     Image(systemName: "books.vertical")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                    Text("Источники")
+                    Text(L("graph.window.sources"))
                         .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Button {
@@ -305,13 +305,13 @@ struct GraphWindowView: View {
                 Divider()
                 
                 HStack(spacing: 8) {
-                    Button("Показать все") {
+                    Button(L("graph.window.show_all")) {
                         showAllSources()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     
-                    Button("Скрыть все") {
+                    Button(L("graph.window.hide_all")) {
                         hideAllSources()
                     }
                     .buttonStyle(.bordered)
@@ -333,10 +333,10 @@ struct GraphWindowView: View {
                                 Image(systemName: "tray")
                                     .font(.system(size: 24))
                                     .foregroundColor(.secondary)
-                                Text("Нет сохранённых спектров")
+                                Text(L("graph.window.empty.no_saved_spectra"))
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
-                                Text("Добавьте точки или ROI\nна изображениях библиотеки")
+                                Text(L("graph.window.empty.add_points_roi"))
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
@@ -394,7 +394,7 @@ struct GraphWindowView: View {
                             .foregroundColor(.secondary)
                     }
                     if !hasSamples {
-                        Text("Нет данных")
+                        Text(L("graph.window.no_data"))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
@@ -417,14 +417,14 @@ struct GraphWindowView: View {
                         Button {
                             showLibraryPanel = true
                         } label: {
-                            Label("Показать библиотеку", systemImage: "sidebar.left")
+                            Label(L("graph.window.show_library"), systemImage: "sidebar.left")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
                     
-                    settingsSection("Данные") {
-                        Picker("Источник", selection: $dataset) {
+                    settingsSection(L("graph.window.section.data")) {
+                        Picker(L("graph.window.source"), selection: $dataset) {
                             ForEach(GraphWindowDataset.allCases) { item in
                                 Text(item.title).tag(item)
                             }
@@ -432,21 +432,21 @@ struct GraphWindowView: View {
                         .pickerStyle(.segmented)
                     }
                     
-                    settingsSection("Отображение") {
-                        Picker("Стиль линий", selection: styleBinding) {
+                    settingsSection(L("graph.window.section.display")) {
+                        Picker(L("graph.window.line_style"), selection: styleBinding) {
                             ForEach(GraphWindowStyle.allCases) { item in
                                 Text(item.title).tag(item)
                             }
                         }
                         
-                        Picker("Палитра", selection: paletteBinding) {
+                        Picker(L("graph.window.palette"), selection: paletteBinding) {
                             ForEach(GraphPalette.allCases) { item in
                                 Text(item.title).tag(item)
                             }
                         }
                         
                         HStack {
-                            Text("Толщина линии")
+                            Text(L("graph.window.line_width"))
                             Spacer()
                             Text(String(format: "%.1f", lineWidth))
                                 .foregroundColor(.secondary)
@@ -456,7 +456,7 @@ struct GraphWindowView: View {
                         
                         if style == .linesAndPoints {
                             HStack {
-                                Text("Размер точек")
+                                Text(L("graph.window.point_size"))
                                 Spacer()
                                 Text(String(format: "%.0f", pointSize))
                                     .foregroundColor(.secondary)
@@ -466,19 +466,19 @@ struct GraphWindowView: View {
                         }
                     }
                     
-                    settingsSection("Ось X") {
-                        Toggle("Авто масштаб", isOn: autoScaleXBinding)
+                    settingsSection(L("graph.window.section.axis_x")) {
+                        Toggle(L("graph.window.auto_scale"), isOn: autoScaleXBinding)
                             .onChange(of: autoScaleX) { auto in
                                 if auto { updateAxisBounds() }
                             }
                         
                         if !autoScaleX {
                             HStack {
-                                Text("Мин")
+                                Text(L("graph.window.min"))
                                 TextField("", value: xMinBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
-                                Text("Макс")
+                                Text(L("graph.window.max"))
                                 TextField("", value: xMaxBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
@@ -487,19 +487,19 @@ struct GraphWindowView: View {
                         }
                     }
                     
-                    settingsSection("Ось Y") {
-                        Toggle("Авто масштаб", isOn: autoScaleYBinding)
+                    settingsSection(L("graph.window.section.axis_y")) {
+                        Toggle(L("graph.window.auto_scale"), isOn: autoScaleYBinding)
                             .onChange(of: autoScaleY) { auto in
                                 if auto { updateAxisBounds() }
                             }
                         
                         if !autoScaleY {
                             HStack {
-                                Text("Мин")
+                                Text(L("graph.window.min"))
                                 TextField("", value: yMinBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
-                                Text("Макс")
+                                Text(L("graph.window.max"))
                                 TextField("", value: yMaxBinding, format: .number)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 70)
@@ -508,9 +508,9 @@ struct GraphWindowView: View {
                         }
                     }
                     
-                    settingsSection("Элементы") {
-                        Toggle("Показать легенду", isOn: showLegendBinding)
-                        Toggle("Показать сетку", isOn: showGridBinding)
+                    settingsSection(L("graph.window.section.elements")) {
+                        Toggle(L("graph.window.show_legend"), isOn: showLegendBinding)
+                        Toggle(L("graph.window.show_grid"), isOn: showGridBinding)
                     }
                     
                     Spacer()
@@ -545,12 +545,12 @@ struct GraphWindowView: View {
                         .font(.system(size: 14))
                         .foregroundColor(.accentColor)
                     
-                    Text("График спектров")
+                    Text(L("graph.window.title"))
                         .font(.system(size: 14, weight: .semibold))
                     
                     Spacer()
                     
-                    Text("\(series.count) серий из \(visibleSourceCount) источн.")
+                    Text(LF("graph.window.header.series_count", series.count, visibleSourceCount))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     
@@ -562,13 +562,13 @@ struct GraphWindowView: View {
     
     private var exportMenu: some View {
         Menu {
-            Button("Экспорт PNG (1800×1200)") { exportGraph(as: .png, scale: 2) }
-            Button("Экспорт PNG (900×600)") { exportGraph(as: .png, scale: 1) }
+            Button(L("graph.window.export.png_large")) { exportGraph(as: .png, scale: 2) }
+            Button(L("graph.window.export.png_small")) { exportGraph(as: .png, scale: 1) }
             Divider()
-            Button("Экспорт PDF") { exportGraph(as: .pdf, scale: 2) }
-            Button("Экспорт JSON") { exportGraph(as: .json, scale: 1) }
+            Button(L("graph.window.export.pdf")) { exportGraph(as: .pdf, scale: 2) }
+            Button(L("graph.window.export.json")) { exportGraph(as: .json, scale: 1) }
         } label: {
-            Label("Экспорт", systemImage: "square.and.arrow.up")
+            Label(L("graph.window.export"), systemImage: "square.and.arrow.up")
                 .labelStyle(.titleAndIcon)
         }
     }
@@ -590,10 +590,10 @@ struct GraphWindowView: View {
                     Image(systemName: "waveform.path")
                         .font(.system(size: 28))
                         .foregroundColor(.secondary)
-                    Text("Нет данных для отображения")
+                    Text(L("graph.window.empty.no_data_to_display"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                    Text("Сохраните точки или области в панели графика")
+                    Text(L("graph.window.empty.save_points_or_regions"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -616,7 +616,7 @@ struct GraphWindowView: View {
             GlassPanel(cornerRadius: 12, padding: 10) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Text("Легенда")
+                        Text(L("graph.window.legend"))
                             .font(.system(size: 12, weight: .semibold))
                         Spacer()
                     }
@@ -657,7 +657,7 @@ struct GraphWindowView: View {
                                             .font(.system(size: 11))
                                             .lineLimit(1)
                                         HStack(spacing: 4) {
-                                            Text("\(item.values.count) точек")
+                                            Text(LF("graph.window.points_count", item.values.count))
                                                 .font(.system(size: 9, design: .monospaced))
                                                 .foregroundColor(.secondary)
                                             if let source = item.sourceName {
@@ -731,7 +731,7 @@ struct GraphWindowView: View {
                     Divider()
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Форма линии")
+                        Text(L("graph.window.line_shape"))
                             .font(.system(size: 10, weight: .medium))
                         Picker("", selection: $linePattern) {
                             ForEach(SeriesLinePattern.allCases) { pattern in
@@ -743,7 +743,7 @@ struct GraphWindowView: View {
                     
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Толщина")
+                            Text(L("graph.window.thickness"))
                             Spacer()
                             Text(String(format: "%.1f", lineWidth))
                                 .foregroundColor(.secondary)
@@ -754,7 +754,7 @@ struct GraphWindowView: View {
                     
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("Прозрачность")
+                            Text(L("graph.window.opacity"))
                             Spacer()
                             Text(String(format: "%.0f%%", opacity * 100))
                                 .foregroundColor(.secondary)
@@ -763,13 +763,13 @@ struct GraphWindowView: View {
                         Slider(value: $opacity, in: 0.1...1.0, step: 0.05)
                     }
                     
-                    Toggle("Показывать точки", isOn: $showPoints)
+                    Toggle(L("graph.window.show_points"), isOn: $showPoints)
                         .font(.system(size: 11))
                     
                     Divider()
                     
                     HStack {
-                        Button("Сбросить") {
+                        Button(L("graph.window.reset")) {
                             onReset()
                             isPresented = false
                         }
@@ -777,7 +777,7 @@ struct GraphWindowView: View {
                         
                         Spacer()
                         
-                        Button("Применить") {
+                        Button(L("graph.window.apply")) {
                             let updated = SeriesStyleOverride(
                                 linePattern: linePattern,
                                 lineWidth: lineWidth,
@@ -838,8 +838,8 @@ struct GraphWindowView: View {
                 }
             }
         }
-        .chartXAxisLabel(series.first?.wavelengths != nil ? "λ (нм)" : "Канал")
-        .chartYAxisLabel("Интенсивность")
+        .chartXAxisLabel(series.first?.wavelengths != nil ? L("graph.axis.wavelength_nm") : L("graph.axis.channel"))
+        .chartYAxisLabel(L("graph.axis.intensity"))
         .chartLegend(.hidden)
         .chartXScale(domain: xDomain)
         .chartYScale(domain: yDomain)
@@ -1187,8 +1187,8 @@ struct GraphWindowView: View {
             panel.allowedContentTypes = [UTType.json]
         }
         panel.nameFieldStringValue = "graph.\(format.fileExtension)"
-        panel.title = "Экспорт графика"
-        panel.message = "Выберите место для сохранения \(format.title)"
+        panel.title = L("graph.window.export.title")
+        panel.message = LF("graph.window.export.message", format.title)
         
         guard panel.runModal() == .OK, let url = panel.url else { return }
         
@@ -1211,7 +1211,7 @@ struct GraphWindowView: View {
             showGrid: showGrid,
             xDomain: xDomain,
             yDomain: yDomain,
-            xAxisLabel: exportSeries.first?.wavelengths != nil ? "λ (нм)" : "Канал"
+            xAxisLabel: exportSeries.first?.wavelengths != nil ? L("graph.axis.wavelength_nm") : L("graph.axis.channel")
         )
         .frame(width: 900 * scale, height: 600 * scale)
         .background(Color.white)
@@ -1320,7 +1320,7 @@ private struct ExportableChartView: View {
             }
         }
         .chartXAxisLabel(xAxisLabel)
-        .chartYAxisLabel("Интенсивность")
+        .chartYAxisLabel(L("graph.axis.intensity"))
         .chartLegend(.hidden)
         .chartXScale(domain: xDomain)
         .chartYScale(domain: yDomain)

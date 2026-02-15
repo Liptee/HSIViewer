@@ -15,6 +15,7 @@ final class GridLibraryWindowManager: NSObject, NSWindowDelegate {
 
         let content = GridLibraryWindowView()
             .environmentObject(appState)
+            .environment(\.locale, appState.appLocale)
 
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(
@@ -24,7 +25,7 @@ final class GridLibraryWindowManager: NSObject, NSWindowDelegate {
             defer: false
         )
         window.contentViewController = hosting
-        window.title = "Grid-библиотека"
+        window.title = appState.localized("window.grid_library.title")
         window.center()
         window.delegate = self
         window.isReleasedWhenClosed = false

@@ -12,16 +12,29 @@ struct PendingExportInfo: Equatable {
 }
 
 enum ExportFormat: String, CaseIterable, Identifiable {
-    case npy = "NumPy (.npy)"
-    case mat = "MATLAB (.mat)"
-    case tiff = "TIFF (.tiff)"
-    case pngChannels = "PNG Channels"
-    case quickPNG = "Быстрый PNG"
-    case maskPNG = "Маска PNG"
-    case maskNpy = "Маска NumPy"
-    case maskMat = "Маска MAT"
+    case npy
+    case mat
+    case tiff
+    case pngChannels
+    case quickPNG
+    case maskPNG
+    case maskNpy
+    case maskMat
     
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .npy: return L("export.format.npy")
+        case .mat: return L("export.format.mat")
+        case .tiff: return L("export.format.tiff")
+        case .pngChannels: return L("export.format.png_channels")
+        case .quickPNG: return L("export.format.quick_png")
+        case .maskPNG: return L("export.format.mask_png")
+        case .maskNpy: return L("export.format.mask_npy")
+        case .maskMat: return L("export.format.mask_mat")
+        }
+    }
     
     var fileExtension: String {
         switch self {
@@ -49,10 +62,17 @@ enum ExportFormat: String, CaseIterable, Identifiable {
 }
 
 enum ExportTab: String, CaseIterable, Identifiable {
-    case cube = "Гиперкуб"
-    case mask = "Маска"
+    case cube
+    case mask
     
     var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .cube: return L("export.tab.cube")
+        case .mask: return L("export.tab.mask")
+        }
+    }
 }
 
 struct ExportView: View {
@@ -87,7 +107,7 @@ struct ExportView: View {
             
             Picker("", selection: $selectedTab) {
                 ForEach(ExportTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(tab.title).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -169,8 +189,8 @@ struct ExportView: View {
             infoBox(
                 icon: "info.circle",
                 text: tiffEnviCompatible
-                    ? "Файл будет сохранён как один TIFF с interleaved каналами (Photometric: minisblack, PlanarConfig: contig)."
-                    : "По умолчанию каждый канал экспортируется отдельным кадром TIFF."
+                    ? L("export.tiff.envi_info")
+                    : L("export.tiff.default_info")
             )
         }
         .padding(12)
@@ -207,7 +227,7 @@ struct ExportView: View {
             
             Picker("", selection: $selectedFormat) {
                 ForEach(ExportFormat.maskFormats) { format in
-                    Text(format.rawValue).tag(format)
+                    Text(format.title).tag(format)
                 }
             }
             .pickerStyle(.segmented)
@@ -223,18 +243,18 @@ struct ExportView: View {
             infoBox(
                 icon: "photo",
                 text: maskExportColored
-                    ? "Цветной PNG с цветами классов. Для визуализации."
-                    : "Одноканальный PNG (grayscale). Значения пикселей = номера классов."
+                    ? L("export.mask.format.png_color_info")
+                    : L("export.mask.format.png_grayscale_info")
             )
         case .maskNpy:
             infoBox(
                 icon: "doc.badge.gearshape",
-                text: "NumPy массив HxW uint8. Значения = номера классов (0 = фон)."
+                text: L("export.mask.format.npy_info")
             )
         case .maskMat:
             infoBox(
                 icon: "doc.badge.gearshape",
-                text: "MATLAB формат с маской и метаданными классов."
+                text: L("export.mask.format.mat_info")
             )
         default:
             EmptyView()
@@ -319,7 +339,7 @@ struct ExportView: View {
             
             Picker("", selection: $selectedFormat) {
                 ForEach(ExportFormat.cubeFormats) { format in
-                    Text(format.rawValue).tag(format)
+                    Text(format.title).tag(format)
                 }
             }
             .pickerStyle(.segmented)
@@ -343,13 +363,13 @@ struct ExportView: View {
             if state.libraryEntries.isEmpty {
                 infoBox(
                     icon: "exclamationmark.triangle",
-                    text: "Библиотека пуста. Добавьте файлы или выключите опцию экспорта библиотеки.",
+                    text: L("export.library.empty_hint"),
                     color: .orange
                 )
             } else if state.exportEntireLibrary {
                 infoBox(
                     icon: "folder",
-                    text: "Будет экспортировано \(state.libraryEntries.count) файлов. Для каждого используется сохранённая обработка из библиотеки."
+                    text: LF("export.library.will_export_files", state.libraryEntries.count)
                 )
             }
         }
@@ -361,27 +381,27 @@ struct ExportView: View {
         case .npy:
             infoBox(
                 icon: "doc.badge.gearshape",
-                text: "NumPy формат. Сохраняет тип данных и порядок (C/Fortran). Совместим с Python/NumPy."
+                text: L("export.format.npy_info")
             )
         case .mat:
             infoBox(
                 icon: "doc.badge.gearshape",
-                text: "MATLAB формат. Сохраняет тип данных. Совместим с MATLAB/Octave. Данные в column-major порядке."
+                text: L("export.format.mat_info")
             )
         case .tiff:
             infoBox(
                 icon: "photo.stack",
-                text: "Экспорт всех каналов в один многокадровый TIFF файл."
+                text: L("export.format.tiff_info")
             )
         case .pngChannels:
             infoBox(
                 icon: "photo.stack",
-                text: "Экспорт каналов как отдельные PNG изображения в выбранную папку. Все типы данных автоматически масштабируются."
+                text: L("export.format.png_channels_info")
             )
         case .quickPNG:
             infoBox(
                 icon: "photo",
-                text: "Быстрый экспорт RGB изображения с выбранным режимом цветосинтеза."
+                text: L("export.format.quick_png_info")
             )
         case .maskPNG, .maskNpy, .maskMat:
             EmptyView()
@@ -438,7 +458,7 @@ struct ExportView: View {
             if state.wavelengths == nil || state.wavelengths?.isEmpty == true {
                 infoBox(
                     icon: "exclamationmark.triangle",
-                    text: "Для корректного цветосинтеза необходимо задать длины волн.",
+                    text: L("export.color_synthesis.needs_wavelengths"),
                     color: .orange
                 )
             }
@@ -466,7 +486,7 @@ struct ExportView: View {
             
             infoBox(
                 icon: "info.circle",
-                text: "Имя переменной в MAT файле (например: 'data', 'cube', 'hypercube')."
+                text: L("export.mat.variable_name_info")
             )
             
             if exportWavelengths {
@@ -482,12 +502,12 @@ struct ExportView: View {
                 if matWavelengthsAsVariable {
                     infoBox(
                         icon: "doc.badge.gearshape",
-                        text: "Wavelengths будут сохранены как переменная '\(matVariableName)_wavelengths' в том же MAT файле."
+                        text: LF("export.mat.wavelengths_as_variable_info", matVariableName)
                     )
                 } else {
                     infoBox(
                         icon: "doc.text",
-                        text: "Wavelengths будут сохранены в отдельный .txt файл."
+                        text: L("export.mat.wavelengths_separate_txt_info")
                     )
                 }
             }
@@ -521,22 +541,22 @@ struct ExportView: View {
             case .npy:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан дополнительный файл '_wavelengths.txt' с \(wavelengths.count) длинами волн (по одному значению на строку)."
+                    text: LF("export.wavelengths.extra_file_per_line", wavelengths.count)
                 )
             case .mat:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан дополнительный файл '_wavelengths.txt' с \(wavelengths.count) длинами волн."
+                    text: LF("export.wavelengths.extra_file", wavelengths.count)
                 )
             case .tiff:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан файл '\(defaultExportBaseName)_wavelengths.txt' с \(wavelengths.count) длинами волн."
+                    text: LF("export.wavelengths.base_file", defaultExportBaseName, wavelengths.count)
                 )
             case .pngChannels:
                 infoBox(
                     icon: "doc.text",
-                    text: "Будет создан файл '\(defaultExportBaseName)_wavelengths.txt' с \(wavelengths.count) длинами волн."
+                    text: LF("export.wavelengths.base_file", defaultExportBaseName, wavelengths.count)
                 )
             case .quickPNG, .maskPNG, .maskNpy, .maskMat:
                 EmptyView()
@@ -544,7 +564,7 @@ struct ExportView: View {
         } else {
             infoBox(
                 icon: "exclamationmark.triangle",
-                text: "Длины волн отсутствуют. Сгенерируйте их в панели управления (Start/Step) перед экспортом.",
+                text: L("export.wavelengths.missing_hint"),
                 color: .orange
             )
         }
@@ -570,7 +590,7 @@ struct ExportView: View {
             } else {
                 infoBox(
                     icon: "exclamationmark.triangle",
-                    text: "Открой гиперкуб или включите экспорт всей библиотеки.",
+                    text: L("export.cube.open_or_enable_library"),
                     color: .orange
                 )
             }
@@ -579,7 +599,7 @@ struct ExportView: View {
     
     private func infoRow(label: String, value: String) -> some View {
         HStack {
-            Text(label + ":")
+            Text("\(state.localized(label)):")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
             Spacer()
@@ -599,7 +619,7 @@ struct ExportView: View {
                 .foregroundColor(color)
                 .frame(width: 16)
             
-            Text(text)
+            Text(state.localized(text))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -665,12 +685,12 @@ struct ExportView: View {
         
         if state.exportEntireLibrary {
             guard !state.libraryEntries.isEmpty else {
-                exportError = "Библиотека пуста"
+                exportError = L("export.error.library_empty")
                 return
             }
         } else {
             guard state.cube != nil else {
-                exportError = "Открой гиперкуб для экспорта"
+                exportError = L("export.error.open_cube")
                 return
             }
         }
@@ -699,7 +719,7 @@ struct ExportView: View {
     
     private func performMaskExport() {
         guard let firstMask = state.maskEditorState.maskLayers.first else {
-            exportError = "Нет маски для экспорта"
+            exportError = L("export.error.no_mask")
             return
         }
         

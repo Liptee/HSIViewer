@@ -11,7 +11,7 @@ struct NormalizationPanel: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
-                Text("Нормализация")
+                Text(state.localized("normalization.title"))
                     .font(.system(size: 11, weight: .semibold))
                 
                 Spacer()
@@ -28,9 +28,9 @@ struct NormalizationPanel: View {
             
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
-                    Picker("Тип:", selection: $state.normalizationType) {
+                    Picker(state.localized("normalization.type"), selection: $state.normalizationType) {
                         ForEach(CubeNormalizationType.allCases) { type in
-                            Text(type.rawValue).tag(type)
+                            Text(type.localizedTitle).tag(type)
                         }
                     }
                     .pickerStyle(.menu)
@@ -52,7 +52,7 @@ struct NormalizationPanel: View {
                         .padding(.vertical, 4)
                     
                     HStack {
-                        Text("Точность:")
+                        Text(state.localized("normalization.precision"))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                         
@@ -67,7 +67,7 @@ struct NormalizationPanel: View {
                     }
                     
                     if state.normalizationParams.computePrecision == .float32 {
-                        Text("Результат нормализации будет сохранён в Float32")
+                        Text(state.localized("normalization.float32_result_hint"))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -79,7 +79,7 @@ struct NormalizationPanel: View {
                         HStack {
                             Image(systemName: "wand.and.stars")
                                 .font(.system(size: 10))
-                            Text("Применить")
+                            Text(state.localized("common.apply"))
                                 .font(.system(size: 11, weight: .medium))
                         }
                         .frame(maxWidth: .infinity)
@@ -105,7 +105,7 @@ struct NormalizationPanel: View {
         switch state.normalizationType {
         case .minMaxCustom:
             VStack(alignment: .leading, spacing: 8) {
-                Text("Параметры:")
+                Text(state.localized("normalization.parameters"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
@@ -133,7 +133,7 @@ struct NormalizationPanel: View {
             }
         case .manualRange:
             VStack(alignment: .leading, spacing: 8) {
-                Text("Исходный диапазон:")
+                Text(state.localized("normalization.source_range"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
@@ -159,7 +159,7 @@ struct NormalizationPanel: View {
                         .font(.system(size: 10, design: .monospaced))
                 }
                 
-                Text("Новый диапазон:")
+                Text(state.localized("normalization.target_range"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
@@ -188,12 +188,12 @@ struct NormalizationPanel: View {
             
         case .percentile:
             VStack(alignment: .leading, spacing: 8) {
-                Text("Параметры:")
+                Text(state.localized("normalization.parameters"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
                 HStack {
-                    Text("Нижний %:")
+                    Text(state.localized("normalization.lower_percent"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .frame(width: 70, alignment: .leading)
@@ -204,7 +204,7 @@ struct NormalizationPanel: View {
                 }
                 
                 HStack {
-                    Text("Верхний %:")
+                    Text(state.localized("normalization.upper_percent"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .frame(width: 70, alignment: .leading)
