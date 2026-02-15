@@ -69,6 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct HSIViewApp: App {
     @StateObject private var appState = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         AppDelegate.sharedState = appState
@@ -131,6 +132,13 @@ struct HSIViewApp: App {
             
             CommandGroup(after: .sidebar) {
                 Divider()
+
+                Button("Основное окно") {
+                    openWindow(id: "main-window")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
                 Button("График") {
                     GraphWindowManager.shared.show(appState: appState)
                 }
