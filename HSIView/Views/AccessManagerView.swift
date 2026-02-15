@@ -3,16 +3,17 @@ import AppKit
 
 struct AccessManagerView: View {
     @ObservedObject private var store = SecurityScopedBookmarkStore.shared
+    @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showAddError = false
     
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("Управление доступами")
+                Text(state.localized("access.title"))
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Button("Готово") {
+                Button(state.localized("common.done")) {
                     dismiss()
                 }
                 .buttonStyle(.bordered)
@@ -26,10 +27,10 @@ struct AccessManagerView: View {
                     Image(systemName: "folder")
                         .font(.system(size: 24))
                         .foregroundColor(.secondary)
-                    Text("Нет сохранённых доступов")
+                    Text(state.localized("access.empty.saved_none"))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
-                    Text("Добавьте папку, чтобы избежать повторных запросов доступа")
+                    Text(state.localized("access.empty.add_hint"))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -44,12 +45,12 @@ struct AccessManagerView: View {
                                 Text(entry.path)
                                     .font(.system(size: 11))
                                     .lineLimit(1)
-                                Text(isActive ? "Доступ активен" : "Доступ утрачён")
+                                Text(isActive ? state.localized("access.status.active") : state.localized("access.status.lost"))
                                     .font(.system(size: 9))
                                     .foregroundColor(isActive ? .secondary : .orange)
                             }
                             Spacer()
-                            Button("Удалить") {
+                            Button(state.localized("common.remove")) {
                                 store.remove(entry)
                             }
                             .buttonStyle(.borderless)
@@ -62,7 +63,7 @@ struct AccessManagerView: View {
             }
             
             HStack {
-                Button("Добавить папку…") {
+                Button(state.localized("access.add_folder")) {
                     addFolder()
                 }
                 .buttonStyle(.borderedProminent)
@@ -73,17 +74,17 @@ struct AccessManagerView: View {
         }
         .padding(16)
         .frame(minWidth: 520, minHeight: 320)
-        .alert("Не удалось сохранить доступ", isPresented: $showAddError) {
-            Button("ОК", role: .cancel) {}
+        .alert(state.localized("access.alert.save_failed.title"), isPresented: $showAddError) {
+            Button(state.localized("common.ok"), role: .cancel) {}
         } message: {
-            Text("Попробуйте выбрать другую папку или проверьте права доступа.")
+            Text(state.localized("access.alert.save_failed.message"))
         }
     }
     
     private func addFolder() {
         let panel = NSOpenPanel()
-        panel.message = "Выберите папку, к которой нужно сохранить постоянный доступ"
-        panel.prompt = "Добавить"
+        panel.message = state.localized("access.panel.select_folder.message")
+        panel.prompt = state.localized("access.panel.select_folder.prompt_add")
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

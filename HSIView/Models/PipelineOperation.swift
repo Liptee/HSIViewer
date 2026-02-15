@@ -15,6 +15,10 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case spectralAlignment = "Спектральное выравнивание"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
     
     var iconName: String {
         switch self {
@@ -48,29 +52,29 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .normalization:
-            return "Применить нормализацию к данным"
+            return L("Применить нормализацию к данным")
         case .channelwiseNormalization:
-            return "Применить нормализацию отдельно к каждому каналу"
+            return L("Применить нормализацию отдельно к каждому каналу")
         case .dataTypeConversion:
-            return "Изменить тип данных"
+            return L("Изменить тип данных")
         case .clipping:
-            return "Ограничить значения диапазоном"
+            return L("Ограничить значения диапазоном")
         case .rotation:
-            return "Повернуть изображение на 90°, 180° или 270°"
+            return L("Повернуть изображение на 90°, 180° или 270°")
         case .transpose:
-            return "Переставить оси массива в выбранный порядок HWC"
+            return L("Переставить оси массива в выбранный порядок HWC")
         case .resize:
-            return "Изменить размер пространственных измерений"
+            return L("Изменить размер пространственных измерений")
         case .spatialCrop:
-            return "Обрезать изображение по пространственным границам"
+            return L("Обрезать изображение по пространственным границам")
         case .spectralTrim:
-            return "Обрезать спектральный диапазон по каналам"
+            return L("Обрезать спектральный диапазон по каналам")
         case .calibration:
-            return "Калибровка по белой и/или чёрной точке"
+            return L("Калибровка по белой и/или чёрной точке")
         case .spectralInterpolation:
-            return "Изменить спектральное разрешение по длинам волн"
+            return L("Изменить спектральное разрешение по длинам волн")
         case .spectralAlignment:
-            return "Выровнять каналы по эталонному каналу"
+            return L("Выровнять каналы по эталонному каналу")
         }
     }
 }
@@ -110,6 +114,10 @@ enum ResizeAlgorithm: String, CaseIterable, Identifiable {
     case lanczos = "Ланцош"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 enum ResizeComputationPrecision: String, CaseIterable, Identifiable {
@@ -320,6 +328,10 @@ enum CalibrationScanDirection: String, CaseIterable, Identifiable {
     case topToBottom = "Сверху вниз"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 struct CalibrationRefData: Equatable {
@@ -335,7 +347,7 @@ struct CalibrationRefData: Equatable {
     static func from(refCube: HyperCube, expectedChannels: Int, sourceName: String) -> Result<CalibrationRefData, CalibrationRefError> {
         let dims = [refCube.dims.0, refCube.dims.1, refCube.dims.2]
         guard expectedChannels > 0 else {
-            return .failure(CalibrationRefError("Неизвестное число каналов"))
+            return .failure(CalibrationRefError(L("Неизвестное число каналов")))
         }
         
         let channelAxes = dims.enumerated().compactMap { index, value in
@@ -343,26 +355,26 @@ struct CalibrationRefData: Equatable {
         }
         
         guard let channelAxis = channelAxes.first else {
-            return .failure(CalibrationRefError("REF не совпадает с числом каналов (\(expectedChannels))"))
+            return .failure(CalibrationRefError(LF("pipeline.calibration.ref_channels_mismatch", expectedChannels)))
         }
         
         let remainingAxes = [0, 1, 2].filter { $0 != channelAxis }
         let scanAxisCandidates = remainingAxes.filter { dims[$0] > 1 }
         
         guard scanAxisCandidates.count == 1 else {
-            return .failure(CalibrationRefError("REF должен быть 2D (B×W). Проверьте размеры файла."))
+            return .failure(CalibrationRefError(L("REF должен быть 2D (B×W). Проверьте размеры файла.")))
         }
         
         let scanAxis = scanAxisCandidates[0]
         let otherAxis = remainingAxes.first { $0 != scanAxis } ?? channelAxis
         
         if dims[otherAxis] != 1 {
-            return .failure(CalibrationRefError("REF должен быть 2D (B×W) с третьей размерностью = 1"))
+            return .failure(CalibrationRefError(L("REF должен быть 2D (B×W) с третьей размерностью = 1")))
         }
         
         let scanLength = dims[scanAxis]
         guard scanLength > 0 else {
-            return .failure(CalibrationRefError("REF имеет пустую ширину"))
+            return .failure(CalibrationRefError(L("REF имеет пустую ширину")))
         }
         
         var values = [Double](repeating: 0, count: expectedChannels * scanLength)
@@ -410,7 +422,7 @@ struct SpectrumSampleSnapshot: Equatable, Identifiable {
     let displayName: String?
     
     var effectiveName: String {
-        displayName ?? "Точка (\(pixelX), \(pixelY))"
+        displayName ?? LF("pipeline.sample.point_name", pixelX, pixelY)
     }
 }
 
@@ -446,11 +458,11 @@ struct CalibrationParameters: Equatable {
     
     var summaryText: String {
         var parts: [String] = []
-        if whiteRef != nil { parts.append("белая REF") }
-        if whiteRef == nil && whiteSpectrum != nil { parts.append("белая") }
-        if blackRef != nil { parts.append("чёрная REF") }
-        if blackRef == nil && blackSpectrum != nil { parts.append("чёрная") }
-        if parts.isEmpty { return "Не настроено" }
+        if whiteRef != nil { parts.append(L("белая REF")) }
+        if whiteRef == nil && whiteSpectrum != nil { parts.append(L("белая")) }
+        if blackRef != nil { parts.append(L("чёрная REF")) }
+        if blackRef == nil && blackSpectrum != nil { parts.append(L("чёрная")) }
+        if parts.isEmpty { return L("Не настроено") }
         return parts.joined(separator: " + ")
     }
     
@@ -468,6 +480,10 @@ enum SpectralAlignmentMethod: String, CaseIterable, Identifiable {
     case hybrid = "Гибридный"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 enum SpectralAlignmentMetric: String, CaseIterable, Identifiable {
@@ -562,15 +578,15 @@ struct SpectralAlignmentParameters: Equatable {
     func formattedEstimatedTime(channelCount: Int) -> String {
         let seconds = estimatedTimeSeconds(channelCount: channelCount)
         if seconds < 60 {
-            return "~\(Int(seconds)) сек"
+            return LF("pipeline.time.about_seconds", Int(seconds))
         } else if seconds < 3600 {
             let minutes = Int(seconds / 60)
             let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
-            return "~\(minutes) мин \(secs) сек"
+            return LF("pipeline.time.about_minutes_seconds", minutes, secs)
         } else {
             let hours = Int(seconds / 3600)
             let minutes = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
-            return "~\(hours) ч \(minutes) мин"
+            return LF("pipeline.time.about_hours_minutes", hours, minutes)
         }
     }
     
@@ -745,33 +761,33 @@ struct PipelineOperation: Identifiable, Equatable {
     var displayName: String {
         switch type {
         case .normalization, .channelwiseNormalization:
-            return normalizationType?.rawValue ?? type.rawValue
+            return normalizationType?.localizedTitle ?? type.localizedTitle
         case .dataTypeConversion:
-            return targetDataType?.rawValue ?? "Тип данных"
+            return targetDataType?.rawValue ?? L("Тип данных")
         case .clipping:
-            return "Клиппинг"
+            return L("Клиппинг")
         case .rotation:
-            return "Поворот \(rotationAngle?.rawValue ?? "")"
+            return LF("pipeline.operation.display.rotation", rotationAngle?.rawValue ?? "")
         case .transpose:
             if let params = transposeParameters {
-                return "Транспонирование в \(params.normalizedOrder)"
+                return LF("pipeline.operation.display.transpose_to", params.normalizedOrder)
             }
-            return "Транспонирование"
+            return L("Транспонирование")
         case .resize:
             if let params = resizeParameters {
-                return "Ресайз до \(params.targetWidth)×\(params.targetHeight) (\(params.algorithm.rawValue))"
+                return LF("pipeline.operation.display.resize_to", params.targetWidth, params.targetHeight, params.algorithm.localizedTitle)
             }
-            return "Изменение размера"
+            return L("Изменение размера")
         case .spatialCrop:
-            return "Обрезка области"
+            return L("Обрезка области")
         case .spectralTrim:
-            return "Обрезка спектра"
+            return L("Обрезка спектра")
         case .calibration:
-            return "Калибровка"
+            return L("Калибровка")
         case .spectralInterpolation:
-            return "Интерполяция спектра"
+            return L("Интерполяция спектра")
         case .spectralAlignment:
-            return "Спектральное выравнивание"
+            return L("Спектральное выравнивание")
         }
     }
     
@@ -779,10 +795,10 @@ struct PipelineOperation: Identifiable, Equatable {
         switch type {
         case .normalization, .channelwiseNormalization:
             guard let normType = normalizationType else { return "" }
-            let prefix = type == .channelwiseNormalization ? "По каналам: " : ""
+            let prefix = type == .channelwiseNormalization ? L("По каналам: ") : ""
             switch normType {
             case .none:
-                return prefix + "Без нормализации"
+                    return prefix + L("Без нормализации")
             case .minMax:
                 return prefix + "[0, 1]"
             case .minMaxCustom:
@@ -794,7 +810,7 @@ struct PipelineOperation: Identifiable, Equatable {
                 if let params = normalizationParams {
                     return prefix + String(format: "[%.2f, %.2f] → [%.2f, %.2f]", params.sourceMin, params.sourceMax, params.targetMin, params.targetMax)
                 }
-                return prefix + "Диапазон"
+                return prefix + L("Диапазон")
             case .percentile:
                 if let params = normalizationParams {
                     return prefix + String(format: "%.0f%%-%.0f%%", params.lowerPercentile, params.upperPercentile)
@@ -819,52 +835,52 @@ struct PipelineOperation: Identifiable, Equatable {
             if let params = clippingParams {
                 return String(format: "[%.3f, %.3f]", params.lower, params.upper)
             }
-            return "Настройте диапазон"
+            return L("Настройте диапазон")
         case .rotation:
-            return "По часовой стрелке"
+            return L("По часовой стрелке")
         case .transpose:
-            guard let params = transposeParameters else { return "Введите порядок HWC" }
+            guard let params = transposeParameters else { return L("Введите порядок HWC") }
             guard let target = params.targetLayout else {
-                return "Порядок: \(params.order) (некорректно)"
+                return LF("pipeline.operation.details.invalid_order", params.order)
             }
             return "\(layout.rawValue) → \(target.rawValue)"
         case .resize:
             if let params = resizeParameters {
-                return "До \(params.targetWidth)×\(params.targetHeight), \(params.algorithm.rawValue)"
+                return LF("pipeline.operation.details.resize_to", params.targetWidth, params.targetHeight, params.algorithm.localizedTitle)
             }
-            return "Изменение размера"
+            return L("Изменение размера")
         case .spatialCrop:
             if let params = cropParameters {
                 var text = "x: \(params.left)–\(params.right) px, y: \(params.top)–\(params.bottom) px"
                 if let auto = params.autoCropResult {
                     let scoreText = String(format: auto.metric == .ssim ? "%.4f" : "%.6f", auto.bestScore)
-                    text += " • авто \(auto.metric.rawValue): \(scoreText)"
+                    text += LF("pipeline.operation.details.auto_metric", L(auto.metric.rawValue), scoreText)
                 }
                 return text
             }
-            return "Настройте границы"
+            return L("Настройте границы")
         case .spectralTrim:
             if let params = spectralTrimParams {
                 let count = max(0, params.endChannel - params.startChannel + 1)
-                return "каналы \(params.startChannel)–\(params.endChannel) (\(count))"
+                return LF("pipeline.operation.details.channels_range_count", params.startChannel, params.endChannel, count)
             }
-            return "Настройте диапазон"
+            return L("Настройте диапазон")
         case .calibration:
-            return calibrationParams?.summaryText ?? "Не настроено"
+            return calibrationParams?.summaryText ?? L("Не настроено")
         case .spectralInterpolation:
             if let params = spectralInterpolationParams {
                 if let customWavelengths = params.targetWavelengths, !customWavelengths.isEmpty {
-                    return "\(customWavelengths.count) каналов (txt), \(params.method.rawValue)"
+                    return LF("pipeline.operation.details.spectral_interp_file_channels", customWavelengths.count, params.method.rawValue)
                 }
-                return "\(params.targetChannelCount) каналов, \(params.method.rawValue)"
+                return LF("pipeline.operation.details.spectral_interp_channels", params.targetChannelCount, params.method.rawValue)
             }
-            return "Настройте параметры"
+            return L("Настройте параметры")
         case .spectralAlignment:
             if let params = spectralAlignmentParams {
                 let status = params.isComputed ? "✓" : "⏳"
-                return "\(status) канал \(params.referenceChannel), \(params.metric.rawValue)"
+                return LF("pipeline.operation.details.spectral_alignment_status", status, params.referenceChannel, L(params.metric.rawValue))
             }
-            return "Настройте параметры"
+            return L("Настройте параметры")
         }
     }
     
@@ -2038,7 +2054,7 @@ class CubeAutoSpatialCropper {
             progressCallback?(
                 SpatialAutoCropProgressInfo(
                     progress: progress,
-                    message: "Перебор обрезок: \(label)=\(bestText)",
+                    message: LF("pipeline.auto_crop.progress.iteration", label, bestText),
                     evaluatedCandidates: evaluatedCandidates,
                     totalCandidates: max(estimatedTotalCandidates, evaluatedCandidates),
                     bestCrop: bestCrop
@@ -2142,7 +2158,7 @@ class CubeAutoSpatialCropper {
         progressCallback?(
             SpatialAutoCropProgressInfo(
                 progress: 0.0,
-                message: "Подготовка данных для автоподбора…",
+                message: L("Подготовка данных для автоподбора…"),
                 evaluatedCandidates: 0,
                 totalCandidates: max(estimatedTotalCandidates, 1),
                 bestCrop: nil
@@ -2220,7 +2236,7 @@ class CubeAutoSpatialCropper {
         progressCallback?(
             SpatialAutoCropProgressInfo(
                 progress: 1.0,
-                message: "Автоподбор завершён",
+                message: L("Автоподбор завершён"),
                 evaluatedCandidates: evaluatedCandidates,
                 totalCandidates: max(estimatedTotalCandidates, evaluatedCandidates),
                 bestCrop: resultCrop
@@ -3356,11 +3372,11 @@ class CubeSpectralAligner {
         guard parameters.referenceChannel >= 0, parameters.referenceChannel < channels else { return cube }
         
         if let cached = parameters.cachedHomographies, cached.count == channels, parameters.isComputed {
-            progressCallback?(AlignmentProgressInfo(progress: 1.0, message: "Применение сохранённых параметров…", currentChannel: 0, totalChannels: channels, stage: "apply"))
+            progressCallback?(AlignmentProgressInfo(progress: 1.0, message: L("Применение сохранённых параметров…"), currentChannel: 0, totalChannels: channels, stage: "apply"))
             return applyHomographies(cube: cube, homographies: cached, axes: axes, layout: layout)
         }
         
-        progressCallback?(AlignmentProgressInfo(progress: 0.0, message: "Извлечение референсного канала \(parameters.referenceChannel + 1)…", currentChannel: 0, totalChannels: channels, stage: "extract_ref"))
+        progressCallback?(AlignmentProgressInfo(progress: 0.0, message: LF("pipeline.alignment.progress.extract_reference_channel", parameters.referenceChannel + 1), currentChannel: 0, totalChannels: channels, stage: "extract_ref"))
         
         let refChannel = extractChannel(cube: cube, channelIndex: parameters.referenceChannel, axes: axes)
         var homographies: [[Double]] = []
@@ -3381,7 +3397,7 @@ class CubeSpectralAligner {
             let progress = Double(processedChannels) / Double(channelsToProcess) * 0.9
             progressCallback?(AlignmentProgressInfo(
                 progress: progress,
-                message: "Канал \(ch + 1)/\(channels): извлечение данных",
+                message: LF("pipeline.alignment.progress.channel_extract_data", ch + 1, channels),
                 currentChannel: ch + 1,
                 totalChannels: channels,
                 stage: "extract"
@@ -3391,7 +3407,7 @@ class CubeSpectralAligner {
             
             progressCallback?(AlignmentProgressInfo(
                 progress: progress + 0.02,
-                message: "Канал \(ch + 1)/\(channels): поиск гомографии",
+                message: LF("pipeline.alignment.progress.channel_search_homography", ch + 1, channels),
                 currentChannel: ch + 1,
                 totalChannels: channels,
                 stage: "homography"
@@ -3423,7 +3439,7 @@ class CubeSpectralAligner {
             let scoreStr = String(format: "%.4f", score)
             progressCallback?(AlignmentProgressInfo(
                 progress: Double(processedChannels) / Double(channelsToProcess) * 0.9,
-                message: "Канал \(ch + 1)/\(channels): \(parameters.metric.rawValue) = \(scoreStr)",
+                message: LF("pipeline.alignment.progress.channel_metric_score", ch + 1, channels, L(parameters.metric.rawValue), scoreStr),
                 currentChannel: ch + 1,
                 totalChannels: channels,
                 stage: "done"
@@ -3443,9 +3459,9 @@ class CubeSpectralAligner {
         )
         parameters.isComputed = true
         
-        progressCallback?(AlignmentProgressInfo(progress: 0.95, message: "Применение гомографий к \(channels) каналам…", currentChannel: channels, totalChannels: channels, stage: "apply"))
+        progressCallback?(AlignmentProgressInfo(progress: 0.95, message: LF("pipeline.alignment.progress.apply_homographies_to_channels", channels), currentChannel: channels, totalChannels: channels, stage: "apply"))
         let result = applyHomographies(cube: cube, homographies: homographies, axes: axes, layout: layout)
-        progressCallback?(AlignmentProgressInfo(progress: 1.0, message: "Завершено! Средний \(parameters.metric.rawValue): \(String(format: "%.4f", avgScore))", currentChannel: channels, totalChannels: channels, stage: "complete"))
+        progressCallback?(AlignmentProgressInfo(progress: 1.0, message: LF("pipeline.alignment.progress.completed_average", L(parameters.metric.rawValue), String(format: "%.4f", avgScore)), currentChannel: channels, totalChannels: channels, stage: "complete"))
         
         return result
     }

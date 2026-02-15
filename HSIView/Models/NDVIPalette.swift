@@ -7,13 +7,15 @@ enum NDIndexPreset: String, CaseIterable, Identifiable {
     
     var id: String { rawValue }
     
-    var title: String {
+    var localizedTitle: String {
         switch self {
-        case .ndvi: return "NDVI (растительность)"
-        case .ndsi: return "NDSI (снег)"
-        case .wdvi: return "WDVI (почвенная линия)"
+        case .ndvi: return L("NDVI (растительность)")
+        case .ndsi: return L("NDSI (снег)")
+        case .wdvi: return L("WDVI (почвенная линия)")
         }
     }
+
+    var title: String { localizedTitle }
 }
 
 enum NDPalette: String, CaseIterable, Identifiable {
@@ -22,4 +24,8 @@ enum NDPalette: String, CaseIterable, Identifiable {
     case binaryVegetation = "Бинарная"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }

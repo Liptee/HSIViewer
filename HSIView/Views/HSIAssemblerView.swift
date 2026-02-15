@@ -21,7 +21,7 @@ struct HSIAssemblerView: View {
 
         var title: String {
             switch self {
-            case .sequential: return "по строкам"
+            case .sequential: return L("assembler.wavelength.notation.sequential")
             case .mapped: return "name:value"
             }
         }
@@ -62,21 +62,21 @@ struct HSIAssemblerView: View {
         var errorDescription: String? {
             switch self {
             case .noMaterials:
-                return "Сначала добавьте материалы"
+                return L("assembler.error.no_materials")
             case .fileReadFailed:
-                return "Не удалось прочитать файл длин волн"
+                return L("assembler.error.wavelength_file_read_failed")
             case .emptyFile:
-                return "Файл длин волн пуст"
+                return L("assembler.error.wavelength_file_empty")
             case .mixedNotation:
-                return "В файле смешаны разные нотации. Используйте один формат на весь файл."
+                return L("assembler.error.mixed_notation")
             case .invalidValue(let line):
-                return "Некорректное значение длины волны в строке \(line)"
+                return LF("assembler.error.invalid_wavelength_value_line", line)
             case .countMismatch(let expected, let actual):
-                return "Количество длин волн (\(actual)) не совпадает с количеством материалов (\(expected))"
+                return LF("assembler.error.wavelength_count_mismatch", actual, expected)
             case .invalidMapping(let line):
-                return "Некорректная строка сопоставления в строке \(line). Ожидается формат name:value"
+                return LF("assembler.error.invalid_mapping_line", line)
             case .noMatchingFiles:
-                return "В файле нет совпадений по именам материалов"
+                return L("assembler.error.no_matching_files")
             }
         }
     }
@@ -88,9 +88,9 @@ struct HSIAssemblerView: View {
         var errorDescription: String? {
             switch self {
             case .noSupportedFiles:
-                return "В источнике нет поддерживаемых файлов"
+                return L("assembler.error.source_no_supported_files")
             case .importFailure(let message):
-                return "Ошибка импорта источника: \(message)"
+                return LF("assembler.error.source_import_failure", message)
             }
         }
     }
@@ -147,10 +147,10 @@ struct HSIAssemblerView: View {
 
     private var assembleValidationMessage: String? {
         if hasInconsistentResolution {
-            return "Размеры материалов различаются. Приведите все изображения к одному разрешению."
+            return L("assembler.validation.inconsistent_resolution")
         }
         if hasNonGrayscaleMaterials {
-            return "Есть цветные материалы. Дважды кликните по «Палитра», чтобы разбить их на каналы."
+            return L("assembler.validation.non_grayscale")
         }
         return nil
     }
@@ -194,10 +194,10 @@ struct HSIAssemblerView: View {
             }
             Button("Оставить", role: .cancel) {}
         } message: { source in
-            Text("В папке '\(source.displayName)' нет PNG/JPG/BMP файлов. Удалить этот источник из списка?")
+            Text(LF("assembler.alert.empty_source_message", source.displayName))
         }
         .confirmationDialog(
-            "Выберите файл длин волн\(wavelengthChoiceSourceName.map { " для '\($0)'" } ?? "")",
+            wavelengthChoiceDialogTitle,
             isPresented: $showWavelengthChoiceDialog,
             titleVisibility: .visible
         ) {
@@ -221,14 +221,21 @@ struct HSIAssemblerView: View {
         }
     }
 
+    private var wavelengthChoiceDialogTitle: String {
+        if let sourceName = wavelengthChoiceSourceName {
+            return LF("assembler.dialog.choose_wavelength_file_for_source", sourceName)
+        }
+        return L("assembler.dialog.choose_wavelength_file")
+    }
+
     private var header: some View {
         HStack {
-            Text("Сборщик ГСИ")
+            Text(L("assembler.title"))
                 .font(.system(size: 20, weight: .semibold))
 
             Spacer()
 
-            Text("Материалов: \(materials.count)")
+            Text(LF("assembler.header.materials_count", materials.count))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.secondary)
         }
@@ -254,7 +261,7 @@ struct HSIAssemblerView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView()
                         .progressViewStyle(.linear)
-                    Text(bulkBuildProgressText ?? "Массовая сборка…")
+                    Text(bulkBuildProgressText ?? L("assembler.progress.bulk_building"))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -404,7 +411,7 @@ struct HSIAssemblerView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: importProgress, total: 1.0)
                         .progressViewStyle(.linear)
-                    Text(importProgressText ?? "Импорт…")
+                    Text(importProgressText ?? L("assembler.progress.importing"))
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -500,8 +507,8 @@ struct HSIAssemblerView: View {
                 detailRow(
                     label: "Длина волны",
                     value: selectedMaterial.wavelengthText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? "не задана"
-                        : "\(selectedMaterial.wavelengthText) нм"
+                        ? L("assembler.wavelength.not_set")
+                        : LF("assembler.wavelength.value_nm", selectedMaterial.wavelengthText)
                 )
             } else {
                 Spacer()
@@ -612,7 +619,7 @@ struct HSIAssemblerView: View {
 
     private func parameterBadge(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label)
+            Text(state.localized(label))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
             Text(value)
@@ -659,7 +666,7 @@ struct HSIAssemblerView: View {
 
     private func detailRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label)
+            Text(state.localized(label))
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
             Text(value)
@@ -673,7 +680,7 @@ struct HSIAssemblerView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.prompt = "Добавить"
+        panel.prompt = L("assembler.action.add")
 
         guard panel.runModal() == .OK else { return }
 
@@ -688,7 +695,7 @@ struct HSIAssemblerView: View {
         }
 
         if added > 0 {
-            infoMessage = "Добавлено источников: \(added)"
+            infoMessage = LF("assembler.info.sources_added", added)
             errorMessage = nil
             if selectedSourceID == nil {
                 selectedSourceID = sources.first?.id
@@ -708,7 +715,7 @@ struct HSIAssemblerView: View {
 
         activeSourceID = source.id
         selectedSourceID = source.id
-        infoMessage = "Открывается источник '\(source.displayName)'…"
+        infoMessage = LF("assembler.info.opening_source", source.displayName)
         errorMessage = nil
 
         importMaterials(from: imageURLs, replacingExisting: true) { imported, firstError in
@@ -752,7 +759,7 @@ struct HSIAssemblerView: View {
 
     private func presentBulkBuildOptions() {
         guard activeSourceID != nil, !materials.isEmpty else {
-            errorMessage = "Откройте один источник, настройте материалы и повторите массовую сборку"
+            errorMessage = L("assembler.error.open_one_source_before_bulk")
             infoMessage = nil
             return
         }
@@ -765,7 +772,7 @@ struct HSIAssemblerView: View {
         let targets = sources
 
         guard !targets.isEmpty else {
-            infoMessage = "Нет источников для массовой сборки"
+            infoMessage = L("assembler.info.no_sources_for_bulk")
             errorMessage = nil
             return
         }
@@ -779,7 +786,7 @@ struct HSIAssemblerView: View {
             let loweredOrder = templateOrder.map { $0.lowercased() }
             templateNamesLowercased = Set(loweredOrder)
             guard templateNamesLowercased.count == templateOrder.count else {
-                errorMessage = "В текущих материалах есть дублирующиеся имена файлов, массовая сборка по шаблону невозможна"
+                errorMessage = L("assembler.error.duplicate_names_in_template")
                 infoMessage = nil
                 return
             }
@@ -789,7 +796,7 @@ struct HSIAssemblerView: View {
         }
 
         isBulkBuilding = true
-        bulkBuildProgressText = "Подготовка…"
+        bulkBuildProgressText = L("assembler.progress.preparing")
         errorMessage = nil
         infoMessage = nil
 
@@ -799,7 +806,7 @@ struct HSIAssemblerView: View {
         func finish() {
             isBulkBuilding = false
             bulkBuildProgressText = nil
-            infoMessage = "Массовая сборка завершена: успешно \(successCount), пропущено \(failures.count)"
+            infoMessage = LF("assembler.info.bulk_completed", successCount, failures.count)
             if failures.isEmpty {
                 errorMessage = nil
             } else {
@@ -842,7 +849,7 @@ struct HSIAssemblerView: View {
                         let sourceNamesLowercased = bundle.materials.map { $0.fileName.lowercased() }
                         let uniqueSourceNamesLowercased = Set(sourceNamesLowercased)
                         guard uniqueSourceNamesLowercased.count == sourceNamesLowercased.count else {
-                            failures.append("\(source.displayName): есть дублирующиеся имена файлов")
+                            failures.append(LF("assembler.failure.duplicate_names", source.displayName))
                             process(index: index + 1)
                             return
                         }
@@ -854,7 +861,7 @@ struct HSIAssemblerView: View {
                         for name in templateOrder {
                             let normalizedName = name.lowercased()
                             guard var material = byName[normalizedName] else {
-                                failures.append("\(source.displayName): отсутствует файл \(name)")
+                                failures.append(LF("assembler.failure.missing_file", source.displayName, name))
                                 process(index: index + 1)
                                 return
                             }
@@ -895,7 +902,7 @@ struct HSIAssemblerView: View {
                         }
 
                         guard let finalMaterials = assembledMaterials else {
-                            failures.append("\(source.displayName): нет подходящего txt с длинами волн")
+                            failures.append(LF("assembler.failure.no_matching_txt", source.displayName))
                             process(index: index + 1)
                             return
                         }
@@ -1024,7 +1031,7 @@ struct HSIAssemblerView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.prompt = "Импортировать"
+        panel.prompt = L("assembler.action.import")
         panel.allowedContentTypes = HSIAssemblyMaterialLoader.supportedUTTypes
 
         guard panel.runModal() == .OK else { return }
@@ -1042,14 +1049,14 @@ struct HSIAssemblerView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Загрузить"
+        panel.prompt = L("assembler.action.load")
         panel.allowedContentTypes = [.plainText, UTType(filenameExtension: "txt") ?? .plainText]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
             let applied = try applyWavelengthFile(url: url, autoSort: true)
-            infoMessage = "Длины волн загружены: обновлено \(applied) материалов"
+            infoMessage = LF("assembler.info.wavelengths_loaded_updated", applied)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -1098,7 +1105,7 @@ struct HSIAssemblerView: View {
             .filter { seenPaths.insert($0.path).inserted }
 
         guard !candidates.isEmpty else {
-            infoMessage = "Новых файлов для импорта нет"
+            infoMessage = L("assembler.info.no_new_files_for_import")
             errorMessage = nil
             completion?([], nil)
             return
@@ -1106,7 +1113,7 @@ struct HSIAssemblerView: View {
 
         isImporting = true
         importProgress = 0
-        importProgressText = "Импорт: 0/\(candidates.count)"
+        importProgressText = LF("assembler.progress.import", 0, candidates.count)
         errorMessage = nil
         infoMessage = nil
 
@@ -1127,7 +1134,7 @@ struct HSIAssemblerView: View {
                 let completed = index + 1
                 DispatchQueue.main.async {
                     importProgress = Double(completed) / Double(candidates.count)
-                    importProgressText = "Импорт: \(completed)/\(candidates.count)"
+                    importProgressText = LF("assembler.progress.import", completed, candidates.count)
                 }
             }
 
@@ -1148,10 +1155,10 @@ struct HSIAssemblerView: View {
                     }
 
                     if let firstError {
-                        infoMessage = "Добавлено: \(imported.count). Часть файлов пропущена"
+                        infoMessage = LF("assembler.info.files_added_partial", imported.count)
                         errorMessage = firstError
                     } else {
-                        infoMessage = "Добавлено файлов: \(imported.count)"
+                        infoMessage = LF("assembler.info.files_added", imported.count)
                         errorMessage = nil
                     }
                 } else if let firstError {
@@ -1167,7 +1174,7 @@ struct HSIAssemblerView: View {
     private func applyWavelengthCandidateToCurrent(_ candidate: WavelengthFileCandidate) {
         do {
             let applied = try applyWavelengthFile(url: candidate.url, autoSort: true)
-            infoMessage = "Применён файл длин волн: \(candidate.url.lastPathComponent) (\(applied))"
+            infoMessage = LF("assembler.info.applied_wavelength_file", candidate.url.lastPathComponent, applied)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -1306,7 +1313,7 @@ struct HSIAssemblerView: View {
         state.assembleCubeFromMaterials(materials, openAfterAssemble: true) { result in
             switch result {
             case .success(let url):
-                infoMessage = "Новый ГСИ добавлен в библиотеку: \(url.lastPathComponent)"
+                infoMessage = LF("assembler.info.new_hsi_added", url.lastPathComponent)
             case .failure(let error):
                 errorMessage = error.localizedDescription
             }
@@ -1316,7 +1323,7 @@ struct HSIAssemblerView: View {
     private func sortByWavelengths(showMessage: Bool = true) {
         materials = sortMaterialsByWavelength(materials)
         if showMessage {
-            infoMessage = "Материалы отсортированы по длинам волн"
+            infoMessage = L("assembler.info.materials_sorted_by_wavelength")
             errorMessage = nil
         }
     }
@@ -1362,7 +1369,7 @@ struct HSIAssemblerView: View {
             materials.remove(at: index)
             materials.insert(contentsOf: channels, at: index)
             selectedMaterialID = channels.first?.id
-            infoMessage = "\(material.fileName) разбит на каналы"
+            infoMessage = LF("assembler.info.material_split_channels", material.fileName)
             errorMessage = nil
         case .failure(let error):
             errorMessage = error.localizedDescription

@@ -256,8 +256,8 @@ final class AppWorkingDirectory {
 
         let promptBlock = {
             let panel = NSOpenPanel()
-            panel.message = "Выберите папку для служебных файлов HSIView. Внутри будет создана папка HSIView."
-            panel.prompt = "Выбрать"
+            panel.message = L("Выберите папку для служебных файлов HSIView. Внутри будет создана папка HSIView.")
+            panel.prompt = L("Выбрать")
             panel.allowsMultipleSelection = false
             panel.canChooseDirectories = true
             panel.canChooseFiles = false

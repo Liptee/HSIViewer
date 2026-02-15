@@ -36,16 +36,16 @@ struct LibraryPanel: View {
             let existingIDs = Set(entries.map(\.id))
             selectedEntryIDs = selectedEntryIDs.intersection(existingIDs)
         }
-        .alert("Переименовать куб", isPresented: $isRenaming) {
-            TextField("Название", text: $renameText)
-            Button("Сохранить") {
+        .alert(state.localized("library.rename_cube.title"), isPresented: $isRenaming) {
+            TextField(state.localized("library.rename_cube.field_name"), text: $renameText)
+            Button(state.localized("common.save")) {
                 commitRename()
             }
-            Button("Отмена", role: .cancel) {
+            Button(state.localized("common.cancel"), role: .cancel) {
                 cancelRename()
             }
         } message: {
-            Text("Введите новое имя для выбранного куба.")
+            Text(state.localized("library.rename_cube.message"))
         }
     }
     
@@ -54,11 +54,11 @@ struct LibraryPanel: View {
             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.secondary)
-            Text("Библиотека")
+            Text(state.localized("library.title"))
                 .font(.system(size: 11, weight: .semibold))
             Spacer()
             if isTargeted {
-                Text("Отпустите, чтобы добавить")
+                Text(state.localized("library.drop_release_to_add"))
                     .font(.system(size: 10))
                     .foregroundColor(.accentColor)
             }
@@ -77,7 +77,7 @@ struct LibraryPanel: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             if state.libraryEntries.isEmpty {
-                Text("Перетащи файлы .mat, .tiff, .npy или .dat сюда, чтобы добавить их в библиотеку. Двойной клик по элементу — открыть куб.")
+                Text(state.localized("library.empty_hint"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .padding(8)
@@ -153,7 +153,7 @@ struct LibraryPanel: View {
             }
         }
         .contextMenu {
-            Button("Копировать обработку") {
+            Button(state.localized("library.context.copy_processing")) {
                 if let target = contextTargets.first {
                     state.copyProcessing(from: target)
                 }
@@ -161,7 +161,7 @@ struct LibraryPanel: View {
             .disabled(!canCopyFromSingle)
             
             if state.hasProcessingClipboard {
-                Button("Вставить обработку") {
+                Button(state.localized("library.context.paste_processing")) {
                     for target in contextTargets {
                         state.pasteProcessing(to: target)
                     }
@@ -170,7 +170,7 @@ struct LibraryPanel: View {
 
             Divider()
 
-            Button("Копировать длины волн") {
+            Button(state.localized("library.context.copy_wavelengths")) {
                 if let target = contextTargets.first {
                     state.copyWavelengths(from: target)
                 }
@@ -178,7 +178,7 @@ struct LibraryPanel: View {
             .disabled(!canCopyWavelengthsFromSingle)
 
             if state.hasWavelengthClipboard {
-                Button("Вставить длины волн") {
+                Button(state.localized("library.context.paste_wavelengths")) {
                     for target in contextTargets {
                         state.pasteWavelengths(to: target)
                     }
@@ -187,14 +187,14 @@ struct LibraryPanel: View {
             
             Divider()
             
-            Button("Вставить точку") {
+            Button(state.localized("library.context.paste_point")) {
                 for target in contextTargets {
                     state.pasteSpectrumPoint(to: target)
                 }
             }
             .disabled(!canPastePoint)
             
-            Button("Вставить область") {
+            Button(state.localized("library.context.paste_area")) {
                 for target in contextTargets {
                     state.pasteSpectrumROI(to: target)
                 }
@@ -203,7 +203,7 @@ struct LibraryPanel: View {
             
             Divider()
 
-            Button("Переименовать…") {
+            Button(state.localized("library.context.rename")) {
                 if let target = contextTargets.first {
                     startRename(for: target)
                 }
@@ -215,7 +215,7 @@ struct LibraryPanel: View {
             Button(role: .destructive) {
                 removeEntries(contextTargets)
             } label: {
-                Text("Удалить из библиотеки")
+                Text(state.localized("library.context.remove_from_library"))
             }
         }
     }

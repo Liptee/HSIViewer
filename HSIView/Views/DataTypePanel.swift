@@ -12,7 +12,7 @@ struct DataTypePanel: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.secondary)
                 
-                Text("Тип данных")
+                Text(state.localized("datatype.title"))
                     .font(.system(size: 11, weight: .semibold))
                 
                 Spacer()
@@ -30,13 +30,13 @@ struct DataTypePanel: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 12) {
                     if let cube = state.cube {
-                        Text("Текущий тип: \(cube.originalDataType.rawValue)")
+                        Text(state.localizedFormat("datatype.current_type", cube.originalDataType.rawValue))
                             .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Преобразовать в:")
+                        Text(state.localized("datatype.convert_to"))
                             .font(.system(size: 10, weight: .medium))
                         
                         Picker("", selection: $selectedDataType) {
@@ -65,23 +65,23 @@ struct DataTypePanel: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Масштабирование:")
+                        Text(state.localized("datatype.scaling"))
                             .font(.system(size: 10, weight: .medium))
                         
                         HStack(spacing: 12) {
-                            Toggle("Автоматическое", isOn: $state.autoScaleOnTypeConversion)
+                            Toggle(state.localized("datatype.scaling.auto"), isOn: $state.autoScaleOnTypeConversion)
                                 .font(.system(size: 10))
                                 .toggleStyle(.switch)
                                 .controlSize(.mini)
                         }
                         
                         if state.autoScaleOnTypeConversion {
-                            Text("Данные будут масштабированы в диапазон целевого типа")
+                            Text(state.localized("datatype.scaling.auto_hint"))
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
-                            Text("Значения будут обрезаны (clamped)")
+                            Text(state.localized("datatype.scaling.clamp_hint"))
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -93,7 +93,7 @@ struct DataTypePanel: View {
                     }) {
                         HStack {
                             Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("Применить")
+                            Text(state.localized("common.apply"))
                         }
                         .font(.system(size: 11, weight: .medium))
                         .frame(maxWidth: .infinity)
@@ -108,7 +108,7 @@ struct DataTypePanel: View {
                         
                         VStack(alignment: .leading, spacing: 4) {
                             infoRow(
-                                title: "Размер в памяти",
+                                title: state.localized("datatype.memory_size"),
                                 value: formatMemorySize(bytes: cube.storage.sizeInBytes)
                             )
                             
@@ -119,7 +119,7 @@ struct DataTypePanel: View {
                                 )
                                 
                                 infoRow(
-                                    title: "После конвертации",
+                                    title: state.localized("datatype.after_conversion"),
                                     value: formatMemorySize(bytes: estimatedSize)
                                 )
                                 
@@ -128,7 +128,7 @@ struct DataTypePanel: View {
                                     ? String(format: "↑ %.1fx", ratio)
                                     : String(format: "↓ %.1fx", 1.0 / ratio)
                                 
-                                infoRow(title: "Изменение", value: change)
+                                infoRow(title: state.localized("datatype.change"), value: change)
                                     .foregroundColor(ratio >= 1.0 ? .orange : .green)
                             }
                         }
@@ -173,9 +173,9 @@ struct DataTypePanel: View {
         let sizeInGB = Double(bytes) / (1024 * 1024 * 1024)
         
         if sizeInGB >= 1.0 {
-            return String(format: "%.2f ГБ", sizeInGB)
+            return state.localizedFormat("units.size.gb", sizeInGB)
         } else {
-            return String(format: "%.1f МБ", sizeInMB)
+            return state.localizedFormat("units.size.mb", sizeInMB)
         }
     }
     
@@ -194,5 +194,4 @@ struct DataTypePanel: View {
         return elementCount * bytesPerElement
     }
 }
-
 

@@ -15,21 +15,21 @@ final class AppState: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .noMaterials:
-                return "Добавьте хотя бы один материал"
+                return L("Добавьте хотя бы один материал")
             case .busy:
-                return "Дождитесь завершения текущей операции"
+                return L("Дождитесь завершения текущей операции")
             case .inconsistentResolution(let expected, let actual, let fileName):
-                return "Разрешение \(fileName) (\(actual)) не совпадает с ожидаемым \(expected)"
+                return LF("app.assembly.error.inconsistent_resolution", fileName, actual, expected)
             case .nonGrayscaleMaterial(let fileName):
-                return "Материал \(fileName) не в Grayscale. Разбейте его на каналы."
+                return LF("app.assembly.error.non_grayscale_material", fileName)
             case .partialWavelengths:
-                return "Укажите длину волны либо для всех материалов, либо не указывайте вовсе"
+                return L("Укажите длину волны либо для всех материалов, либо не указывайте вовсе")
             case .invalidWavelength(let index):
-                return "Некорректная длина волны у материала №\(index)"
+                return LF("app.assembly.error.invalid_wavelength_at_index", index)
             case .invalidMaterialData(let fileName):
-                return "Повреждённые данные материала: \(fileName)"
+                return LF("app.assembly.error.invalid_material_data", fileName)
             case .noWorkspaceAccess:
-                return "Не удалось получить доступ к рабочей папке"
+                return L("Не удалось получить доступ к рабочей папке")
             }
         }
     }
@@ -118,27 +118,27 @@ final class AppState: ObservableObject {
     
     func formatTimeInterval(_ interval: TimeInterval) -> String {
         if interval < 60 {
-            return "\(Int(interval)) сек"
+            return LF("app.time.seconds", Int(interval))
         } else if interval < 3600 {
             let minutes = Int(interval / 60)
             let seconds = Int(interval.truncatingRemainder(dividingBy: 60))
-            return "\(minutes) мин \(seconds) сек"
+            return LF("app.time.minutes_seconds", minutes, seconds)
         } else {
             let hours = Int(interval / 3600)
             let minutes = Int((interval.truncatingRemainder(dividingBy: 3600)) / 60)
-            return "\(hours) ч \(minutes) мин"
+            return LF("app.time.hours_minutes", hours, minutes)
         }
     }
     
     @Published var pendingMatSelection: MatSelectionRequest?
     @Published var libraryEntries: [CubeLibraryEntry] = []
     @Published var gridLibraryRows: [GridLibraryAxisItem] = [
-        GridLibraryAxisItem(name: "Ряд 1"),
-        GridLibraryAxisItem(name: "Ряд 2")
+        GridLibraryAxisItem(name: "Row 1"),
+        GridLibraryAxisItem(name: "Row 2")
     ]
     @Published var gridLibraryColumns: [GridLibraryAxisItem] = [
-        GridLibraryAxisItem(name: "Столбец 1"),
-        GridLibraryAxisItem(name: "Столбец 2")
+        GridLibraryAxisItem(name: "Column 1"),
+        GridLibraryAxisItem(name: "Column 2")
     ]
     @Published var gridLibraryAssignments: [GridLibraryCellPosition: CubeLibraryEntry.ID] = [:]
     @Published private(set) var hasProcessingClipboard: Bool = false
@@ -196,6 +196,11 @@ final class AppState: ObservableObject {
     @Published var graphWindowYMin: Double = 0
     @Published var graphWindowYMax: Double = 1
     @Published var showAccessManager: Bool = false
+    @Published var preferredLanguage: AppLanguage {
+        didSet {
+            UserDefaults.standard.set(preferredLanguage.rawValue, forKey: AppLocalizer.preferredLanguageDefaultsKey)
+        }
+    }
     @Published private(set) var pipelineOperationClipboard: PipelineOperation?
     @Published private(set) var spectrumClipboard: SpectrumClipboardContent?
     private var hasCustomColorSynthesisMapping: Bool = false
@@ -242,6 +247,23 @@ final class AppState: ObservableObject {
     var displayCube: HyperCube? {
         guard let original = originalCube else { return cube }
         return cube
+    }
+
+    init() {
+        let storedLanguage = UserDefaults.standard.string(forKey: AppLocalizer.preferredLanguageDefaultsKey)
+        preferredLanguage = AppLanguage(rawValue: storedLanguage ?? "") ?? .english
+    }
+
+    var appLocale: Locale {
+        preferredLanguage.locale
+    }
+
+    func localized(_ key: String) -> String {
+        L(key)
+    }
+
+    func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
+        AppLocalizer.localizedFormat(key, args: args)
     }
 
     var activeLayout: CubeLayout {
@@ -342,7 +364,7 @@ final class AppState: ObservableObject {
     }
 
     var currentCubeDisplayName: String {
-        guard let url = cubeURL else { return "Куб" }
+        guard let url = cubeURL else { return L("Куб") }
         return displayName(for: url)
     }
     
@@ -383,7 +405,7 @@ final class AppState: ObservableObject {
             return
         }
         
-        beginBusy(message: "Импорт гиперкуба…")
+        beginBusy(message: L("Импорт гиперкуба…"))
         
         processingQueue.async { [weak self] in
             guard let self else { return }
@@ -459,14 +481,14 @@ final class AppState: ObservableObject {
         if configToApply.computeScope == .roi {
             guard let roiID = configToApply.selectedROI,
                   let roi = displayedROISamples.first(where: { $0.id == roiID })?.rect else {
-                pcaProgressMessage = "Выберите ROI для PCA"
+                pcaProgressMessage = L("Выберите ROI для PCA")
                 return
             }
             roiRect = roi
         }
         pcaRenderedImage = nil
         isPCAApplying = true
-        pcaProgressMessage = "Подготовка…"
+        pcaProgressMessage = L("Подготовка…")
         
         processingQueue.async { [weak self] in
             guard let self else { return }
@@ -575,25 +597,25 @@ final class AppState: ObservableObject {
     func runWDVIAutoEstimation(config: WDVIAutoEstimationConfig) {
         guard ndPreset == .wdvi else { return }
         guard let cube = cube else {
-            loadError = "Нет данных для оценки WDVI"
+            loadError = L("Нет данных для оценки WDVI")
             return
         }
         guard let axes = cube.axes(for: activeLayout) else {
-            loadError = "Не удалось определить layout"
+            loadError = L("Не удалось определить layout")
             return
         }
         guard let indices = ndChannelIndices() else {
-            loadError = "Не удалось определить каналы Red/NIR"
+            loadError = L("Не удалось определить каналы Red/NIR")
             return
         }
         
         let selectedROIs = roiSamples.filter { config.selectedROIIDs.contains($0.id) }
         guard !selectedROIs.isEmpty else {
-            loadError = "Выберите хотя бы один ROI для оценки"
+            loadError = L("Выберите хотя бы один ROI для оценки")
             return
         }
         
-        beginBusy(message: "Оценка линии почвы…")
+        beginBusy(message: L("Оценка линии почвы…"))
         processingQueue.async { [weak self] in
             guard let self else { return }
             let result = self.computeWDVISoilLine(
@@ -611,7 +633,7 @@ final class AppState: ObservableObject {
                     self.wdviIntercept = String(format: "%.4f", intercept)
                     let aText = String(format: "%.4f", slope)
                     let bText = String(format: "%.4f", intercept)
-                    self.loadError = "Оценка WDVI: a=\(aText), b=\(bText) по \(pairsCount) пикселям"
+                    self.loadError = LF("app.wdvi.estimation_result", aText, bText, pairsCount)
                 case .failure(let error):
                     self.loadError = error.localizedDescription
                 }
@@ -644,7 +666,7 @@ final class AppState: ObservableObject {
         let dimsArray = [dims.0, dims.1, dims.2]
         let width = dimsArray[axes.width]
         let height = dimsArray[axes.height]
-        guard width > 0, height > 0 else { return .failure(.message("Размеры изображения некорректны")) }
+        guard width > 0, height > 0 else { return .failure(.message(L("Размеры изображения некорректны"))) }
         
         var pairs: [(Double, Double)] = []
         for roi in rois {
@@ -669,7 +691,7 @@ final class AppState: ObservableObject {
             }
         }
         
-        guard !pairs.isEmpty else { return .failure(.message("Нет данных в выбранных ROI")) }
+        guard !pairs.isEmpty else { return .failure(.message(L("Нет данных в выбранных ROI"))) }
         
         // percentile filtering
         let reds = pairs.map { $0.0 }.sorted()
@@ -701,7 +723,7 @@ final class AppState: ObservableObject {
             }
         }
         
-        guard filtered.count >= 2 else { return .failure(.message("Недостаточно данных после фильтрации")) }
+        guard filtered.count >= 2 else { return .failure(.message(L("Недостаточно данных после фильтрации"))) }
         
         let regression: (Double, Double)
         switch config.method {
@@ -827,13 +849,13 @@ final class AppState: ObservableObject {
             baseWavelengths = values
             loadError = nil
         case .failure(let error):
-            loadError = "Ошибка чтения длин волн: \(error.localizedDescription)"
+            loadError = LF("app.wavelength.read_error", error.localizedDescription)
         }
     }
     
     func generateWavelengthsFromParams() {
         guard cube != nil else {
-            loadError = "Сначала открой гиперкуб"
+            loadError = L("Сначала открой гиперкуб")
             return
         }
         pcaRenderedImage = nil
@@ -841,18 +863,18 @@ final class AppState: ObservableObject {
         
         let channels = channelCount
         guard channels > 0 else {
-            loadError = "Не удалось определить число каналов"
+            loadError = L("Не удалось определить число каналов")
             return
         }
         
         guard let start = Double(lambdaStart.replacingOccurrences(of: ",", with: ".")),
               let end = Double(lambdaEnd.replacingOccurrences(of: ",", with: ".")) else {
-            loadError = "Некорректные параметры λ (от/до)"
+            loadError = L("Некорректные параметры λ (от/до)")
             return
         }
         
         guard end > start else {
-            loadError = "Значение 'до' должно быть больше 'от'"
+            loadError = L("Значение 'до' должно быть больше 'от'")
             return
         }
         
@@ -1402,9 +1424,9 @@ final class AppState: ObservableObject {
         
         isAlignmentInProgress = true
         alignmentProgress = 0.0
-        alignmentProgressMessage = "Подготовка…"
+        alignmentProgressMessage = L("Подготовка…")
         alignmentStartTime = Date()
-        alignmentElapsedTime = "0 сек"
+        alignmentElapsedTime = LF("app.time.seconds", 0)
         alignmentEstimatedTimeRemaining = ""
         alignmentStage = "init"
         alignmentCurrentChannel = 0
@@ -1416,7 +1438,7 @@ final class AppState: ObservableObject {
     private func applyPipelineWithAlignmentProgress(targetOperationId: UUID) {
         guard let original = originalCube else { return }
         
-        beginBusy(message: "Вычисление выравнивания…")
+        beginBusy(message: L("Вычисление выравнивания…"))
         
         var progressTimer: Timer?
         DispatchQueue.main.async { [weak self] in
@@ -1519,7 +1541,7 @@ final class AppState: ObservableObject {
            operations.dropLast() == lastPipelineAppliedOperations,
            let cachedResult = lastPipelineResult {
             
-            beginBusy(message: "Применение последней операции…")
+            beginBusy(message: L("Применение последней операции…"))
             var newOp = operations.last!
             processingQueue.async { [weak self] in
                 guard let self else { return }
@@ -1549,7 +1571,7 @@ final class AppState: ObservableObject {
             }
             
         } else {
-        beginBusy(message: "Применение пайплайна…")
+        beginBusy(message: L("Применение пайплайна…"))
         
         processingQueue.async { [weak self] in
             guard let self else { return }
@@ -1677,7 +1699,7 @@ final class AppState: ObservableObject {
         let currentChannels = channelCount
         
         guard startChannel >= 0, endChannel < currentChannels, startChannel <= endChannel else {
-            loadError = "Некорректный диапазон обрезки"
+            loadError = L("Некорректный диапазон обрезки")
             return
         }
         let maxChannelIndex = max(currentChannels - 1, 0)
@@ -1952,7 +1974,7 @@ final class AppState: ObservableObject {
             loadError = error.localizedDescription
         case .success(let options):
             guard !options.isEmpty else {
-                loadError = "MAT файл не содержит подходящих 3D переменных"
+                loadError = L("MAT файл не содержит подходящих 3D переменных")
                 return true
             }
             
@@ -1967,7 +1989,7 @@ final class AppState: ObservableObject {
     }
     
     private func loadMatCube(url: URL, variableName: String) {
-        beginBusy(message: "Импорт гиперкуба…")
+        beginBusy(message: L("Импорт гиперкуба…"))
         
         processingQueue.async { [weak self] in
             guard let self else { return }
@@ -1980,7 +2002,7 @@ final class AppState: ObservableObject {
     
     func cancelMatSelection() {
         pendingMatSelection = nil
-        loadError = "Выбор переменной отменён"
+        loadError = L("Выбор переменной отменён")
     }
     
     func confirmMatSelection(option: MatVariableOption) {
@@ -2037,19 +2059,14 @@ final class AppState: ObservableObject {
 
     func libraryEntryWavelengthRangeText(for entry: CubeLibraryEntry) -> String {
         guard let range = libraryEntryWavelengthRange(for: entry) else {
-            return "λ: диапазон не задан"
+            return localized("library.wavelength.unset")
         }
 
         if abs(range.max - range.min) < 0.0001 {
-            return String(format: "λ: %.1f нм • %d канал(ов)", range.min, range.count)
+            return localizedFormat("library.wavelength.single", range.min, range.count)
         }
 
-        return String(
-            format: "λ: %.1f – %.1f нм • %d канал(ов)",
-            range.min,
-            range.max,
-            range.count
-        )
+        return localizedFormat("library.wavelength.range", range.min, range.max, range.count)
     }
 
     @discardableResult
@@ -2065,11 +2082,13 @@ final class AppState: ObservableObject {
     }
 
     func addGridLibraryRow() {
-        gridLibraryRows.append(GridLibraryAxisItem(name: "Ряд \(gridLibraryRows.count + 1)"))
+        let nextIndex = gridLibraryRows.count + 1
+        gridLibraryRows.append(GridLibraryAxisItem(name: localizedFormat("grid.row.default_name", nextIndex)))
     }
 
     func addGridLibraryColumn() {
-        gridLibraryColumns.append(GridLibraryAxisItem(name: "Столбец \(gridLibraryColumns.count + 1)"))
+        let nextIndex = gridLibraryColumns.count + 1
+        gridLibraryColumns.append(GridLibraryAxisItem(name: localizedFormat("grid.column.default_name", nextIndex)))
     }
 
     func renameGridLibraryRow(id: UUID, to name: String) {
@@ -2230,7 +2249,7 @@ final class AppState: ObservableObject {
 
     func copyWavelengths(from entry: CubeLibraryEntry) {
         guard let values = availableWavelengths(for: entry) else {
-            loadError = "Для выбранного куба не заданы длины волн"
+            loadError = L("Для выбранного куба не заданы длины волн")
             return
         }
         wavelengthsClipboard = values
@@ -2241,7 +2260,7 @@ final class AppState: ObservableObject {
         guard let values = wavelengthsClipboard, !values.isEmpty else { return }
         let result = applyWavelengths(values, to: entry)
         if !result {
-            loadError = "Не удалось вставить длины волн в \(entry.displayName): не совпадает количество каналов"
+            loadError = LF("app.wavelength.paste_count_mismatch_for_entry", entry.displayName)
         } else {
             loadError = nil
         }
@@ -2273,7 +2292,7 @@ final class AppState: ObservableObject {
 
     func propagateWavelengthsToLibrary() {
         guard let values = wavelengths, !values.isEmpty else {
-            loadError = "Сначала задайте длины волн для текущего куба"
+            loadError = L("Сначала задайте длины волн для текущего куба")
             return
         }
 
@@ -2290,18 +2309,18 @@ final class AppState: ObservableObject {
         if skipped.isEmpty {
             loadError = nil
         } else {
-            loadError = "Длины волн не применены: \(skipped.joined(separator: ", "))"
+            loadError = LF("app.wavelength.not_applied_entries", skipped.joined(separator: ", "))
         }
     }
 
     func createDerivedCubeFromCurrent() {
         loadError = nil
         guard let cube else {
-            loadError = "Сначала открой гиперкуб"
+            loadError = L("Сначала открой гиперкуб")
             return
         }
         if isBusy {
-            loadError = "Дождитесь завершения текущей операции"
+            loadError = L("Дождитесь завершения текущей операции")
             return
         }
 
@@ -2313,11 +2332,11 @@ final class AppState: ObservableObject {
         }
 
         guard let targetURL = AppWorkingDirectory.shared.derivedCubeURL(baseName: baseName, allowPrompt: true) else {
-            loadError = "Не удалось получить доступ к рабочей папке"
+            loadError = L("Не удалось получить доступ к рабочей папке")
             return
         }
 
-        beginBusy(message: "Создание нового ГСИ…")
+        beginBusy(message: L("Создание нового ГСИ…"))
 
         let cubeToSave = cubeWithWavelengthsIfNeeded(cube, layout: activeLayout)
         let wavelengthsToSave = wavelengths ?? cubeToSave.wavelengths
@@ -2417,7 +2436,7 @@ final class AppState: ObservableObject {
             return
         }
 
-        beginBusy(message: "Сборка ГСИ…")
+        beginBusy(message: L("Сборка ГСИ…"))
         let buildMaterials = materials
 
         processingQueue.async { [weak self] in
@@ -2640,7 +2659,7 @@ final class AppState: ObservableObject {
                 phase: .running,
                 completed: 0,
                 total: total,
-                message: "Экспорт библиотеки…"
+                message: L("Экспорт библиотеки…")
             )
         }
     }
@@ -2652,7 +2671,7 @@ final class AppState: ObservableObject {
                 phase: .running,
                 completed: completed,
                 total: total,
-                message: "Экспорт библиотеки…"
+                message: L("Экспорт библиотеки…")
             )
         }
     }
@@ -2710,7 +2729,7 @@ final class AppState: ObservableObject {
         }
         pcaRenderedImage = nil
         pcaPendingConfig = nil
-        busyMessage = "Восстановление настроек…"
+        busyMessage = L("Восстановление настроек…")
             applySnapshot(snapshot)
             endBusy()
     }
@@ -4124,8 +4143,8 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .none: return ""
-        case .spectrumGraph: return "График спектра"
-        case .spectrumGraphROI: return "График спектра ROI"
+        case .spectrumGraph: return L("График спектра")
+        case .spectrumGraphROI: return L("График спектра ROI")
         }
     }
     
@@ -4271,6 +4290,10 @@ enum WDVIAutoRegressionMethod: String, CaseIterable, Identifiable {
     case huber = "Huber (робастная)"
     
     var id: String { rawValue }
+
+    var localizedTitle: String {
+        L(rawValue)
+    }
 }
 
 struct WDVIAutoEstimationConfig {
@@ -4299,8 +4322,8 @@ enum SpectrumROIAggregationMode: String, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .mean: return "Среднее"
-        case .median: return "Медиана"
+        case .mean: return L("Среднее")
+        case .median: return L("Медиана")
         }
     }
 }

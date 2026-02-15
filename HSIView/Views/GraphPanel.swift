@@ -30,11 +30,11 @@ struct GraphPanel: View {
     private var panelTitle: String {
         switch graphMode {
         case .points:
-            return "График спектра"
+            return L("graph.panel.title.spectrum")
         case .roi:
-            return "График спектра ROI"
+            return L("graph.panel.title.roi")
         case .inactive:
-            return "График спектра"
+            return L("graph.panel.title.spectrum")
         }
     }
     
@@ -52,11 +52,11 @@ struct GraphPanel: View {
     private var panelStatusText: String {
         switch graphMode {
         case .points:
-            return state.spectrumSamples.isEmpty ? "Нет сохранённых точек" : "Сохранено: \(state.spectrumSamples.count)"
+            return state.spectrumSamples.isEmpty ? L("graph.panel.status.no_points") : LF("graph.panel.status.saved_points", state.spectrumSamples.count)
         case .roi:
-            return state.roiSamples.isEmpty ? "Нет сохранённых областей" : "Областей: \(state.roiSamples.count)"
+            return state.roiSamples.isEmpty ? L("graph.panel.status.no_roi") : LF("graph.panel.status.roi_count", state.roiSamples.count)
         case .inactive:
-            return "Инструмент не выбран"
+            return L("graph.panel.status.no_tool")
         }
     }
     
@@ -93,8 +93,8 @@ struct GraphPanel: View {
                 if state.displayedSpectrumSamples.isEmpty {
                     emptyState(
                         icon: "cursorarrow.click",
-                        title: "Кликните на изображение",
-                        subtitle: "чтобы увидеть спектр пикселя"
+                        title: L("graph.panel.empty.click_image"),
+                        subtitle: L("graph.panel.empty.pixel_spectrum")
                     )
                 } else {
                     pointChartSection(state.displayedSpectrumSamples)
@@ -103,8 +103,8 @@ struct GraphPanel: View {
                 if state.displayedROISamples.isEmpty {
                     emptyState(
                         icon: "lasso.and.sparkles",
-                        title: "Нарисуйте область на изображении",
-                        subtitle: "чтобы увидеть спектр ROI"
+                        title: L("graph.panel.empty.draw_roi"),
+                        subtitle: L("graph.panel.empty.roi_spectrum")
                     )
                 } else {
                     roiChartSection(state.displayedROISamples)
@@ -182,8 +182,8 @@ struct GraphPanel: View {
     private var inactiveState: some View {
         emptyState(
             icon: "slider.horizontal.3",
-            title: "Выберите инструмент",
-            subtitle: "Активируйте анализ в доке сверху"
+            title: L("graph.panel.inactive.choose_tool"),
+            subtitle: L("graph.panel.inactive.activate_analysis")
         )
     }
     
@@ -254,7 +254,7 @@ struct GraphPanel: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(state.isGraphPanelExpanded ? "Свернуть панель" : "Развернуть панель")
+        .help(state.isGraphPanelExpanded ? L("graph.panel.help.collapse") : L("graph.panel.help.expand"))
     }
 }
 
@@ -337,7 +337,7 @@ private struct SampleRow: View {
                         .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
                 )
             if isEditing {
-                TextField("Имя", text: $nameText, onCommit: commitName)
+                TextField(state.localized("Имя"), text: $nameText, onCommit: commitName)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10))
                     .frame(maxWidth: 180)
@@ -378,7 +378,7 @@ private struct SampleRow: View {
             editingSampleID = nil
         }
         .contextMenu {
-            Button("Копировать") {
+            Button(state.localized("Копировать")) {
                 state.copySpectrumSample(sample)
             }
         }
@@ -419,7 +419,7 @@ private struct ROISampleRow: View {
                         .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
                 )
             if isEditing {
-                TextField("Имя", text: $nameText, onCommit: commitName)
+                TextField(state.localized("Имя"), text: $nameText, onCommit: commitName)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10))
                     .frame(maxWidth: 180)
@@ -460,7 +460,7 @@ private struct ROISampleRow: View {
             editingSampleID = nil
         }
         .contextMenu {
-            Button("Копировать") {
+            Button(state.localized("Копировать")) {
                 state.copyROISample(sample)
             }
         }
@@ -505,15 +505,15 @@ private struct ROISampleEditor: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Редактирование ROI")
+            Text(AppLocalizer.localized("Редактирование ROI"))
                 .font(.system(size: 13, weight: .semibold))
             
             if let size = imageSize {
-                Text("Размер изображения: \(size.width) × \(size.height) px")
+                Text(LF("graph.roi.image_size_px", size.width, size.height))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             } else {
-                Text("Размер изображения недоступен")
+                Text(AppLocalizer.localized("Размер изображения недоступен"))
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
@@ -542,12 +542,12 @@ private struct ROISampleEditor: View {
             
             HStack {
                 Spacer()
-                Button("Отмена") {
+                Button(AppLocalizer.localized("Отмена")) {
                     dismiss()
                 }
                 .buttonStyle(.bordered)
                 
-                Button("Применить") {
+                Button(AppLocalizer.localized("Применить")) {
                     applyChanges()
                 }
                 .buttonStyle(.borderedProminent)
@@ -570,22 +570,22 @@ private struct ROISampleEditor: View {
     
     private var validationMessage: String? {
         guard let size = imageSize else {
-            return "Нужны данные изображения для проверки."
+            return L("graph.roi.error.image_data_required")
         }
         let maxX = max(size.width - 1, 0)
         let maxY = max(size.height - 1, 0)
         
         if x1 > x2 {
-            return "x1 не может быть больше x2."
+            return L("graph.roi.error.x_order")
         }
         if y1 > y2 {
-            return "y1 не может быть больше y2."
+            return L("graph.roi.error.y_order")
         }
         if x1 < 0 || x2 < 0 || x1 > maxX || x2 > maxX {
-            return "x должен быть в диапазоне 0...\(maxX)."
+            return LF("graph.roi.error.x_range", maxX)
         }
         if y1 < 0 || y2 < 0 || y1 > maxY || y2 > maxY {
-            return "y должен быть в диапазоне 0...\(maxY)."
+            return LF("graph.roi.error.y_range", maxY)
         }
         return nil
     }
@@ -606,7 +606,7 @@ private struct ROISampleEditor: View {
         if onApply(rect) {
             dismiss()
         } else {
-            errorMessage = "Не удалось обновить ROI."
+            errorMessage = L("graph.roi.error.update_failed")
         }
     }
     
@@ -640,7 +640,7 @@ extension GraphPanel {
     private func pointChartSection(_ samples: [SpectrumSample]) -> some View {
         let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
-        let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
+        let axisLabel = usesWavelengths ? L("graph.axis.wavelength_nm") : L("graph.axis.channel")
         let cubeName = state.currentCubeDisplayName
         let series = visibleSamples.map {
             SpectrumChartSeries(
@@ -658,7 +658,7 @@ extension GraphPanel {
             
             VStack(alignment: .leading, spacing: 6) {
                 if let pending = state.pendingSpectrumSample {
-                    Text("Выбрана точка: \(cubeName): (\(pending.pixelX), \(pending.pixelY)) — не сохранена")
+                    Text(LF("graph.pending.point", cubeName, pending.pixelX, pending.pixelY))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -666,7 +666,7 @@ extension GraphPanel {
                 Button(action: { state.savePendingSpectrumSample() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "pin.fill")
-                        Text("Сохранить точку")
+                        Text(L("graph.action.save_point"))
                     }
                     .font(.system(size: 11, weight: .medium))
                     .frame(maxWidth: .infinity)
@@ -683,7 +683,7 @@ extension GraphPanel {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "pencil")
-                                Text("Переименовать")
+                                Text(L("graph.action.rename"))
                             }
                         }
                         .buttonStyle(.bordered)
@@ -694,7 +694,7 @@ extension GraphPanel {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "trash")
-                                Text("Удалить точку")
+                                Text(L("graph.action.delete_point"))
                             }
                         }
                         .buttonStyle(.bordered)
@@ -710,7 +710,7 @@ extension GraphPanel {
     private func roiChartSection(_ samples: [SpectrumROISample]) -> some View {
         let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
-        let axisLabel = usesWavelengths ? "λ (нм)" : "Канал"
+        let axisLabel = usesWavelengths ? L("graph.axis.wavelength_nm") : L("graph.axis.channel")
         let cubeName = state.currentCubeDisplayName
         let series = visibleSamples.map {
             SpectrumChartSeries(
@@ -726,7 +726,7 @@ extension GraphPanel {
             
             roiSamplesLegend(samples, cubeName: cubeName)
             
-            Picker("Метод", selection: $state.roiAggregationMode) {
+            Picker(L("graph.roi.method"), selection: $state.roiAggregationMode) {
                 ForEach(SpectrumROIAggregationMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
@@ -737,7 +737,7 @@ extension GraphPanel {
             VStack(alignment: .leading, spacing: 6) {
                 if let pending = state.pendingROISample {
                     let rect = pending.rect
-                    Text("Выбрана область: \(cubeName): (\(rect.minX), \(rect.minY)) – (\(rect.maxX), \(rect.maxY)) — не сохранена")
+                    Text(LF("graph.pending.roi", cubeName, rect.minX, rect.minY, rect.maxX, rect.maxY))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -745,7 +745,7 @@ extension GraphPanel {
                 Button(action: { state.savePendingROISample() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "pin.square.fill")
-                        Text("Сохранить область")
+                        Text(L("graph.action.save_roi"))
                     }
                     .font(.system(size: 11, weight: .medium))
                     .frame(maxWidth: .infinity)
@@ -762,7 +762,7 @@ extension GraphPanel {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "pencil")
-                                Text("Переименовать")
+                                Text(L("graph.action.rename"))
                             }
                         }
                         .buttonStyle(.bordered)
@@ -773,7 +773,7 @@ extension GraphPanel {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "square.and.pencil")
-                                Text("Редактировать")
+                                Text(L("graph.action.edit"))
                             }
                         }
                         .buttonStyle(.bordered)
@@ -784,7 +784,7 @@ extension GraphPanel {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "trash")
-                                Text("Удалить область")
+                                Text(L("graph.action.delete_roi"))
                             }
                         }
                         .buttonStyle(.bordered)
@@ -833,10 +833,10 @@ extension GraphPanel {
                     let xValue = entry.wavelengths?[safe: index] ?? Double(index)
                     LineMark(
                         x: .value(axisLabel, xValue),
-                        y: .value("Интенсивность", value),
-                        series: .value("Серия", seriesID)
+                        y: .value(L("graph.axis.intensity"), value),
+                        series: .value(L("graph.axis.series"), seriesID)
                     )
-                    .foregroundStyle(by: .value("Серия", seriesID))
+                    .foregroundStyle(by: .value(L("graph.axis.series"), seriesID))
                     .lineStyle(StrokeStyle(lineWidth: 1.5))
                 }
             }

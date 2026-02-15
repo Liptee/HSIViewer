@@ -79,6 +79,7 @@ struct HSIViewApp: App {
         Window("HSIView", id: "main-window") {
             ContentView()
                 .environmentObject(appState)
+                .environment(\.locale, appState.appLocale)
                 .onOpenURL { url in
                     appState.open(url: url)
                 }
@@ -86,14 +87,14 @@ struct HSIViewApp: App {
         .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Открыть...") {
+                Button(appState.localized("menu.open")) {
                     openFile()
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
                 Divider()
 
-                Button("Собрать ГСИ") {
+                Button(appState.localized("menu.assemble_hsi")) {
                     HSIAssemblerWindowManager.shared.show(appState: appState)
                 }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
@@ -101,7 +102,7 @@ struct HSIViewApp: App {
 
                 Divider()
 
-                Button("Создать из текущего") {
+                Button(appState.localized("menu.create_from_current")) {
                     appState.createDerivedCubeFromCurrent()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -109,7 +110,7 @@ struct HSIViewApp: App {
 
                 Divider()
 
-                Button("Экспорт...") {
+                Button(appState.localized("menu.export")) {
                     appState.showExportView = true
                 }
                 .keyboardShortcut("e", modifiers: .command)
@@ -119,12 +120,12 @@ struct HSIViewApp: App {
             CommandGroup(after: .pasteboard) {
                 Divider()
                 
-                Button("Распространить обработку") {
+                Button(appState.localized("menu.propagate_processing")) {
                     appState.propagateProcessingToLibrary()
                 }
                 .disabled(!appState.canPropagateProcessing)
 
-                Button("Распространить длины волн") {
+                Button(appState.localized("menu.propagate_wavelengths")) {
                     appState.propagateWavelengthsToLibrary()
                 }
                 .disabled(!appState.canPropagateWavelengths)
@@ -133,26 +134,46 @@ struct HSIViewApp: App {
             CommandGroup(after: .sidebar) {
                 Divider()
 
-                Button("Основное окно") {
+                Button(appState.localized("menu.main_window")) {
                     openWindow(id: "main-window")
                     NSApp.activate(ignoringOtherApps: true)
                 }
                 .keyboardShortcut("1", modifiers: .command)
 
-                Button("График") {
+                Button(appState.localized("menu.graph")) {
                     GraphWindowManager.shared.show(appState: appState)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
-                Button("Grid-библиотека") {
+                Button(appState.localized("menu.grid_library")) {
                     GridLibraryWindowManager.shared.show(appState: appState)
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
-                
+
                 Divider()
-                Button("Управление доступами…") {
+                Button(appState.localized("menu.access_manager")) {
                     appState.showAccessManager = true
                 }
+
+                Divider()
+                Menu(appState.localized("menu.language")) {
+                    languageMenuButton(.english, titleKey: "menu.language.english")
+                    languageMenuButton(.russian, titleKey: "menu.language.russian")
+                    languageMenuButton(.system, titleKey: "menu.language.system")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func languageMenuButton(_ language: AppLanguage, titleKey: String) -> some View {
+        Button {
+            appState.preferredLanguage = language
+        } label: {
+            if appState.preferredLanguage == language {
+                Label(appState.localized(titleKey), systemImage: "checkmark")
+            } else {
+                Text(appState.localized(titleKey))
             }
         }
     }
@@ -162,7 +183,7 @@ struct HSIViewApp: App {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Открыть"
+        panel.prompt = appState.localized("common.open")
         
         let matType = UTType(filenameExtension: "mat") ?? .data
         let tiffType = UTType.tiff

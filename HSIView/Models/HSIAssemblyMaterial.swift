@@ -58,15 +58,15 @@ enum HSIAssemblyMaterialLoadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedType:
-            return "Поддерживаются только PNG, JPG и BMP файлы"
+            return L("Поддерживаются только PNG, JPG и BMP файлы")
         case .failedToReadImage:
-            return "Не удалось прочитать изображение"
+            return L("Не удалось прочитать изображение")
         case .invalidResolution:
-            return "Некорректное разрешение изображения"
+            return L("Некорректное разрешение изображения")
         case .failedToExtractPixels:
-            return "Не удалось извлечь пиксели изображения"
+            return L("Не удалось извлечь пиксели изображения")
         case .failedToSplitChannels:
-            return "Не удалось разбить изображение на каналы"
+            return L("Не удалось разбить изображение на каналы")
         }
     }
 }

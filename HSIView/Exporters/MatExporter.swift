@@ -9,11 +9,11 @@ class MatExporter {
         var errorDescription: String? {
             switch self {
             case .unsupportedDataType:
-                return "Неподдерживаемый тип данных для экспорта в MAT."
+                return L("Неподдерживаемый тип данных для экспорта в MAT.")
             case .exportFailed(let message):
-                return "Ошибка экспорта в MAT: \(message)"
+                return LF("export.mat.error.failed_with_message", message)
             case .memoryAllocationFailed:
-                return "Не удалось выделить память для экспорта."
+                return L("Не удалось выделить память для экспорта.")
             }
         }
     }
@@ -85,7 +85,7 @@ class MatExporter {
         }
         
         guard success else {
-            return .failure(ExportError.exportFailed("Не удалось записать MAT файл"))
+            return .failure(ExportError.exportFailed(L("Не удалось записать MAT файл")))
         }
         
         if let wavelengths = wavelengths, !wavelengths.isEmpty {
@@ -100,7 +100,7 @@ class MatExporter {
                 }
                 
                 guard waveSuccess else {
-                    return .failure(ExportError.exportFailed("Не удалось записать wavelengths в MAT файл"))
+                    return .failure(ExportError.exportFailed(L("Не удалось записать wavelengths в MAT файл")))
                 }
             } else {
                 let wavelengthsURL = url.deletingPathExtension()
@@ -110,7 +110,7 @@ class MatExporter {
                 do {
                     try wavelengthString.write(to: wavelengthsURL, atomically: true, encoding: .utf8)
                 } catch {
-                    return .failure(ExportError.exportFailed("Не удалось записать файл длин волн: \(error.localizedDescription)"))
+                    return .failure(ExportError.exportFailed(LF("export.mat.error.write_wavelength_file", error.localizedDescription)))
                 }
             }
         }

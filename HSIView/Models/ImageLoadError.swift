@@ -12,21 +12,20 @@ enum ImageLoadError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .fileNotFound:
-            return "Файл не найден"
+            return L("Файл не найден")
         case .unsupportedFormat(let format):
-            return "Неподдерживаемый формат: \(format)"
+            return LF("image_load.error.unsupported_format", format)
         case .corruptedData:
-            return "Поврежденные данные"
+            return L("Поврежденные данные")
         case .invalidDimensions:
-            return "Некорректные размеры"
+            return L("Некорректные размеры")
         case .memoryAllocationFailed:
-            return "Ошибка выделения памяти"
+            return L("Ошибка выделения памяти")
         case .readError(let details):
-            return "Ошибка чтения: \(details)"
+            return LF("image_load.error.read_details", details)
         case .notA3DCube:
-            return "Файл не содержит 3D гиперкуб"
+            return L("Файл не содержит 3D гиперкуб")
         }
     }
 }
-
 

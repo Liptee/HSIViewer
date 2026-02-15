@@ -8,11 +8,11 @@ enum ExportError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedDataType:
-            return "Неподдерживаемый тип данных для экспорта"
+            return L("Неподдерживаемый тип данных для экспорта")
         case .writeError(let msg):
-            return "Ошибка записи: \(msg)"
+            return LF("export.error.write_with_message", msg)
         case .invalidData:
-            return "Некорректные данные для экспорта"
+            return L("Некорректные данные для экспорта")
         }
     }
 }
@@ -146,4 +146,3 @@ class NpyExporter {
         return data
     }
 }
-

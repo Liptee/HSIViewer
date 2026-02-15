@@ -15,6 +15,7 @@ final class HSIAssemblerWindowManager: NSObject, NSWindowDelegate {
 
         let content = HSIAssemblerView()
             .environmentObject(appState)
+            .environment(\.locale, appState.appLocale)
 
         let hosting = NSHostingController(rootView: content)
         let window = NSWindow(
@@ -24,7 +25,7 @@ final class HSIAssemblerWindowManager: NSObject, NSWindowDelegate {
             defer: false
         )
         window.contentViewController = hosting
-        window.title = "Сборщик"
+        window.title = appState.localized("window.assembler.title")
         window.center()
         window.delegate = self
         window.isReleasedWhenClosed = false
