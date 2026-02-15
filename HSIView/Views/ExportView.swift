@@ -9,12 +9,15 @@ struct PendingExportInfo: Equatable {
     let matWavelengthsAsVariable: Bool
     let colorSynthesisConfig: ColorSynthesisConfig?
     let tiffEnviCompatible: Bool
+    let enviOptions: EnviExportOptions?
 }
 
 enum ExportFormat: String, CaseIterable, Identifiable {
     case npy
     case mat
     case tiff
+    case enviDat
+    case enviRaw
     case pngChannels
     case quickPNG
     case maskPNG
@@ -28,6 +31,8 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         case .npy: return L("export.format.npy")
         case .mat: return L("export.format.mat")
         case .tiff: return L("export.format.tiff")
+        case .enviDat: return L("export.format.envi_dat")
+        case .enviRaw: return L("export.format.envi_raw")
         case .pngChannels: return L("export.format.png_channels")
         case .quickPNG: return L("export.format.quick_png")
         case .maskPNG: return L("export.format.mask_png")
@@ -41,6 +46,8 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         case .npy, .maskNpy: return "npy"
         case .mat, .maskMat: return "mat"
         case .tiff: return "tiff"
+        case .enviDat: return "dat"
+        case .enviRaw: return "raw"
         case .pngChannels, .quickPNG, .maskPNG: return "png"
         }
     }
@@ -53,7 +60,7 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     }
     
     static var cubeFormats: [ExportFormat] {
-        [.npy, .mat, .tiff, .pngChannels, .quickPNG]
+        [.npy, .mat, .tiff, .enviDat, .enviRaw, .pngChannels, .quickPNG]
     }
     
     static var maskFormats: [ExportFormat] {
@@ -90,6 +97,8 @@ struct ExportView: View {
     @State private var maskExportColored: Bool = false
     @State private var maskVariableName: String = "mask"
     @State private var tiffEnviCompatible: Bool = false
+    @State private var enviOptions: EnviExportOptions = .default()
+    @State private var hoveredCubeFormat: ExportFormat?
     
     private var defaultExportBaseName: String {
         state.defaultExportBaseName
@@ -134,6 +143,8 @@ struct ExportView: View {
         .frame(width: 640, height: 500)
         .onAppear {
             colorSynthesisMode = state.colorSynthesisConfig.mode
+            let dataType = state.cube?.originalDataType ?? .float32
+            enviOptions = .default(binaryFileType: .dat, sourceDataType: dataType)
             if state.viewMode == .mask && hasMask {
                 selectedTab = .mask
                 selectedFormat = .maskPNG
@@ -144,6 +155,13 @@ struct ExportView: View {
                 selectedFormat = .npy
             } else if newTab == .mask && !selectedFormat.isMaskExport {
                 selectedFormat = .maskPNG
+            }
+        }
+        .onChange(of: selectedFormat) { newFormat in
+            if newFormat == .enviDat {
+                enviOptions.binaryFileType = .dat
+            } else if newFormat == .enviRaw {
+                enviOptions.binaryFileType = .raw
             }
         }
     }
@@ -159,6 +177,10 @@ struct ExportView: View {
         
         if selectedFormat == .tiff {
             tiffOptionsSection
+        }
+
+        if selectedFormat == .enviDat || selectedFormat == .enviRaw {
+            enviOptionsSection
         }
         
         if selectedFormat == .quickPNG {
@@ -191,6 +213,206 @@ struct ExportView: View {
                 text: tiffEnviCompatible
                     ? L("export.tiff.envi_info")
                     : L("export.tiff.default_info")
+            )
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(8)
+    }
+
+    private var enviOptionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L("export.envi.options.title"))
+                .font(.system(size: 11, weight: .semibold))
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("export.envi.interleave"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $enviOptions.interleave) {
+                        ForEach(EnviInterleave.allCases) { interleave in
+                            Text(interleave.title).tag(interleave)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 120)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("export.envi.data_type"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $enviOptions.dataType) {
+                        ForEach(EnviExportDataType.allCases) { type in
+                            Text(type.title).tag(type)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 180)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("export.envi.byte_order"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $enviOptions.byteOrder) {
+                        ForEach(EnviByteOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 150)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Text(L("export.envi.file_type"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextField("ENVI", text: $enviOptions.fileType)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                    .frame(maxWidth: 180)
+
+                Text(L("export.envi.sensor_type"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextField("Unknown", text: $enviOptions.sensorType)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                    .frame(maxWidth: 180)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("export.envi.description"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextField("Export via HSIView by Liptee", text: $enviOptions.description)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+            }
+
+            Toggle(isOn: $enviOptions.includeDefaultBands) {
+                Text(L("export.envi.default_bands.include"))
+                    .font(.system(size: 10, weight: .medium))
+            }
+
+            if enviOptions.includeDefaultBands {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("", selection: $enviOptions.defaultBandsMode) {
+                        ForEach(EnviDefaultBandsMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if enviOptions.defaultBandsMode == .custom {
+                        HStack(spacing: 8) {
+                            Text("R")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "70",
+                                value: $enviOptions.customDefaultBands.red,
+                                format: .number
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+
+                            Text("G")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "53",
+                                value: $enviOptions.customDefaultBands.green,
+                                format: .number
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+
+                            Text("B")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "19",
+                                value: $enviOptions.customDefaultBands.blue,
+                                format: .number
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 12) {
+                Toggle(isOn: $enviOptions.includeAcquisitionDate) {
+                    Text(L("export.envi.acquisition_date.include"))
+                        .font(.system(size: 10, weight: .medium))
+                }
+
+                if enviOptions.includeAcquisitionDate {
+                    DatePicker(
+                        "",
+                        selection: $enviOptions.acquisitionDate,
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                }
+            }
+
+            Toggle(isOn: $enviOptions.includeCoordinates) {
+                Text(L("export.envi.coordinates.include"))
+                    .font(.system(size: 10, weight: .medium))
+            }
+
+            if enviOptions.includeCoordinates {
+                HStack(spacing: 8) {
+                    Text(L("export.envi.latitude"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("0.0", value: $enviOptions.latitude, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+
+                    Text(L("export.envi.longitude"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    TextField("0.0", value: $enviOptions.longitude, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 120)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Text(L("export.envi.wavelength_units"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextField("nm", text: $enviOptions.wavelengthUnits)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                    .frame(width: 120)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("export.envi.additional_fields"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextEditor(text: $enviOptions.additionalHeaderFields)
+                    .font(.system(size: 10, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 90)
+                    .padding(6)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(6)
+                Text(L("export.envi.additional_fields.hint"))
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+
+            infoBox(
+                icon: "info.circle",
+                text: L("export.envi.options.info")
             )
         }
         .padding(12)
@@ -336,15 +558,57 @@ struct ExportView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Формат экспорта:")
                 .font(.system(size: 11, weight: .semibold))
-            
-            Picker("", selection: $selectedFormat) {
+
+            let columns = Array(repeating: GridItem(.flexible(minimum: 120), spacing: 8), count: 4)
+            LazyVGrid(columns: columns, spacing: 8) {
                 ForEach(ExportFormat.cubeFormats) { format in
-                    Text(format.title).tag(format)
+                    cubeFormatButton(format)
                 }
             }
-            .pickerStyle(.segmented)
-            
+
             formatDescription
+        }
+    }
+
+    private func cubeFormatButton(_ format: ExportFormat) -> some View {
+        let isSelected = selectedFormat == format
+        let isHovered = hoveredCubeFormat == format
+
+        return Button {
+            selectedFormat = format
+        } label: {
+            Text(format.title)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .padding(.horizontal, 8)
+                .foregroundColor(isSelected ? .white : .primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? Color.accentColor : Color(NSColor.controlBackgroundColor).opacity(0.8))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            isSelected
+                                ? Color.accentColor
+                                : Color(NSColor.separatorColor).opacity(0.7),
+                            lineWidth: 1
+                        )
+                )
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .shadow(color: Color.black.opacity(isHovered ? 0.25 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+        .onHover { hovering in
+            if hovering {
+                hoveredCubeFormat = format
+            } else if hoveredCubeFormat == format {
+                hoveredCubeFormat = nil
+            }
         }
     }
     
@@ -392,6 +656,16 @@ struct ExportView: View {
             infoBox(
                 icon: "photo.stack",
                 text: L("export.format.tiff_info")
+            )
+        case .enviDat:
+            infoBox(
+                icon: "doc.text",
+                text: L("export.format.envi_dat_info")
+            )
+        case .enviRaw:
+            infoBox(
+                icon: "doc.text",
+                text: L("export.format.envi_raw_info")
             )
         case .pngChannels:
             infoBox(
@@ -553,6 +827,11 @@ struct ExportView: View {
                     icon: "doc.text",
                     text: LF("export.wavelengths.base_file", defaultExportBaseName, wavelengths.count)
                 )
+            case .enviDat, .enviRaw:
+                infoBox(
+                    icon: "doc.text",
+                    text: L("export.wavelengths.envi_hdr")
+                )
             case .pngChannels:
                 infoBox(
                     icon: "doc.text",
@@ -695,12 +974,20 @@ struct ExportView: View {
             }
         }
 
+        let shouldPersistColorConfig = selectedFormat == .quickPNG || selectedFormat == .enviDat || selectedFormat == .enviRaw
+        var resolvedEnviOptions = enviOptions
+        if selectedFormat == .enviDat {
+            resolvedEnviOptions.binaryFileType = .dat
+        } else if selectedFormat == .enviRaw {
+            resolvedEnviOptions.binaryFileType = .raw
+        }
+
         let pendingInfo = PendingExportInfo(
             format: selectedFormat,
             wavelengths: exportWavelengths,
             matVariableName: selectedFormat == .mat ? matVariableName : nil,
             matWavelengthsAsVariable: matWavelengthsAsVariable,
-            colorSynthesisConfig: selectedFormat == .quickPNG
+            colorSynthesisConfig: shouldPersistColorConfig
             ? ColorSynthesisConfig(
                 mode: colorSynthesisMode,
                 mapping: state.colorSynthesisConfig.mapping,
@@ -708,7 +995,8 @@ struct ExportView: View {
                 pcaConfig: state.colorSynthesisConfig.pcaConfig
             )
             : nil,
-            tiffEnviCompatible: selectedFormat == .tiff ? tiffEnviCompatible : false
+            tiffEnviCompatible: selectedFormat == .tiff ? tiffEnviCompatible : false,
+            enviOptions: (selectedFormat == .enviDat || selectedFormat == .enviRaw) ? resolvedEnviOptions : nil
         )
         dismiss()
         // Даем модальному окну закрыться, прежде чем показывать системную панель выбора пути

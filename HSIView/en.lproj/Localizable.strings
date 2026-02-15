@@ -289,6 +289,8 @@
 "export.format.npy" = "NumPy (.npy)";
 "export.format.mat" = "MATLAB (.mat)";
 "export.format.tiff" = "TIFF (.tiff)";
+"export.format.envi_dat" = "ENVI DAT + HDR";
+"export.format.envi_raw" = "ENVI RAW + HDR";
 "export.format.png_channels" = "PNG Channels";
 "export.format.quick_png" = "Quick PNG";
 "export.format.mask_png" = "Mask PNG";
@@ -461,6 +463,8 @@
 "export.format.npy_info" = "NumPy format. Preserves data type and order (C/Fortran). Compatible with Python/NumPy.";
 "export.format.mat_info" = "MATLAB format. Preserves data type. Compatible with MATLAB/Octave. Data is column-major.";
 "export.format.tiff_info" = "Export all channels into a single multi-frame TIFF file.";
+"export.format.envi_dat_info" = "Export ENVI pair: .dat + .hdr. Configure HDR metadata and binary layout.";
+"export.format.envi_raw_info" = "Export ENVI pair: .raw + .hdr. Configure HDR metadata and binary layout.";
 "export.format.png_channels_info" = "Export channels as separate PNG files into the selected folder. All data types are scaled automatically.";
 "export.format.quick_png_info" = "Quick export of RGB image with selected color synthesis mode.";
 "export.color_synthesis.needs_wavelengths" = "Wavelengths are required for correct color synthesis.";
@@ -470,11 +474,39 @@
 "export.wavelengths.extra_file_per_line" = "An additional '_wavelengths.txt' file with %lld wavelengths will be created (one value per line).";
 "export.wavelengths.extra_file" = "An additional '_wavelengths.txt' file with %lld wavelengths will be created.";
 "export.wavelengths.base_file" = "A '%@_wavelengths.txt' file with %lld wavelengths will be created.";
+"export.wavelengths.envi_hdr" = "Wavelengths will be written to the 'wavelength' field in the .hdr file.";
 "export.wavelengths.missing_hint" = "Wavelengths are missing. Generate them in the control panel (Start/Step) before export.";
 "export.cube.open_or_enable_library" = "Open a hypercube or enable full library export.";
 "export.error.library_empty" = "Library is empty";
 "export.error.open_cube" = "Open a hypercube for export";
 "export.error.no_mask" = "No mask available for export";
+
+"export.envi.options.title" = "ENVI HDR options";
+"export.envi.binary_type.dat" = ".dat (ENVI data)";
+"export.envi.binary_type.raw" = ".raw (sensor RAW style)";
+"export.envi.interleave" = "Interleave";
+"export.envi.data_type" = "Data type";
+"export.envi.byte_order" = "Byte order";
+"export.envi.byte_order.little" = "Little endian (0)";
+"export.envi.byte_order.big" = "Big endian (1)";
+"export.envi.file_type" = "File type";
+"export.envi.sensor_type" = "Sensor type";
+"export.envi.description" = "Description";
+"export.envi.default_bands.include" = "Write default bands (RGB)";
+"export.envi.default_bands.mode.color_synthesis" = "From current color synthesis";
+"export.envi.default_bands.mode.specim" = "SPECIM preset (70/53/19)";
+"export.envi.default_bands.mode.custom" = "Custom";
+"export.envi.acquisition_date.include" = "Write acquisition date";
+"export.envi.coordinates.include" = "Write latitude/longitude";
+"export.envi.latitude" = "Latitude";
+"export.envi.longitude" = "Longitude";
+"export.envi.wavelength_units" = "Wavelength units";
+"export.envi.additional_fields" = "Additional HDR fields";
+"export.envi.additional_fields.hint" = "One field per line: key = value. Reserved keys are ignored.";
+"export.envi.options.info" = "Required ENVI fields are generated automatically. Optional fields help preserve sensor metadata.";
+"export.envi.error.invalid_layout" = "Failed to resolve cube layout for ENVI export";
+"export.envi.error.failed_to_create_file" = "Failed to create file: %@";
+"export.envi.error.invalid_additional_field_line" = "Invalid additional HDR field at line %d";
 
 "mask.brush_size_px" = "Brush size: %lld px";
 "graph.roi.image_size_px" = "Image size: %lld x %lld px";

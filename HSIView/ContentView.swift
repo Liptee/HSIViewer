@@ -266,7 +266,8 @@ struct ContentView: View {
                     matVariableName: exportInfo.matVariableName,
                     matWavelengthsAsVariable: exportInfo.matWavelengthsAsVariable,
                     colorSynthesisConfig: exportInfo.colorSynthesisConfig,
-                    tiffEnviCompatible: exportInfo.tiffEnviCompatible
+                    tiffEnviCompatible: exportInfo.tiffEnviCompatible,
+                    enviOptions: exportInfo.enviOptions
                 )
                 state.pendingExport = nil
             }
@@ -294,7 +295,15 @@ struct ContentView: View {
         }
     }
     
-    private func performActualExport(format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?, tiffEnviCompatible: Bool) {
+    private func performActualExport(
+        format: ExportFormat,
+        wavelengths: Bool,
+        matVariableName: String?,
+        matWavelengthsAsVariable: Bool,
+        colorSynthesisConfig: ColorSynthesisConfig?,
+        tiffEnviCompatible: Bool,
+        enviOptions: EnviExportOptions?
+    ) {
         if state.exportEntireLibrary {
             guard !state.libraryEntries.isEmpty else { return }
             
@@ -317,7 +326,8 @@ struct ContentView: View {
                 matVariableName: matVariableName,
                 matWavelengthsAsVariable: matWavelengthsAsVariable,
                 colorSynthesisConfig: colorSynthesisConfig,
-                tiffEnviCompatible: tiffEnviCompatible
+                tiffEnviCompatible: tiffEnviCompatible,
+                enviOptions: enviOptions
             )
             return
         }
@@ -390,6 +400,14 @@ struct ContentView: View {
             panel.nameFieldStringValue = "\(defaultBaseName).\(format.fileExtension)"
             panel.allowedContentTypes = [UTType.tiff]
             panel.message = state.localized("Выберите путь для сохранения TIFF")
+        case .enviDat:
+            panel.nameFieldStringValue = "\(defaultBaseName).dat"
+            panel.allowedContentTypes = [UTType(filenameExtension: "dat") ?? .data]
+            panel.message = state.localized("Выберите путь для сохранения")
+        case .enviRaw:
+            panel.nameFieldStringValue = "\(defaultBaseName).raw"
+            panel.allowedContentTypes = [UTType(filenameExtension: "raw") ?? .data]
+            panel.message = state.localized("Выберите путь для сохранения")
         case .maskPNG, .maskNpy, .maskMat:
             return // Маска экспортируется через ExportView
         }
@@ -430,6 +448,19 @@ struct ContentView: View {
                         layout: currentLayout,
                         enviCompatible: tiffEnviCompatible
                     )
+                case .enviDat, .enviRaw:
+                    let exportOptions = enviOptions ?? EnviExportOptions.default(
+                        binaryFileType: format == .enviRaw ? .raw : .dat,
+                        sourceDataType: cube.originalDataType
+                    )
+                    result = EnviExporter.export(
+                        cube: cube,
+                        to: saveURL,
+                        wavelengths: wavelengthsToExport,
+                        layout: currentLayout,
+                        options: exportOptions,
+                        colorSynthesisConfig: colorSynthesisConfig ?? state.colorSynthesisConfig
+                    )
                 case .quickPNG:
                     result = QuickPNGExporter.export(
                         cube: cube,
@@ -456,7 +487,16 @@ struct ContentView: View {
         }
     }
     
-    private func exportLibraryEntries(to destinationFolder: URL, format: ExportFormat, wavelengths: Bool, matVariableName: String?, matWavelengthsAsVariable: Bool, colorSynthesisConfig: ColorSynthesisConfig?, tiffEnviCompatible: Bool) {
+    private func exportLibraryEntries(
+        to destinationFolder: URL,
+        format: ExportFormat,
+        wavelengths: Bool,
+        matVariableName: String?,
+        matWavelengthsAsVariable: Bool,
+        colorSynthesisConfig: ColorSynthesisConfig?,
+        tiffEnviCompatible: Bool,
+        enviOptions: EnviExportOptions?
+    ) {
         let entries = state.libraryEntries
         guard !entries.isEmpty else { return }
         let includeWavelengths = wavelengths
@@ -502,6 +542,23 @@ struct ContentView: View {
                             wavelengths: wavelengthsToExport,
                             layout: payload.layout,
                             enviCompatible: tiffEnviCompatible
+                        )
+                    case .enviDat, .enviRaw:
+                        let target = destinationFolder.appendingPathComponent(baseName).appendingPathExtension(
+                            format == .enviRaw ? "raw" : "dat"
+                        )
+                        var exportOptions = enviOptions ?? EnviExportOptions.default(
+                            binaryFileType: format == .enviRaw ? .raw : .dat,
+                            sourceDataType: payload.cube.originalDataType
+                        )
+                        exportOptions.binaryFileType = format == .enviRaw ? .raw : .dat
+                        result = EnviExporter.export(
+                            cube: payload.cube,
+                            to: target,
+                            wavelengths: wavelengthsToExport,
+                            layout: payload.layout,
+                            options: exportOptions,
+                            colorSynthesisConfig: payload.colorSynthesisConfig
                         )
                     case .pngChannels:
                         let target = destinationFolder.appendingPathComponent(baseName)

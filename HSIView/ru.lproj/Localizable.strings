@@ -140,6 +140,8 @@
 "export.format.npy" = "NumPy (.npy)";
 "export.format.mat" = "MATLAB (.mat)";
 "export.format.tiff" = "TIFF (.tiff)";
+"export.format.envi_dat" = "ENVI DAT + HDR";
+"export.format.envi_raw" = "ENVI RAW + HDR";
 "export.format.png_channels" = "PNG Channels";
 "export.format.quick_png" = "Быстрый PNG";
 "export.format.mask_png" = "Маска PNG";
@@ -312,6 +314,8 @@
 "export.format.npy_info" = "NumPy формат. Сохраняет тип данных и порядок (C/Fortran). Совместим с Python/NumPy.";
 "export.format.mat_info" = "MATLAB формат. Сохраняет тип данных. Совместим с MATLAB/Octave. Данные в column-major порядке.";
 "export.format.tiff_info" = "Экспорт всех каналов в один многокадровый TIFF файл.";
+"export.format.envi_dat_info" = "Экспорт пары ENVI: .dat + .hdr. Можно настроить HDR-метаданные и бинарную раскладку.";
+"export.format.envi_raw_info" = "Экспорт пары ENVI: .raw + .hdr. Можно настроить HDR-метаданные и бинарную раскладку.";
 "export.format.png_channels_info" = "Экспорт каналов как отдельные PNG изображения в выбранную папку. Все типы данных автоматически масштабируются.";
 "export.format.quick_png_info" = "Быстрый экспорт RGB изображения с выбранным режимом цветосинтеза.";
 "export.color_synthesis.needs_wavelengths" = "Для корректного цветосинтеза необходимо задать длины волн.";
@@ -321,11 +325,39 @@
 "export.wavelengths.extra_file_per_line" = "Будет создан дополнительный файл '_wavelengths.txt' с %lld длинами волн (по одному значению на строку).";
 "export.wavelengths.extra_file" = "Будет создан дополнительный файл '_wavelengths.txt' с %lld длинами волн.";
 "export.wavelengths.base_file" = "Будет создан файл '%@_wavelengths.txt' с %lld длинами волн.";
+"export.wavelengths.envi_hdr" = "Длины волн будут записаны в поле 'wavelength' файла .hdr.";
 "export.wavelengths.missing_hint" = "Длины волн отсутствуют. Сгенерируйте их в панели управления (Start/Step) перед экспортом.";
 "export.cube.open_or_enable_library" = "Открой гиперкуб или включите экспорт всей библиотеки.";
 "export.error.library_empty" = "Библиотека пуста";
 "export.error.open_cube" = "Открой гиперкуб для экспорта";
 "export.error.no_mask" = "Нет маски для экспорта";
+
+"export.envi.options.title" = "Параметры ENVI HDR";
+"export.envi.binary_type.dat" = ".dat (данные ENVI)";
+"export.envi.binary_type.raw" = ".raw (формат RAW сенсора)";
+"export.envi.interleave" = "Способ чередования";
+"export.envi.data_type" = "Тип данных";
+"export.envi.byte_order" = "Порядок байтов";
+"export.envi.byte_order.little" = "Младший байт первым (0)";
+"export.envi.byte_order.big" = "Старший байт первым (1)";
+"export.envi.file_type" = "Тип файла";
+"export.envi.sensor_type" = "Тип сенсора";
+"export.envi.description" = "Описание";
+"export.envi.default_bands.include" = "Записывать каналы по умолчанию (RGB)";
+"export.envi.default_bands.mode.color_synthesis" = "Из текущего цветосинтеза";
+"export.envi.default_bands.mode.specim" = "Пресет SPECIM (70/53/19)";
+"export.envi.default_bands.mode.custom" = "Пользовательские";
+"export.envi.acquisition_date.include" = "Записывать дату съёмки";
+"export.envi.coordinates.include" = "Записывать широту/долготу";
+"export.envi.latitude" = "Широта";
+"export.envi.longitude" = "Долгота";
+"export.envi.wavelength_units" = "Единицы длины волны";
+"export.envi.additional_fields" = "Дополнительные поля HDR";
+"export.envi.additional_fields.hint" = "По одному полю на строку: key = value. Зарезервированные ключи игнорируются.";
+"export.envi.options.info" = "Обязательные поля ENVI формируются автоматически. Дополнительные поля помогают сохранить метаданные сенсора.";
+"export.envi.error.invalid_layout" = "Не удалось определить раскладку (layout) куба для экспорта ENVI";
+"export.envi.error.failed_to_create_file" = "Не удалось создать файл: %@";
+"export.envi.error.invalid_additional_field_line" = "Некорректное дополнительное поле HDR в строке %d";
 
 "mask.brush_size_px" = "Размер кисти: %lld px";
 "graph.roi.image_size_px" = "Размер изображения: %lld × %lld px";
