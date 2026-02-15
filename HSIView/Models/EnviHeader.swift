@@ -40,7 +40,12 @@ struct EnviHeader {
 
 class EnviHeaderParser {
     static func parse(from url: URL) throws -> EnviHeader {
-        guard let content = try? String(contentsOf: url, encoding: .ascii) else {
+        let content: String
+        if let utf8 = try? String(contentsOf: url, encoding: .utf8) {
+            content = utf8
+        } else if let ascii = try? String(contentsOf: url, encoding: .ascii) {
+            content = ascii
+        } else {
             throw ImageLoadError.readError("Не удалось прочитать .hdr файл")
         }
         
@@ -143,6 +148,5 @@ class EnviHeaderParser {
         return doubles.isEmpty ? nil : doubles
     }
 }
-
 
 
