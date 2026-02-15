@@ -77,7 +77,7 @@ struct LibraryPanel: View {
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             if state.libraryEntries.isEmpty {
-                Text("Перетащи файлы .mat, .tiff, .npy или .dat сюда, чтобы добавить их в библиотеку. Двойной клик по пути — открыть куб.")
+                Text("Перетащи файлы .mat, .tiff, .npy или .dat сюда, чтобы добавить их в библиотеку. Двойной клик по элементу — открыть куб.")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .padding(8)
@@ -124,8 +124,8 @@ struct LibraryPanel: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isActive ? .accentColor : .primary)
             libraryStatsRow(for: entry)
-            Text(entry.url.deletingLastPathComponent().path)
-                .font(.system(size: 9, design: .monospaced))
+            Label(state.libraryEntryWavelengthRangeText(for: entry), systemImage: "waveform.path")
+                .font(.system(size: 9))
                 .foregroundColor(.secondary)
                 .lineLimit(1)
         }

@@ -384,6 +384,7 @@ struct GridLibraryWindowView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
                 libraryEntryStatsRow(for: entry, compact: true)
+                wavelengthRangeLabel(for: entry, compact: true)
             } else {
                 Text("Пусто")
                     .font(.system(size: 10, weight: .medium))
@@ -492,6 +493,7 @@ struct GridLibraryWindowView: View {
                 .foregroundColor(isActive ? .accentColor : .primary)
                 .lineLimit(1)
             libraryEntryStatsRow(for: entry, compact: true)
+            wavelengthRangeLabel(for: entry, compact: true)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -742,6 +744,14 @@ struct GridLibraryWindowView: View {
         Label("\(count)", systemImage: systemImage)
             .font(.system(size: fontSize))
             .foregroundColor(.secondary)
+    }
+
+    private func wavelengthRangeLabel(for entry: CubeLibraryEntry, compact: Bool) -> some View {
+        let fontSize: CGFloat = compact ? 8 : 9
+        return Label(state.libraryEntryWavelengthRangeText(for: entry), systemImage: "waveform.path")
+            .font(.system(size: fontSize))
+            .foregroundColor(.secondary)
+            .lineLimit(1)
     }
 
     private func isCommandPressed() -> Bool {
