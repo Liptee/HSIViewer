@@ -2029,6 +2029,29 @@ final class AppState: ObservableObject {
         )
     }
 
+    func libraryEntryWavelengthRange(for entry: CubeLibraryEntry) -> (min: Double, max: Double, count: Int)? {
+        guard let values = availableWavelengths(for: entry), !values.isEmpty else { return nil }
+        guard let minValue = values.min(), let maxValue = values.max() else { return nil }
+        return (min: minValue, max: maxValue, count: values.count)
+    }
+
+    func libraryEntryWavelengthRangeText(for entry: CubeLibraryEntry) -> String {
+        guard let range = libraryEntryWavelengthRange(for: entry) else {
+            return "λ: диапазон не задан"
+        }
+
+        if abs(range.max - range.min) < 0.0001 {
+            return String(format: "λ: %.1f нм • %d канал(ов)", range.min, range.count)
+        }
+
+        return String(
+            format: "λ: %.1f – %.1f нм • %d канал(ов)",
+            range.min,
+            range.max,
+            range.count
+        )
+    }
+
     @discardableResult
     func addLibraryEntryIfPossible(from url: URL) -> CubeLibraryEntry? {
         let canonical = canonicalURL(url)
