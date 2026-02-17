@@ -460,6 +460,8 @@
 "pipeline.alignment.progress.channel_metric_score" = "Канал %1$d/%2$d: %3$@ = %4$@";
 "pipeline.alignment.progress.apply_homographies_to_channels" = "Применение гомографий к %d каналам…";
 "pipeline.alignment.progress.completed_average" = "Завершено! Средний %1$@: %2$@";
+"pipeline.alignment.error.already_in_progress" = "Дождитесь завершения текущего вычисления выравнивания";
+"content.alignment.processing.title" = "Поиск гомографий";
 "pipeline.auto_crop.progress.iteration" = "Перебор обрезок: %1$@=%2$@";
 
 "loader.envi.hdr_not_found" = "Не найден .hdr файл: %@";

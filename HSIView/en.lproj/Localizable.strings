@@ -1004,6 +1004,8 @@
 "Применить нормализацию отдельно к каждому каналу" = "Apply normalization separately to each channel";
 "Проекция и нормализация…" = "Projection and normalization…";
 "Пунктирная" = "Dashed";
+"pipeline.alignment.error.already_in_progress" = "Wait until the current alignment computation finishes";
+"content.alignment.processing.title" = "Homography search";
 "Размер файла не соответствует заголовку" = "File size does not match header";
 "Разрешить доступ" = "Grant access";
 "Расчёт ковариации…" = "Computing covariance…";

@@ -1226,6 +1226,7 @@ struct OperationEditorView: View {
         let channels = state.cube?.channelCount(for: op.layout) ?? state.channelCount
         let maxIndex = max(channels - 1, 0)
         let wavelengths = state.cube?.wavelengths ?? state.wavelengths
+        let isCurrentCubeAlignmentInProgress = state.isCurrentCubeAlignmentInProgress
         
         return VStack(alignment: .leading, spacing: 12) {
             Text(state.localized("Спектральное выравнивание"))
@@ -1395,7 +1396,7 @@ struct OperationEditorView: View {
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
-                    } else if state.isAlignmentInProgress {
+                    } else if isCurrentCubeAlignmentInProgress {
                         HStack(spacing: 4) {
                             ProgressView()
                                 .controlSize(.small)
@@ -1485,7 +1486,7 @@ struct OperationEditorView: View {
                 }
             }
             
-            if state.isAlignmentInProgress {
+            if isCurrentCubeAlignmentInProgress {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text(state.alignmentProgressMessage)
@@ -1567,6 +1568,7 @@ struct OperationEditorView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.regular)
+                    .disabled(state.isAlignmentInProgress)
                 }
             }
             

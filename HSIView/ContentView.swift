@@ -72,6 +72,7 @@ struct ContentView: View {
                     PipelinePanel()
                         .environmentObject(state)
                         .padding(.leading, 12)
+                        .disabled(state.isCurrentCubeProcessingInProgress)
                     
                     Divider()
                 }
@@ -122,6 +123,26 @@ struct ContentView: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .contentShape(Rectangle())
+                    .overlay(alignment: .topLeading) {
+                        if state.isCurrentCubeAlignmentInProgress {
+                            AlignmentProcessingToastView(
+                                title: state.localized("content.alignment.processing.title"),
+                                progress: state.alignmentProgress,
+                                message: state.alignmentProgressMessage
+                            )
+                            .frame(maxWidth: 320)
+                            .padding(12)
+                            .allowsHitTesting(false)
+                        } else if state.isCurrentCubePipelineInProgress {
+                            PipelineProcessingToastView(
+                                message: state.currentCubePipelineProcessingMessage
+                            )
+                            .frame(maxWidth: 320)
+                            .padding(12)
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    .allowsHitTesting(!state.isCurrentCubeProcessingInProgress)
                                     .gesture(
                                         MagnificationGesture()
                                             .onChanged { value in
@@ -242,6 +263,7 @@ struct ContentView: View {
                 bottomControls(cube: cube)
                     }
                 }
+                .disabled(state.isCurrentCubeProcessingInProgress)
             }
         }
         .frame(minWidth: 960, minHeight: 500)
@@ -1895,6 +1917,57 @@ private struct LibraryExportToastView: View {
         case .running:
             return ""
         }
+    }
+}
+
+private struct AlignmentProcessingToastView: View {
+    let title: String
+    let progress: Double
+    let message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+                Text("\(Int(progress * 100))%")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            ProgressView(value: progress)
+                .progressViewStyle(.linear)
+
+            Text(message)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+    }
+}
+
+private struct PipelineProcessingToastView: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
     }
 }
 
