@@ -385,6 +385,18 @@ struct ExportView: View {
                 }
             }
 
+            Toggle(isOn: $enviOptions.includeGeoReference) {
+                Text(L("export.envi.georef.include"))
+                    .font(.system(size: 10, weight: .medium))
+            }
+
+            if enviOptions.includeGeoReference {
+                infoBox(
+                    icon: "globe",
+                    text: L("export.envi.georef.info")
+                )
+            }
+
             HStack(spacing: 8) {
                 Text(L("export.envi.wavelength_units"))
                     .font(.system(size: 10))

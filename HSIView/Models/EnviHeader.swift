@@ -15,6 +15,7 @@ struct EnviHeader {
     let wavelengthUnits: String?
     let description: String?
     let bandNames: [String]?
+    let mapInfo: MapGeoReference?
     
     var width: Int { samples }
     var height: Int { lines }
@@ -119,6 +120,18 @@ class EnviHeaderParser {
                 $0.trimmingCharacters(in: .whitespaces)
             }
         }
+
+        let xStart = Int(fields["x start"] ?? "1") ?? 1
+        let yStart = Int(fields["y start"] ?? "1") ?? 1
+        let globalUnits = fields["units"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let globalRotation = fields["rotation"].flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let mapInfo = parseMapInfo(
+            fields["map info"],
+            xStart: xStart,
+            yStart: yStart,
+            fallbackUnits: globalUnits,
+            fallbackRotation: globalRotation
+        )
         
         return EnviHeader(
             samples: samples,
@@ -132,7 +145,8 @@ class EnviHeaderParser {
             fwhm: fwhm,
             wavelengthUnits: wavelengthUnits,
             description: description,
-            bandNames: bandNames
+            bandNames: bandNames,
+            mapInfo: mapInfo
         )
     }
     
@@ -147,6 +161,98 @@ class EnviHeaderParser {
         
         return doubles.isEmpty ? nil : doubles
     }
+
+    private static func parseMapInfo(
+        _ value: String?,
+        xStart: Int,
+        yStart: Int,
+        fallbackUnits: String?,
+        fallbackRotation: Double?
+    ) -> MapGeoReference? {
+        guard let value else { return nil }
+
+        let cleaned = value
+            .replacingOccurrences(of: "{", with: "")
+            .replacingOccurrences(of: "}", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+
+        let tokens = cleaned
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard tokens.count >= 7 else { return nil }
+        guard
+            let referencePixelX = Double(tokens[1]),
+            let referencePixelY = Double(tokens[2]),
+            let tiePointX = Double(tokens[3]),
+            let tiePointY = Double(tokens[4]),
+            let pixelSizeX = Double(tokens[5]),
+            let pixelSizeY = Double(tokens[6])
+        else {
+            return nil
+        }
+
+        let projectionName = tokens[0]
+
+        var zone: Int?
+        var hemisphere: String?
+        var datum: String?
+        var units = fallbackUnits
+        var rotationDegrees = fallbackRotation ?? 0.0
+
+        for token in tokens.dropFirst(7) {
+            let parts = token.split(separator: "=", maxSplits: 1).map(String.init)
+            if parts.count == 2 {
+                let key = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let rawValue = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                if key == "units", !rawValue.isEmpty {
+                    units = rawValue
+                } else if key == "rotation", let rotation = Double(rawValue) {
+                    rotationDegrees = rotation
+                }
+                continue
+            }
+
+            if zone == nil, let parsedZone = Int(token) {
+                zone = parsedZone
+                continue
+            }
+
+            if hemisphere == nil, isHemisphereToken(token) {
+                hemisphere = token
+                continue
+            }
+
+            if datum == nil {
+                datum = token
+            }
+        }
+
+        return MapGeoReference(
+            projectionName: projectionName,
+            referencePixelX: referencePixelX,
+            referencePixelY: referencePixelY,
+            tiePointX: tiePointX,
+            tiePointY: tiePointY,
+            pixelSizeX: pixelSizeX,
+            pixelSizeY: pixelSizeY,
+            zone: zone,
+            hemisphere: hemisphere,
+            datum: datum,
+            units: units,
+            rotationDegrees: rotationDegrees,
+            xStart: max(1, xStart),
+            yStart: max(1, yStart)
+        )
+    }
+
+    private static func isHemisphereToken(_ token: String) -> Bool {
+        let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "n"
+            || normalized == "s"
+            || normalized == "north"
+            || normalized == "south"
+    }
 }
-
-

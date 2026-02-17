@@ -39,6 +39,9 @@ final class AppState: ObservableObject {
 
     @Published var cube: HyperCube? {
         didSet {
+            if oldValue?.id != cube?.id {
+                cursorGeoCoordinate = nil
+            }
             handleCubeChange(previousCube: oldValue)
         }
     }
@@ -76,6 +79,7 @@ final class AppState: ObservableObject {
             refreshColorSynthesisDefaultsIfNeeded()
         }
     }
+    @Published var cursorGeoCoordinate: CursorGeoCoordinate?
     @Published var lambdaStart: String = "400"
     @Published var lambdaEnd: String = "1000"
     @Published var lambdaStep: String = ""
@@ -942,6 +946,23 @@ final class AppState: ObservableObject {
         imageOffset.width += delta.width
         imageOffset.height += delta.height
     }
+
+    func updateCursorGeoCoordinate(pixelX: Int, pixelY: Int) {
+        guard let georef = cube?.geoReference else {
+            cursorGeoCoordinate = nil
+            return
+        }
+        let mapCoordinate = georef.mapCoordinate(forPixelX: pixelX, pixelY: pixelY)
+        cursorGeoCoordinate = CursorGeoCoordinate(
+            pixelX: pixelX,
+            pixelY: pixelY,
+            mapCoordinate: mapCoordinate
+        )
+    }
+
+    func clearCursorGeoCoordinate() {
+        cursorGeoCoordinate = nil
+    }
     
     func toggleAnalysisTool(_ tool: AnalysisTool) {
         if activeAnalysisTool == tool {
@@ -1735,7 +1756,8 @@ final class AppState: ObservableObject {
             storage: cube.storage,
             sourceFormat: cube.sourceFormat,
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: stored
+            wavelengths: stored,
+            geoReference: cube.geoReference
         )
     }
 
@@ -1909,7 +1931,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
             
         case .float32(let arr):
             var newData = [Float]()
@@ -1924,7 +1946,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
             
         case .uint16(let arr):
             var newData = [UInt16]()
@@ -1939,7 +1961,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
             
         case .uint8(let arr):
             var newData = [UInt8]()
@@ -1954,7 +1976,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
             
         case .int16(let arr):
             var newData = [Int16]()
@@ -1969,7 +1991,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
             
         case .int32(let arr):
             var newData = [Int32]()
@@ -1984,7 +2006,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
             
         case .int8(let arr):
             var newData = [Int8]()
@@ -1999,7 +2021,7 @@ final class AppState: ObservableObject {
                     }
                 }
             }
-            return HyperCube(dims: newDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil)
+            return HyperCube(dims: newDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: false, wavelengths: nil, geoReference: cube.geoReference)
         }
     }
     
@@ -4344,6 +4366,12 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .spectrumGraphROI: return "square.dashed.inset.filled"
         }
     }
+}
+
+struct CursorGeoCoordinate: Equatable {
+    let pixelX: Int
+    let pixelY: Int
+    let mapCoordinate: MapCoordinate
 }
 
 struct SpectrumSample: Identifiable, Equatable {

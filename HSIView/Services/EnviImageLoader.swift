@@ -122,7 +122,8 @@ class EnviImageLoader: ImageLoader {
             storage: storage,
             sourceFormat: "\(formatName) (\(header.interleave.uppercased()))",
             isFortranOrder: false,
-            wavelengths: header.wavelength
+            wavelengths: header.wavelength,
+            geoReference: header.mapInfo
         )
         
         return .success(cube)

@@ -113,6 +113,14 @@
 "imageinfo.mean_value" = "Mean";
 "imageinfo.std_dev" = "Std. dev.";
 "imageinfo.memory_size" = "Memory size";
+"imageinfo.geo.crs" = "CRS";
+"imageinfo.geo.pixel_size" = "Pixel size";
+"imageinfo.geo.rotation" = "Rotation";
+"imageinfo.geo.cursor_pixel" = "Cursor pixel";
+"imageinfo.geo.map_x" = "Map X";
+"imageinfo.geo.map_y" = "Map Y";
+"imageinfo.geo.longitude" = "Longitude";
+"imageinfo.geo.latitude" = "Latitude";
 
 "mat.select_variable.title" = "Select variable to import";
 
@@ -498,6 +506,8 @@
 "export.envi.default_bands.mode.custom" = "Custom";
 "export.envi.acquisition_date.include" = "Write acquisition date";
 "export.envi.coordinates.include" = "Write latitude/longitude";
+"export.envi.georef.include" = "Write geo-referencing (map info)";
+"export.envi.georef.info" = "If geo-referencing exists in the cube, 'map info', 'x start', and 'y start' will be written to .hdr.";
 "export.envi.latitude" = "Latitude";
 "export.envi.longitude" = "Longitude";
 "export.envi.wavelength_units" = "Wavelength units";

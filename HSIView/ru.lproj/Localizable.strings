@@ -113,6 +113,14 @@
 "imageinfo.mean_value" = "Среднее";
 "imageinfo.std_dev" = "Станд. откл.";
 "imageinfo.memory_size" = "Размер в памяти";
+"imageinfo.geo.crs" = "Система координат";
+"imageinfo.geo.pixel_size" = "Размер пикселя";
+"imageinfo.geo.rotation" = "Поворот";
+"imageinfo.geo.cursor_pixel" = "Пиксель курсора";
+"imageinfo.geo.map_x" = "X карты";
+"imageinfo.geo.map_y" = "Y карты";
+"imageinfo.geo.longitude" = "Долгота";
+"imageinfo.geo.latitude" = "Широта";
 
 "mat.select_variable.title" = "Выберите переменную для импорта";
 
@@ -349,6 +357,8 @@
 "export.envi.default_bands.mode.custom" = "Пользовательские";
 "export.envi.acquisition_date.include" = "Записывать дату съёмки";
 "export.envi.coordinates.include" = "Записывать широту/долготу";
+"export.envi.georef.include" = "Записывать геопривязку (map info)";
+"export.envi.georef.info" = "Если в кубе есть геопривязка, в .hdr будут записаны поля 'map info', 'x start' и 'y start'.";
 "export.envi.latitude" = "Широта";
 "export.envi.longitude" = "Долгота";
 "export.envi.wavelength_units" = "Единицы длины волны";

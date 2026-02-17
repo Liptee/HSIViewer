@@ -23,8 +23,7 @@ class DataTypeConverter {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [\(targetType.rawValue)]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func convertWithScaling(_ cube: HyperCube, to targetType: DataType) -> DataStorage? {

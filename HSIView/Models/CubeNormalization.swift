@@ -167,8 +167,7 @@ class CubeNormalizer {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [MinMax]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         let stats = cube.statistics()
@@ -194,8 +193,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [MinMax]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func applyManualRange(
@@ -230,8 +228,7 @@ class CubeNormalizer {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [ManualRange]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         guard sourceMax > sourceMin else { return cube }
@@ -254,8 +251,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [ManualRange]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func applyPercentile(
@@ -298,8 +294,7 @@ class CubeNormalizer {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [Percentile]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         var allValues = [Double]()
@@ -336,8 +331,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [Percentile]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func applyZScore(
@@ -375,8 +369,7 @@ class CubeNormalizer {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [Z-Score]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         let stats = cube.statistics()
@@ -397,8 +390,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [Z-Score]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func applyLog(
@@ -417,8 +409,7 @@ class CubeNormalizer {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [Log]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         let normalizedData = (0..<cube.totalElements).map { idx -> Double in
@@ -433,8 +424,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [Log]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func applySqrt(
@@ -453,8 +443,7 @@ class CubeNormalizer {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [Sqrt]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         let normalizedData = (0..<cube.totalElements).map { idx -> Double in
@@ -469,8 +458,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [Sqrt]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func shouldPreserveType(cube: HyperCube, normalizedData: [Double], targetMin: Double, targetMax: Double) -> DataType? {
@@ -615,8 +603,7 @@ class CubeNormalizer {
                 storage: .float32(allData),
                 sourceFormat: cube.sourceFormat,
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
-            )
+                wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
         
         var allData = [Double](repeating: 0.0, count: totalElements)
@@ -687,8 +674,7 @@ class CubeNormalizer {
             storage: storage,
             sourceFormat: cube.sourceFormat,
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
-        )
+            wavelengths: cube.wavelengths, geoReference: cube.geoReference)
     }
     
     private static func normalizeChannelMinMax(_ data: [Double], targetMin: Double, targetMax: Double) -> [Double] {

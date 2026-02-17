@@ -159,6 +159,7 @@ struct EnviExportOptions: Equatable {
     var includeCoordinates: Bool
     var latitude: Double
     var longitude: Double
+    var includeGeoReference: Bool
     var wavelengthUnits: String
     var additionalHeaderFields: String
 
@@ -182,6 +183,7 @@ struct EnviExportOptions: Equatable {
             includeCoordinates: false,
             latitude: 0.0,
             longitude: 0.0,
+            includeGeoReference: true,
             wavelengthUnits: "nm",
             additionalHeaderFields: ""
         )
@@ -222,7 +224,11 @@ final class EnviExporter {
         "sensor type",
         "latitude",
         "longitude",
-        "acquisition date"
+        "acquisition date",
+        "map info",
+        "x start",
+        "y start",
+        "rotation"
     ]
 
     static func export(
@@ -270,6 +276,7 @@ final class EnviExporter {
                 height: height,
                 channels: channels,
                 wavelengths: wavelengths,
+                geoReference: cube.geoReference,
                 options: options,
                 colorSynthesisConfig: colorSynthesisConfig
             )
@@ -286,6 +293,7 @@ final class EnviExporter {
         height: Int,
         channels: Int,
         wavelengths: [Double]?,
+        geoReference: MapGeoReference?,
         options: EnviExportOptions,
         colorSynthesisConfig: ColorSynthesisConfig?
     ) throws -> String {
@@ -317,6 +325,10 @@ final class EnviExporter {
             lines.append(String(format: "longitude = %.8f", options.longitude))
         }
 
+        if options.includeGeoReference, let geoReference {
+            lines.append(contentsOf: buildGeoReferenceHeaderLines(geoReference))
+        }
+
         if options.includeDefaultBands, let defaultBands = resolvedDefaultBands(
             channels: channels,
             options: options,
@@ -346,6 +358,38 @@ final class EnviExporter {
         lines.append(contentsOf: additionalFields)
 
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func buildGeoReferenceHeaderLines(_ geo: MapGeoReference) -> [String] {
+        var tokens: [String] = [
+            geo.projectionName,
+            formatCoordinate(geo.referencePixelX),
+            formatCoordinate(geo.referencePixelY),
+            formatCoordinate(geo.tiePointX),
+            formatCoordinate(geo.tiePointY),
+            formatCoordinate(geo.pixelSizeX),
+            formatCoordinate(geo.pixelSizeY)
+        ]
+
+        if let zone = geo.zone {
+            tokens.append(String(zone))
+        }
+        if let hemisphere = geo.hemisphere?.trimmingCharacters(in: .whitespacesAndNewlines), !hemisphere.isEmpty {
+            tokens.append(hemisphere)
+        }
+        if let datum = geo.datum?.trimmingCharacters(in: .whitespacesAndNewlines), !datum.isEmpty {
+            tokens.append(datum)
+        }
+        if let units = geo.units?.trimmingCharacters(in: .whitespacesAndNewlines), !units.isEmpty {
+            tokens.append("units=\(units)")
+        }
+        tokens.append("rotation=\(formatCoordinate(geo.rotationDegrees))")
+
+        return [
+            "map info = {\(tokens.joined(separator: ", "))}",
+            "x start = \(max(1, geo.xStart))",
+            "y start = \(max(1, geo.yStart))"
+        ]
     }
 
     private static func parseAdditionalHeaderFields(_ raw: String) throws -> [String] {
@@ -431,6 +475,11 @@ final class EnviExporter {
 
     private static func formatWavelength(_ value: Double) -> String {
         String(format: "%.8f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+
+    private static func formatCoordinate(_ value: Double) -> String {
+        guard value.isFinite else { return "0" }
+        return String(format: "%.12f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
     }
 
     private static func formatAcquisitionDate(_ date: Date) -> String {

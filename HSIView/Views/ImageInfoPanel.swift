@@ -43,6 +43,49 @@ struct ImageInfoPanel: View {
                         infoRow(title: state.localized("imageinfo.resolution"), value: cube.resolution)
                         infoRow(title: state.localized("imageinfo.channels"), value: "\(cube.channelCount(for: layout))")
                     }
+
+                    if let georef = cube.geoReference {
+                        Divider()
+                            .padding(.vertical, 4)
+
+                        infoRow(title: state.localized("imageinfo.geo.crs"), value: georef.crsDisplayName)
+                        infoRow(
+                            title: state.localized("imageinfo.geo.pixel_size"),
+                            value: formatPixelSize(georef: georef)
+                        )
+                        infoRow(
+                            title: state.localized("imageinfo.geo.rotation"),
+                            value: String(format: "%.4f°", georef.rotationDegrees)
+                        )
+
+                        if let cursor = state.cursorGeoCoordinate {
+                            infoRow(
+                                title: state.localized("imageinfo.geo.cursor_pixel"),
+                                value: "\(cursor.pixelX), \(cursor.pixelY)"
+                            )
+                            if georef.isGeographic {
+                                infoRow(
+                                    title: state.localized("imageinfo.geo.longitude"),
+                                    value: formatCoordinate(cursor.mapCoordinate.x, units: georef.units)
+                                )
+                                infoRow(
+                                    title: state.localized("imageinfo.geo.latitude"),
+                                    value: formatCoordinate(cursor.mapCoordinate.y, units: georef.units)
+                                )
+                            } else {
+                                infoRow(
+                                    title: state.localized("imageinfo.geo.map_x"),
+                                    value: formatCoordinate(cursor.mapCoordinate.x, units: georef.units)
+                                )
+                                infoRow(
+                                    title: state.localized("imageinfo.geo.map_y"),
+                                    value: formatCoordinate(cursor.mapCoordinate.y, units: georef.units)
+                                )
+                            }
+                        } else {
+                            infoRow(title: state.localized("imageinfo.geo.cursor_pixel"), value: "—")
+                        }
+                    }
                     
                     Divider()
                         .padding(.vertical, 4)
@@ -102,5 +145,16 @@ struct ImageInfoPanel: View {
             return state.localizedFormat("units.size.mb", sizeInMB)
         }
     }
-}
 
+    private func formatPixelSize(georef: MapGeoReference) -> String {
+        let x = formatCoordinate(georef.pixelSizeX, units: georef.units)
+        let y = formatCoordinate(georef.pixelSizeY, units: georef.units)
+        return "\(x) × \(y)"
+    }
+
+    private func formatCoordinate(_ value: Double, units: String?) -> String {
+        let numeric = String(format: "%.6f", value)
+        guard let units, !units.isEmpty else { return numeric }
+        return "\(numeric) \(units)"
+    }
+}
