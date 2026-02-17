@@ -219,6 +219,22 @@ struct ContentView: View {
                             }
                         }
                     }
+                    .onContinuousHover(coordinateSpace: .local) { phase in
+                        guard state.cube?.geoReference != nil else {
+                            state.clearCursorGeoCoordinate()
+                            return
+                        }
+                        switch phase {
+                        case .active(let location):
+                            guard let pixel = pixelCoordinate(for: location, geoSize: geo.size) else {
+                                state.clearCursorGeoCoordinate()
+                                return
+                            }
+                            state.updateCursorGeoCoordinate(pixelX: pixel.x, pixelY: pixel.y)
+                        case .ended:
+                            state.clearCursorGeoCoordinate()
+                        }
+                    }
                     .onChange(of: state.activeAnalysisTool) { _ in
                         NSCursor.pop()
                         roiPreviewRect = nil
@@ -227,6 +243,7 @@ struct ContentView: View {
                     .onChange(of: state.cubeURL) { _ in
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
+                        state.clearCursorGeoCoordinate()
                     }
                 }
                 .coordinateSpace(name: imageCoordinateSpaceName)

@@ -1053,6 +1053,12 @@ class CubeResizer {
         let dstHeight = parameters.targetHeight
         dimsArray[axes.width] = dstWidth
         dimsArray[axes.height] = dstHeight
+        let transformedGeo = cube.geoReference?.resized(
+            sourceWidth: srcWidth,
+            sourceHeight: srcHeight,
+            targetWidth: dstWidth,
+            targetHeight: dstHeight
+        )
         
         let total = dstWidth * dstHeight * channels
         
@@ -1064,31 +1070,31 @@ class CubeResizer {
             case .float64(let arr):
                 var output = [Double](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .float64(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .float64(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             case .float32(let arr):
                 var output = [Float](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .float32(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .float32(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             case .uint16(let arr):
                 var output = [UInt16](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .uint16(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .uint16(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             case .uint8(let arr):
                 var output = [UInt8](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .uint8(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .uint8(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             case .int16(let arr):
                 var output = [Int16](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int16(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int16(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             case .int32(let arr):
                 var output = [Int32](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int32(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int32(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             case .int8(let arr):
                 var output = [Int8](repeating: 0, count: total)
                 fillNearest(from: arr, into: &output, cube: cube, axes: axes, srcDims: srcDims, dstWidth: dstWidth, dstHeight: dstHeight, scaleX: scaleX, scaleY: scaleY, dstDims: dimsArray)
-                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int8(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+                return HyperCube(dims: (dimsArray[0], dimsArray[1], dimsArray[2]), storage: .int8(output), sourceFormat: cube.sourceFormat + " [Resize]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             }
         }
         
@@ -1137,7 +1143,8 @@ class CubeResizer {
                 storage: storage,
                 sourceFormat: cube.sourceFormat + " [Resize]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: cube.wavelengths
+                wavelengths: cube.wavelengths,
+                geoReference: transformedGeo
             )
         }
         
@@ -1185,7 +1192,8 @@ class CubeResizer {
             storage: storage,
             sourceFormat: cube.sourceFormat + " [Resize]",
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
+            wavelengths: cube.wavelengths,
+            geoReference: transformedGeo
         )
     }
     
@@ -1431,7 +1439,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .float64(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .float64(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .float32(let arr):
             var output = initializedBuffer(from: arr, count: totalElements)
             remap(
@@ -1443,7 +1451,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .float32(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .float32(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int8(let arr):
             var output = initializedBuffer(from: arr, count: totalElements)
             remap(
@@ -1455,7 +1463,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int8(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int8(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int16(let arr):
             var output = initializedBuffer(from: arr, count: totalElements)
             remap(
@@ -1467,7 +1475,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int16(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int16(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int32(let arr):
             var output = initializedBuffer(from: arr, count: totalElements)
             remap(
@@ -1479,7 +1487,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int32(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .int32(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .uint8(let arr):
             var output = initializedBuffer(from: arr, count: totalElements)
             remap(
@@ -1491,7 +1499,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .uint8(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .uint8(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .uint16(let arr):
             var output = initializedBuffer(from: arr, count: totalElements)
             remap(
@@ -1503,7 +1511,7 @@ class CubeTransposer {
                 targetAxes: targetAxes,
                 isFortran: cube.isFortranOrder
             )
-            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .uint16(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: (dstDims[0], dstDims[1], dstDims[2]), storage: .uint16(output), sourceFormat: cube.sourceFormat + suffix, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
     }
     
@@ -1592,9 +1600,14 @@ class CubeRotator {
         newDimsArray[axes.height] = newHeight
         newDimsArray[axes.width] = newWidth
         let resultingDims = (newDimsArray[0], newDimsArray[1], newDimsArray[2])
+        let transformedGeo = cube.geoReference?.rotatedClockwise(
+            quarterTurns: angle.quarterTurns,
+            oldWidth: oldWidth,
+            oldHeight: oldHeight
+        )
         let totalElements = resultingDims.0 * resultingDims.1 * resultingDims.2
         if totalElements == 0 {
-            return HyperCube(dims: resultingDims, storage: cube.storage, sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: cube.storage, sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         }
         
         switch cube.storage {
@@ -1612,7 +1625,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             
         case .float32(let arr):
             let newData = rotateBuffer(
@@ -1628,7 +1641,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             
         case .uint16(let arr):
             let newData = rotateBuffer(
@@ -1644,7 +1657,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             
         case .uint8(let arr):
             let newData = rotateBuffer(
@@ -1660,7 +1673,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             
         case .int16(let arr):
             let newData = rotateBuffer(
@@ -1676,7 +1689,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             
         case .int32(let arr):
             let newData = rotateBuffer(
@@ -1692,7 +1705,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
             
         case .int8(let arr):
             let newData = rotateBuffer(
@@ -1708,7 +1721,7 @@ class CubeRotator {
                 newDims: resultingDims,
                 fortran: cube.isFortranOrder
             )
-            return HyperCube(dims: resultingDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         }
     }
     
@@ -1829,37 +1842,38 @@ class CubeSpatialCropper {
         newDims[axes.height] = clamped.height
         newDims[axes.width] = clamped.width
         let resultingDims = (newDims[0], newDims[1], newDims[2])
+        let transformedGeo = cube.geoReference?.cropped(left: clamped.left, top: clamped.top)
         let totalElements = resultingDims.0 * resultingDims.1 * resultingDims.2
         
         switch cube.storage {
         case .float64(let arr):
             var newData = [Double](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .float64(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         case .float32(let arr):
             var newData = [Float](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .float32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         case .uint16(let arr):
             var newData = [UInt16](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .uint16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         case .uint8(let arr):
             var newData = [UInt8](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .uint8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         case .int16(let arr):
             var newData = [Int16](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .int16(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         case .int32(let arr):
             var newData = [Int32](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .int32(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         case .int8(let arr):
             var newData = [Int8](repeating: 0, count: totalElements)
             fillBuffer(cube: cube, source: arr, into: &newData, newDims: resultingDims, axes: axes, crop: clamped)
-            return HyperCube(dims: resultingDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: resultingDims, storage: .int8(newData), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: transformedGeo)
         }
     }
     
@@ -2666,7 +2680,8 @@ class CubeCalibrator {
             storage: .float64(resultData),
             sourceFormat: cube.sourceFormat,
             isFortranOrder: cube.isFortranOrder,
-            wavelengths: cube.wavelengths
+            wavelengths: cube.wavelengths,
+            geoReference: cube.geoReference
         )
     }
     
@@ -2694,32 +2709,32 @@ class CubeClipper {
         switch cube.storage {
         case .float64(let arr):
             let output = arr.map { min(upper, max(lower, $0)) }
-            return HyperCube(dims: cube.dims, storage: .float64(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .float64(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .float32(let arr):
             let lowerF = Float(lower)
             let upperF = Float(upper)
             let output = arr.map { min(upperF, max(lowerF, $0)) }
-            return HyperCube(dims: cube.dims, storage: .float32(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .float32(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .uint16(let arr):
             let bounds = intBounds(minValue: UInt16.min, maxValue: UInt16.max, lower: lower, upper: upper)
             let output = arr.map { UInt16(clamping: Int64(clampInt(Double($0), bounds))) }
-            return HyperCube(dims: cube.dims, storage: .uint16(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .uint16(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .uint8(let arr):
             let bounds = intBounds(minValue: UInt8.min, maxValue: UInt8.max, lower: lower, upper: upper)
             let output = arr.map { UInt8(clamping: Int64(clampInt(Double($0), bounds))) }
-            return HyperCube(dims: cube.dims, storage: .uint8(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .uint8(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int16(let arr):
             let bounds = intBounds(minValue: Int16.min, maxValue: Int16.max, lower: lower, upper: upper)
             let output = arr.map { Int16(clamping: Int64(clampInt(Double($0), bounds))) }
-            return HyperCube(dims: cube.dims, storage: .int16(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .int16(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int32(let arr):
             let bounds = intBounds(minValue: Int32.min, maxValue: Int32.max, lower: lower, upper: upper)
             let output = arr.map { Int32(clamping: Int64(clampInt(Double($0), bounds))) }
-            return HyperCube(dims: cube.dims, storage: .int32(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .int32(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int8(let arr):
             let bounds = intBounds(minValue: Int8.min, maxValue: Int8.max, lower: lower, upper: upper)
             let output = arr.map { Int8(clamping: Int64(clampInt(Double($0), bounds))) }
-            return HyperCube(dims: cube.dims, storage: .int8(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: cube.dims, storage: .int8(output), sourceFormat: cube.sourceFormat, isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
     }
     
@@ -2804,8 +2819,7 @@ class CubeSpectralTrimmer {
                 storage: .float64(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
             
         case .float32(let arr):
             var newData = [Float](repeating: 0, count: totalNewElements)
@@ -2824,8 +2838,7 @@ class CubeSpectralTrimmer {
                 storage: .float32(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
             
         case .uint16(let arr):
             var newData = [UInt16](repeating: 0, count: totalNewElements)
@@ -2844,8 +2857,7 @@ class CubeSpectralTrimmer {
                 storage: .uint16(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
             
         case .uint8(let arr):
             var newData = [UInt8](repeating: 0, count: totalNewElements)
@@ -2864,8 +2876,7 @@ class CubeSpectralTrimmer {
                 storage: .uint8(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
             
         case .int16(let arr):
             var newData = [Int16](repeating: 0, count: totalNewElements)
@@ -2884,8 +2895,7 @@ class CubeSpectralTrimmer {
                 storage: .int16(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
             
         case .int32(let arr):
             var newData = [Int32](repeating: 0, count: totalNewElements)
@@ -2904,8 +2914,7 @@ class CubeSpectralTrimmer {
                 storage: .int32(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
             
         case .int8(let arr):
             var newData = [Int8](repeating: 0, count: totalNewElements)
@@ -2924,8 +2933,7 @@ class CubeSpectralTrimmer {
                 storage: .int8(newData),
                 sourceFormat: cube.sourceFormat + " [Trim]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: newWavelengths
-            )
+                wavelengths: newWavelengths, geoReference: cube.geoReference)
         }
     }
 
@@ -2983,8 +2991,7 @@ class CubeSpectralInterpolator {
                 storage: .float64(output),
                 sourceFormat: cube.sourceFormat + " [Spectral]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: targetWavelengths
-            )
+                wavelengths: targetWavelengths, geoReference: cube.geoReference)
         case .float32:
             var output = [Float](repeating: 0, count: totalElements)
             fillOutput(
@@ -3003,8 +3010,7 @@ class CubeSpectralInterpolator {
                 storage: .float32(output),
                 sourceFormat: cube.sourceFormat + " [Spectral]",
                 isFortranOrder: cube.isFortranOrder,
-                wavelengths: targetWavelengths
-            )
+                wavelengths: targetWavelengths, geoReference: cube.geoReference)
         }
     }
     
@@ -4668,31 +4674,31 @@ class CubeSpectralAligner {
         case .float64(let arr):
             var output = [Double](repeating: 0, count: totalElements)
             applyTransform(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .float64(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .float64(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .float32(let arr):
             var output = [Float](repeating: 0, count: totalElements)
             applyTransform(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .float32(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .float32(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .uint16(let arr):
             var output = [UInt16](repeating: 0, count: totalElements)
             applyTransformInt(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .uint16(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .uint16(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .uint8(let arr):
             var output = [UInt8](repeating: 0, count: totalElements)
             applyTransformInt(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .uint8(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .uint8(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int16(let arr):
             var output = [Int16](repeating: 0, count: totalElements)
             applyTransformInt(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .int16(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .int16(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int32(let arr):
             var output = [Int32](repeating: 0, count: totalElements)
             applyTransformInt(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .int32(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .int32(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         case .int8(let arr):
             var output = [Int8](repeating: 0, count: totalElements)
             applyTransformInt(source: arr, into: &output)
-            return HyperCube(dims: dims, storage: .int8(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths)
+            return HyperCube(dims: dims, storage: .int8(output), sourceFormat: cube.sourceFormat + " [Align]", isFortranOrder: cube.isFortranOrder, wavelengths: cube.wavelengths, geoReference: cube.geoReference)
         }
     }
     
