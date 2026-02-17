@@ -2,6 +2,9 @@ import Foundation
 import AppKit
 
 final class AppState: ObservableObject {
+    private static let processingQueueKey = DispatchSpecificKey<String>()
+    private static let processingQueueValue = "com.hsiview.processing"
+
     enum HSIAssemblyError: LocalizedError {
         case noMaterials
         case busy
@@ -115,6 +118,9 @@ final class AppState: ObservableObject {
     @Published var alignmentEstimatedTimeRemaining: String = ""
     @Published var alignmentStage: String = ""
     @Published var isAlignmentInProgress: Bool = false
+    @Published private(set) var alignmentProcessingCubeURL: URL?
+    @Published private(set) var pipelineProcessingCubeURLs: Set<URL> = []
+    @Published private(set) var pipelineProcessingCubeIDs: Set<UUID> = []
     
     func formatTimeInterval(_ interval: TimeInterval) -> String {
         if interval < 60 {
@@ -160,7 +166,15 @@ final class AppState: ObservableObject {
     
     private var originalCube: HyperCube?
     private var baseWavelengths: [Double]? = nil
-    private let processingQueue = DispatchQueue(label: "com.hsiview.processing", qos: .userInitiated)
+    private let processingQueue: DispatchQueue = {
+        let queue = DispatchQueue(
+            label: "com.hsiview.processing",
+            qos: .userInitiated,
+            attributes: .concurrent
+        )
+        queue.setSpecific(key: AppState.processingQueueKey, value: AppState.processingQueueValue)
+        return queue
+    }()
     private var resolvedAutoLayout: CubeLayout = .auto
     private var sessionSnapshots: [URL: CubeSessionSnapshot] = [:]
     private var pendingSessionRestore: CubeSessionSnapshot?
@@ -212,6 +226,9 @@ final class AppState: ObservableObject {
     private var lastPipelineAppliedOperations: [PipelineOperation] = []
     private var lastPipelineResult: HyperCube?
     private var lastPipelineBaseCubeID: UUID?
+    private var alignmentTaskID: UUID?
+    private var pipelineProcessingMessagesByCubeURL: [URL: String] = [:]
+    private var pipelineProcessingMessagesByCubeID: [UUID: String] = [:]
     private var pendingRestoreSpectrumDescriptors: [SpectrumSampleDescriptor]?
     private var pendingRestoreROISampleDescriptors: [SpectrumROISampleDescriptor]?
     private var processingClipboard: ProcessingClipboard? {
@@ -256,6 +273,36 @@ final class AppState: ObservableObject {
 
     var appLocale: Locale {
         preferredLanguage.locale
+    }
+
+    var isCurrentCubeAlignmentInProgress: Bool {
+        guard isAlignmentInProgress else { return false }
+        guard let targetURL = alignmentProcessingCubeURL else { return cube != nil }
+        return cubeURL?.standardizedFileURL == targetURL
+    }
+
+    var isCurrentCubePipelineInProgress: Bool {
+        if let currentURL = cubeURL?.standardizedFileURL {
+            return pipelineProcessingCubeURLs.contains(currentURL)
+        }
+        guard let currentID = originalCube?.id else { return false }
+        return pipelineProcessingCubeIDs.contains(currentID)
+    }
+
+    var currentCubePipelineProcessingMessage: String {
+        if let currentURL = cubeURL?.standardizedFileURL,
+           let message = pipelineProcessingMessagesByCubeURL[currentURL] {
+            return message
+        }
+        if let currentID = originalCube?.id,
+           let message = pipelineProcessingMessagesByCubeID[currentID] {
+            return message
+        }
+        return L("Применение пайплайна…")
+    }
+
+    var isCurrentCubeProcessingInProgress: Bool {
+        isCurrentCubePipelineInProgress || isCurrentCubeAlignmentInProgress
     }
 
     func localized(_ key: String) -> String {
@@ -1413,7 +1460,16 @@ final class AppState: ObservableObject {
     }
     
     func startAlignmentComputation(operationId: UUID) {
-        guard let opIndex = pipelineOperations.firstIndex(where: { $0.id == operationId }),
+        guard !isCurrentCubePipelineInProgress else {
+            loadError = L("pipeline.alignment.error.already_in_progress")
+            return
+        }
+        guard !isAlignmentInProgress else {
+            loadError = L("pipeline.alignment.error.already_in_progress")
+            return
+        }
+        guard let original = originalCube,
+              let opIndex = pipelineOperations.firstIndex(where: { $0.id == operationId }),
               var params = pipelineOperations[opIndex].spectralAlignmentParams else { return }
         
         params.shouldCompute = true
@@ -1421,8 +1477,16 @@ final class AppState: ObservableObject {
         params.cachedHomographies = nil
         params.alignmentResult = nil
         pipelineOperations[opIndex].spectralAlignmentParams = params
+
+        let sourceCubeURL = cubeURL?.standardizedFileURL
+        let sourceLayout = activeLayout
+        let sourceBaseWavelengths = baseWavelengths
+        let operations = pipelineOperations
+        let taskID = UUID()
         
         isAlignmentInProgress = true
+        alignmentTaskID = taskID
+        alignmentProcessingCubeURL = sourceCubeURL
         alignmentProgress = 0.0
         alignmentProgressMessage = L("Подготовка…")
         alignmentStartTime = Date()
@@ -1432,18 +1496,30 @@ final class AppState: ObservableObject {
         alignmentCurrentChannel = 0
         alignmentTotalChannels = 0
         
-        applyPipelineWithAlignmentProgress(targetOperationId: operationId)
+        applyPipelineWithAlignmentProgress(
+            taskID: taskID,
+            targetOperationId: operationId,
+            sourceCube: original,
+            sourceCubeURL: sourceCubeURL,
+            operations: operations,
+            sourceLayout: sourceLayout,
+            sourceBaseWavelengths: sourceBaseWavelengths
+        )
     }
     
-    private func applyPipelineWithAlignmentProgress(targetOperationId: UUID) {
-        guard let original = originalCube else { return }
-        
-        beginBusy(message: L("Вычисление выравнивания…"))
-        
+    private func applyPipelineWithAlignmentProgress(
+        taskID: UUID,
+        targetOperationId: UUID,
+        sourceCube: HyperCube,
+        sourceCubeURL: URL?,
+        operations: [PipelineOperation],
+        sourceLayout: CubeLayout,
+        sourceBaseWavelengths: [Double]?
+    ) {
         var progressTimer: Timer?
         DispatchQueue.main.async { [weak self] in
             progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-                guard let self, let startTime = self.alignmentStartTime else { return }
+                guard let self, self.alignmentTaskID == taskID, let startTime = self.alignmentStartTime else { return }
                 let elapsed = Date().timeIntervalSince(startTime)
                 self.alignmentElapsedTime = self.formatTimeInterval(elapsed)
                 
@@ -1460,17 +1536,26 @@ final class AppState: ObservableObject {
         processingQueue.async { [weak self] in
             guard let self else { return }
             
-            let baseCube = self.cubeWithWavelengthsIfNeeded(original, layout: self.activeLayout)
+            let baseCube = self.cubeWithWavelengthsIfNeeded(
+                sourceCube,
+                layout: sourceLayout,
+                baseWavelengths: sourceBaseWavelengths
+            )
             var currentCube = baseCube
-            var mutableOperations = self.pipelineOperations
+            var mutableOperations = operations
             
             for i in 0..<mutableOperations.count {
                 if mutableOperations[i].type == .spectralAlignment && mutableOperations[i].id == targetOperationId {
                     let layout = mutableOperations[i].layout
-                    let opCube = self.cubeWithWavelengthsIfNeeded(currentCube, layout: layout)
+                    let opCube = self.cubeWithWavelengthsIfNeeded(
+                        currentCube,
+                        layout: layout,
+                        baseWavelengths: sourceBaseWavelengths
+                    )
                     
                     let result = mutableOperations[i].applyWithUpdateDetailed(to: opCube) { info in
-                        DispatchQueue.main.async {
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.alignmentTaskID == taskID else { return }
                             self.alignmentProgress = info.progress
                             self.alignmentProgressMessage = info.message
                             self.alignmentCurrentChannel = info.currentChannel
@@ -1481,33 +1566,38 @@ final class AppState: ObservableObject {
                     currentCube = result ?? opCube
                 } else {
                     let layout = mutableOperations[i].layout
-                    let opCube = self.cubeWithWavelengthsIfNeeded(currentCube, layout: layout)
+                    let opCube = self.cubeWithWavelengthsIfNeeded(
+                        currentCube,
+                        layout: layout,
+                        baseWavelengths: sourceBaseWavelengths
+                    )
                     let result = mutableOperations[i].apply(to: opCube)
                     currentCube = result ?? opCube
                 }
             }
             
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard self.alignmentTaskID == taskID else {
+                    progressTimer?.invalidate()
+                    return
+                }
                 progressTimer?.invalidate()
-                self.cube = currentCube
-                self.pipelineOperations = mutableOperations
-                self.lastPipelineResult = currentCube
-                self.lastPipelineAppliedOperations = mutableOperations
-                self.lastPipelineBaseCubeID = original.id
-                self.syncDisplayedLayoutAfterPipeline(operations: mutableOperations)
-                self.updateWavelengthsFromPipelineResult()
-                self.updateSpectralTrimRangeFromPipeline()
-                self.updateChannelCount()
-                self.isAlignmentInProgress = false
-                self.alignmentProgress = 0.0
-                self.alignmentProgressMessage = ""
-                self.alignmentCurrentChannel = 0
-                self.alignmentTotalChannels = 0
-                self.alignmentStartTime = nil
-                self.alignmentElapsedTime = ""
-                self.alignmentEstimatedTimeRemaining = ""
-                self.alignmentStage = ""
-                self.endBusy()
+                if self.isCurrentAlignmentTarget(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCube.id) {
+                    self.cube = currentCube
+                    self.pipelineOperations = mutableOperations
+                    self.lastPipelineResult = currentCube
+                    self.lastPipelineAppliedOperations = mutableOperations
+                    self.lastPipelineBaseCubeID = sourceCube.id
+                    self.syncDisplayedLayoutAfterPipeline(operations: mutableOperations)
+                    self.updateWavelengthsFromPipelineResult()
+                    self.updateSpectralTrimRangeFromPipeline()
+                    self.updateChannelCount()
+                    self.persistCurrentSession()
+                } else if let sourceCubeURL {
+                    self.updatePipelineSnapshot(for: sourceCubeURL, operations: mutableOperations)
+                }
+                self.finishAlignmentComputationState()
             }
         }
     }
@@ -1534,68 +1624,97 @@ final class AppState: ObservableObject {
         }
         
         let operations = pipelineOperations
+        let sourceCubeURL = cubeURL?.standardizedFileURL
+        let sourceCubeID = original.id
         
         if let baseID = lastPipelineBaseCubeID,
            baseID == original.id,
            operations.count == lastPipelineAppliedOperations.count + 1,
            operations.dropLast() == lastPipelineAppliedOperations,
            let cachedResult = lastPipelineResult {
-            
-            beginBusy(message: L("Применение последней операции…"))
+            beginPipelineProcessing(
+                sourceCubeURL: sourceCubeURL,
+                sourceCubeID: sourceCubeID,
+                message: L("Применение последней операции…")
+            )
             var newOp = operations.last!
             processingQueue.async { [weak self] in
                 guard let self else { return }
                 let baseCube = self.cubeWithWavelengthsIfNeeded(cachedResult, layout: newOp.layout)
                 let result = newOp.applyWithUpdate(to: baseCube)
-                DispatchQueue.main.async {
-                    self.cube = result ?? baseCube
-                    self.lastPipelineResult = self.cube
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
                     var updatedOperations = operations
                     updatedOperations[updatedOperations.count - 1] = newOp
-                    self.lastPipelineAppliedOperations = updatedOperations
-                    self.pipelineOperations = updatedOperations
-                    self.lastPipelineBaseCubeID = original.id
-                    self.syncDisplayedLayoutAfterPipeline(operations: updatedOperations)
-                    self.updateWavelengthsFromPipelineResult()
-                    self.updateSpectralTrimRangeFromPipeline()
-                    self.updateChannelCount()
-                    if let descriptors = self.pendingRestoreSpectrumDescriptors,
-                       let roiDescriptors = self.pendingRestoreROISampleDescriptors {
-                        self.restoreSpectrumSamples(from: descriptors)
-                        self.restoreROISamples(from: roiDescriptors)
-                        self.pendingRestoreSpectrumDescriptors = nil
-                        self.pendingRestoreROISampleDescriptors = nil
+                    
+                    if self.isCurrentAlignmentTarget(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCubeID) {
+                        self.cube = result ?? baseCube
+                        self.lastPipelineResult = self.cube
+                        self.lastPipelineAppliedOperations = updatedOperations
+                        self.pipelineOperations = updatedOperations
+                        self.lastPipelineBaseCubeID = sourceCubeID
+                        self.syncDisplayedLayoutAfterPipeline(operations: updatedOperations)
+                        self.updateWavelengthsFromPipelineResult()
+                        self.updateSpectralTrimRangeFromPipeline()
+                        self.updateChannelCount()
+                        if let descriptors = self.pendingRestoreSpectrumDescriptors,
+                           let roiDescriptors = self.pendingRestoreROISampleDescriptors {
+                            self.restoreSpectrumSamples(from: descriptors)
+                            self.restoreROISamples(from: roiDescriptors)
+                            self.pendingRestoreSpectrumDescriptors = nil
+                            self.pendingRestoreROISampleDescriptors = nil
+                        }
+                        self.persistCurrentSession()
+                    } else if let sourceCubeURL {
+                        self.updatePipelineSnapshot(for: sourceCubeURL, operations: updatedOperations)
                     }
-                    self.endBusy()
+                    
+                    self.endPipelineProcessing(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCubeID)
                 }
             }
             
         } else {
-        beginBusy(message: L("Применение пайплайна…"))
-        
-        processingQueue.async { [weak self] in
-            guard let self else { return }
-                let baseCube = self.cubeWithWavelengthsIfNeeded(original, layout: activeLayout)
+            let sourceLayout = activeLayout
+            let sourceBaseWavelengths = baseWavelengths
+            beginPipelineProcessing(
+                sourceCubeURL: sourceCubeURL,
+                sourceCubeID: sourceCubeID,
+                message: L("Применение пайплайна…")
+            )
+            
+            processingQueue.async { [weak self] in
+                guard let self else { return }
+                let baseCube = self.cubeWithWavelengthsIfNeeded(
+                    original,
+                    layout: sourceLayout,
+                    baseWavelengths: sourceBaseWavelengths
+                )
                 var mutableOperations = operations
                 let result = self.processPipeline(original: baseCube, operations: &mutableOperations)
-            DispatchQueue.main.async {
-                    self.cube = result ?? baseCube
-                    self.lastPipelineResult = self.cube
-                    self.lastPipelineAppliedOperations = mutableOperations
-                    self.lastPipelineBaseCubeID = original.id
-                    self.pipelineOperations = mutableOperations
-                    self.syncDisplayedLayoutAfterPipeline(operations: mutableOperations)
-                    self.updateWavelengthsFromPipelineResult()
-                    self.updateSpectralTrimRangeFromPipeline()
-                    self.updateChannelCount()
-                    if let descriptors = self.pendingRestoreSpectrumDescriptors,
-                       let roiDescriptors = self.pendingRestoreROISampleDescriptors {
-                        self.restoreSpectrumSamples(from: descriptors)
-                        self.restoreROISamples(from: roiDescriptors)
-                        self.pendingRestoreSpectrumDescriptors = nil
-                        self.pendingRestoreROISampleDescriptors = nil
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if self.isCurrentAlignmentTarget(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCubeID) {
+                        self.cube = result ?? baseCube
+                        self.lastPipelineResult = self.cube
+                        self.lastPipelineAppliedOperations = mutableOperations
+                        self.lastPipelineBaseCubeID = sourceCubeID
+                        self.pipelineOperations = mutableOperations
+                        self.syncDisplayedLayoutAfterPipeline(operations: mutableOperations)
+                        self.updateWavelengthsFromPipelineResult()
+                        self.updateSpectralTrimRangeFromPipeline()
+                        self.updateChannelCount()
+                        if let descriptors = self.pendingRestoreSpectrumDescriptors,
+                           let roiDescriptors = self.pendingRestoreROISampleDescriptors {
+                            self.restoreSpectrumSamples(from: descriptors)
+                            self.restoreROISamples(from: roiDescriptors)
+                            self.pendingRestoreSpectrumDescriptors = nil
+                            self.pendingRestoreROISampleDescriptors = nil
+                        }
+                        self.persistCurrentSession()
+                    } else if let sourceCubeURL {
+                        self.updatePipelineSnapshot(for: sourceCubeURL, operations: mutableOperations)
                     }
-                self.endBusy()
+                    self.endPipelineProcessing(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCubeID)
                 }
             }
         }
@@ -1885,6 +2004,19 @@ final class AppState: ObservableObject {
     }
     
     private func processPipeline(original: HyperCube, operations: inout [PipelineOperation]) -> HyperCube? {
+        if DispatchQueue.getSpecific(key: Self.processingQueueKey) == Self.processingQueueValue {
+            return processPipelineOnCurrentThread(original: original, operations: &operations)
+        }
+
+        var mutableOperations = operations
+        let result = processingQueue.sync {
+            processPipelineOnCurrentThread(original: original, operations: &mutableOperations)
+        }
+        operations = mutableOperations
+        return result
+    }
+
+    private func processPipelineOnCurrentThread(original: HyperCube, operations: inout [PipelineOperation]) -> HyperCube? {
         guard !operations.isEmpty else { return original }
         
         var result: HyperCube? = original
@@ -1895,6 +2027,63 @@ final class AppState: ObservableObject {
         }
         
         return result ?? original
+    }
+
+    private func isCurrentAlignmentTarget(sourceCubeURL: URL?, sourceCubeID: UUID) -> Bool {
+        if let sourceCubeURL {
+            return cubeURL?.standardizedFileURL == sourceCubeURL
+        }
+        return originalCube?.id == sourceCubeID
+    }
+
+    private func updatePipelineSnapshot(for sourceCubeURL: URL, operations: [PipelineOperation]) {
+        let canonical = canonicalURL(sourceCubeURL)
+        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty
+        snapshot.pipelineOperations = operations
+        snapshot.spectralTrimRange = spectralTrimRange(from: operations)
+        sessionSnapshots[canonical] = snapshot
+    }
+
+    private func spectralTrimRange(from operations: [PipelineOperation]) -> ClosedRange<Int>? {
+        guard let trimOp = operations.first(where: { $0.type == .spectralTrim }),
+              let params = trimOp.spectralTrimParams else {
+            return nil
+        }
+        return params.startChannel...params.endChannel
+    }
+
+    private func beginPipelineProcessing(sourceCubeURL: URL?, sourceCubeID: UUID, message: String) {
+        if let sourceCubeURL {
+            pipelineProcessingCubeURLs.insert(sourceCubeURL)
+            pipelineProcessingMessagesByCubeURL[sourceCubeURL] = message
+        } else {
+            pipelineProcessingCubeIDs.insert(sourceCubeID)
+            pipelineProcessingMessagesByCubeID[sourceCubeID] = message
+        }
+    }
+
+    private func endPipelineProcessing(sourceCubeURL: URL?, sourceCubeID: UUID) {
+        if let sourceCubeURL {
+            pipelineProcessingCubeURLs.remove(sourceCubeURL)
+            pipelineProcessingMessagesByCubeURL.removeValue(forKey: sourceCubeURL)
+        } else {
+            pipelineProcessingCubeIDs.remove(sourceCubeID)
+            pipelineProcessingMessagesByCubeID.removeValue(forKey: sourceCubeID)
+        }
+    }
+
+    private func finishAlignmentComputationState() {
+        isAlignmentInProgress = false
+        alignmentProcessingCubeURL = nil
+        alignmentTaskID = nil
+        alignmentProgress = 0.0
+        alignmentProgressMessage = ""
+        alignmentCurrentChannel = 0
+        alignmentTotalChannels = 0
+        alignmentStartTime = nil
+        alignmentElapsedTime = ""
+        alignmentEstimatedTimeRemaining = ""
+        alignmentStage = ""
     }
     
     private func beginBusy(message: String) {
