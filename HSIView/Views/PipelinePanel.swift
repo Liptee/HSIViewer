@@ -3384,13 +3384,15 @@ struct OperationEditorView: View {
         let layout = state.activeLayout
         let totalChannels = cube.channelCount(for: layout)
         let clampedChannel = max(0, min(Int(state.currentChannel), max(totalChannels - 1, 0)))
+        let previewTarget = CGSize(width: 1024, height: 1024)
         
         switch state.viewMode {
         case .gray:
             return ImageRenderer.renderGrayscale(
                 cube: cube,
                 layout: layout,
-                channelIndex: clampedChannel
+                channelIndex: clampedChannel,
+                targetPixels: previewTarget
             )
         case .rgb:
             guard totalChannels > 0 else { return nil }
@@ -3400,14 +3402,16 @@ struct OperationEditorView: View {
                     cube: cube,
                     layout: layout,
                     wavelengths: state.wavelengths,
-                    mapping: state.colorSynthesisConfig.mapping
+                    mapping: state.colorSynthesisConfig.mapping,
+                    targetPixels: previewTarget
                 )
             case .rangeWideRGB:
                 return ImageRenderer.renderRGBRange(
                     cube: cube,
                     layout: layout,
                     wavelengths: state.wavelengths,
-                    rangeMapping: state.colorSynthesisConfig.rangeMapping
+                    rangeMapping: state.colorSynthesisConfig.rangeMapping,
+                    targetPixels: previewTarget
                 )
             case .pcaVisualization:
                 return state.pcaRenderedImage
@@ -3423,7 +3427,8 @@ struct OperationEditorView: View {
                 threshold: state.ndThreshold,
                 preset: state.ndPreset,
                 wdviSlope: Double(state.wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0,
-                wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
+                wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0,
+                targetPixels: previewTarget
             )
         case .mask:
             switch state.colorSynthesisConfig.mode {
@@ -3432,14 +3437,16 @@ struct OperationEditorView: View {
                     cube: cube,
                     layout: layout,
                     wavelengths: state.wavelengths,
-                    mapping: state.colorSynthesisConfig.mapping
+                    mapping: state.colorSynthesisConfig.mapping,
+                    targetPixels: previewTarget
                 )
             case .rangeWideRGB:
                 return ImageRenderer.renderRGBRange(
                     cube: cube,
                     layout: layout,
                     wavelengths: state.wavelengths,
-                    rangeMapping: state.colorSynthesisConfig.rangeMapping
+                    rangeMapping: state.colorSynthesisConfig.rangeMapping,
+                    targetPixels: previewTarget
                 )
             case .pcaVisualization:
                 return state.pcaRenderedImage

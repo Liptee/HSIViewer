@@ -760,6 +760,7 @@ struct ContentView: View {
     }
     
     private func cubeView(cube: HyperCube, geoSize: CGSize) -> some View {
+        let targetPixels = renderTargetPixels(for: cube, geoSize: geoSize)
         let view: AnyView
             switch state.viewMode {
             case .gray:
@@ -767,7 +768,8 @@ struct ContentView: View {
                 if let nsImage = ImageRenderer.renderGrayscale(
                     cube: cube,
                     layout: state.activeLayout,
-                    channelIndex: chIdx
+                    channelIndex: chIdx,
+                    targetPixels: targetPixels
                 ) {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
                 } else {
@@ -786,14 +788,16 @@ struct ContentView: View {
                     cube: cube,
                     layout: state.activeLayout,
                     wavelengths: state.wavelengths,
-                    mapping: config.mapping
+                    mapping: config.mapping,
+                    targetPixels: targetPixels
                 )
             case .rangeWideRGB:
                 image = ImageRenderer.renderRGBRange(
                     cube: cube,
                     layout: state.activeLayout,
                     wavelengths: state.wavelengths,
-                    rangeMapping: config.rangeMapping
+                    rangeMapping: config.rangeMapping,
+                    targetPixels: targetPixels
                 )
             case .pcaVisualization:
                 image = state.pcaRenderedImage
@@ -820,7 +824,8 @@ struct ContentView: View {
                 threshold: state.ndThreshold,
                 preset: state.ndPreset,
                 wdviSlope: Double(state.wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0,
-                wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
+                wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0,
+                targetPixels: targetPixels
                ) {
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
@@ -1861,6 +1866,41 @@ struct ContentView: View {
             width: imageSize.width * scale,
             height: imageSize.height * scale
         )
+    }
+
+    private func renderTargetPixels(for cube: HyperCube, geoSize: CGSize) -> CGSize? {
+        guard geoSize.width > 0, geoSize.height > 0 else { return nil }
+
+        let sourceSize: CGSize
+        if cube.is2D, let dims2D = cube.dims2D {
+            sourceSize = CGSize(width: dims2D.width, height: dims2D.height)
+        } else {
+            guard let axes = cube.axes(for: state.activeLayout) else { return nil }
+            let dims = [cube.dims.0, cube.dims.1, cube.dims.2]
+            sourceSize = CGSize(width: dims[axes.width], height: dims[axes.height])
+        }
+
+        guard sourceSize.width > 0, sourceSize.height > 0 else { return nil }
+
+        let fittedSize = fittingSize(imageSize: sourceSize, in: geoSize)
+        let backingScale = CGFloat(NSScreen.main?.backingScaleFactor ?? 2.0)
+        let zoomFactor = min(max(state.zoomScale, 1.0), 3.0)
+        let scaleMultiplier = backingScale * zoomFactor
+
+        var targetWidth = max(1, Int((fittedSize.width * scaleMultiplier).rounded()))
+        var targetHeight = max(1, Int((fittedSize.height * scaleMultiplier).rounded()))
+
+        let maxDimension = 3072
+        if targetWidth > maxDimension || targetHeight > maxDimension {
+            let downscale = min(
+                Double(maxDimension) / Double(targetWidth),
+                Double(maxDimension) / Double(targetHeight)
+            )
+            targetWidth = max(1, Int((Double(targetWidth) * downscale).rounded()))
+            targetHeight = max(1, Int((Double(targetHeight) * downscale).rounded()))
+        }
+
+        return CGSize(width: targetWidth, height: targetHeight)
     }
     
     private func handleImageClick(at location: CGPoint, geoSize: CGSize) {
