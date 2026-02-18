@@ -71,17 +71,23 @@ struct ContentView: View {
             topBar
             
             HStack(spacing: 0) {
-                let canShowLeftPanel = state.cube != nil && state.viewMode != .mask && state.isLeftPanelVisible
+                let canShowLeftPanel = state.cube != nil && state.isLeftPanelVisible
                 let canShowRightPanel = state.cube != nil && state.isRightPanelVisible
                 let graphToggleWidth: CGFloat = 20
                 let graphPanelWidth = max(220, state.rightPanelWidth - graphToggleWidth)
 
                 if canShowLeftPanel {
-                    PipelinePanel()
-                        .environmentObject(state)
-                        .frame(width: state.leftPanelWidth)
-                        .padding(.leading, 12)
-                        .disabled(state.isCurrentCubeProcessingInProgress)
+                    if state.viewMode == .mask {
+                        MaskLayersPanelView(maskState: state.maskEditorState)
+                            .frame(width: state.leftPanelWidth)
+                            .padding(.leading, 12)
+                    } else {
+                        PipelinePanel()
+                            .environmentObject(state)
+                            .frame(width: state.leftPanelWidth)
+                            .padding(.leading, 12)
+                            .disabled(state.isCurrentCubeProcessingInProgress)
+                    }
                     
                     panelResizeHandle { translation in
                         if leftPanelDragStartWidth == nil {
@@ -98,7 +104,7 @@ struct ContentView: View {
                     MaskEditorView(maskState: state.maskEditorState)
                         .environmentObject(state)
                 } else {
-                GeometryReader { geo in
+                    GeometryReader { geo in
                         ZStack {
                             if let cube = state.cube {
                                 cubeView(cube: cube, geoSize: geo.size)
@@ -330,10 +336,11 @@ struct ContentView: View {
                         .frame(width: 0, height: 0)
                         .allowsHitTesting(false)
                     )
+                    }
+                    .coordinateSpace(name: imageCoordinateSpaceName)
                 }
-                .coordinateSpace(name: imageCoordinateSpaceName)
-                
-                if canShowRightPanel, let cube = state.cube {
+
+                if canShowRightPanel, state.cube != nil {
                     panelResizeHandle { translation in
                         if rightPanelDragStartWidth == nil {
                             rightPanelDragStartWidth = state.rightPanelWidth
@@ -344,25 +351,30 @@ struct ContentView: View {
                         rightPanelDragStartWidth = nil
                     }
 
-                    ZStack(alignment: .trailing) {
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ImageInfoPanel(cube: cube, layout: state.activeLayout)
-                                    .id(cube.id)
-                                
-                                LibraryPanel()
+                    if state.viewMode == .mask {
+                        MaskToolsPanelView(maskState: state.maskEditorState)
+                            .frame(width: state.rightPanelWidth)
+                            .padding(.trailing, 12)
+                    } else if let cube = state.cube {
+                        ZStack(alignment: .trailing) {
+                            ScrollView {
+                                VStack(spacing: 12) {
+                                    ImageInfoPanel(cube: cube, layout: state.activeLayout)
+                                        .id(cube.id)
+                                    
+                                    LibraryPanel()
+                                }
+                                .padding(12)
                             }
-                            .padding(12)
+                            .frame(maxWidth: .infinity)
+                            
+                            GraphPanel(panelWidth: graphPanelWidth)
+                                .environmentObject(state)
                         }
-                        .frame(maxWidth: .infinity)
-                        
-                        GraphPanel(panelWidth: graphPanelWidth)
-                            .environmentObject(state)
+                        .frame(width: state.rightPanelWidth)
+                        .padding(.trailing, 12)
                     }
-                    .frame(width: state.rightPanelWidth)
-                    .padding(.trailing, 12)
                 }
-            } // end else for mask mode check
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             
@@ -380,7 +392,7 @@ struct ContentView: View {
         .frame(minWidth: 960, minHeight: 500)
         .onChange(of: state.viewMode) { newMode in
             if newMode == .mask {
-                state.initializeMaskEditor()
+                state.prepareMaskEditorForCurrentCube()
             }
         }
         .sheet(item: $state.pendingMatSelection) { request in

@@ -34,6 +34,7 @@ struct CubeSessionSnapshot {
     var wdviIntercept: String
     var ndPaletteRaw: String
     var ndThreshold: Double
+    var maskEditorSnapshot: MaskEditorSnapshotDescriptor?
     
     static let empty = CubeSessionSnapshot(
         pipelineOperations: [],
@@ -67,8 +68,30 @@ struct CubeSessionSnapshot {
         wdviSlope: "1.0",
         wdviIntercept: "0.0",
         ndPaletteRaw: NDPalette.classic.rawValue,
-        ndThreshold: 0.3
+        ndThreshold: 0.3,
+        maskEditorSnapshot: nil
     )
+}
+
+struct MaskEditorSnapshotDescriptor: Equatable {
+    var width: Int
+    var height: Int
+    var referenceVisible: Bool
+    var activeClassValue: UInt8?
+    var layers: [MaskLayerSnapshotDescriptor]
+}
+
+struct MaskLayerSnapshotDescriptor: Equatable {
+    var name: String
+    var classValue: UInt8
+    var colorR: Double
+    var colorG: Double
+    var colorB: Double
+    var opacity: Double
+    var visible: Bool
+    var locked: Bool
+    var activeForDrawing: Bool
+    var data: [UInt8]
 }
 
 struct SpectrumSampleDescriptor: Equatable {
