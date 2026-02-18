@@ -25,6 +25,8 @@
 "menu.open" = "Open…";
 "menu.propagate_processing" = "Propagate Processing";
 "menu.propagate_wavelengths" = "Propagate Wavelengths";
+"menu.show_left_panel" = "Show Left Panel";
+"menu.show_right_panel" = "Show Right Panel";
 
 "library.title" = "Library";
 "library.drop_release_to_add" = "Drop to add";

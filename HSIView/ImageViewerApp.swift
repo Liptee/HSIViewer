@@ -134,6 +134,24 @@ struct HSIViewApp: App {
             CommandGroup(after: .sidebar) {
                 Divider()
 
+                Toggle(isOn: Binding(
+                    get: { appState.isLeftPanelVisible },
+                    set: { appState.isLeftPanelVisible = $0 }
+                )) {
+                    Text(appState.localized("menu.show_left_panel"))
+                }
+                .keyboardShortcut("[", modifiers: [.command, .option])
+
+                Toggle(isOn: Binding(
+                    get: { appState.isRightPanelVisible },
+                    set: { appState.isRightPanelVisible = $0 }
+                )) {
+                    Text(appState.localized("menu.show_right_panel"))
+                }
+                .keyboardShortcut("]", modifiers: [.command, .option])
+
+                Divider()
+
                 Button(appState.localized("menu.main_window")) {
                     openWindow(id: "main-window")
                     NSApp.activate(ignoringOtherApps: true)

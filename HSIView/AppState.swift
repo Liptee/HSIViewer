@@ -86,6 +86,10 @@ final class AppState: ObservableObject {
     
     @Published var zoomScale: CGFloat = 1.0
     @Published var imageOffset: CGSize = .zero
+    @Published var isLeftPanelVisible: Bool = true
+    @Published var isRightPanelVisible: Bool = true
+    @Published var leftPanelWidth: CGFloat = 280
+    @Published var rightPanelWidth: CGFloat = 260
     
     @Published var normalizationType: CubeNormalizationType = .none
     @Published var normalizationParams: CubeNormalizationParameters = .default
@@ -949,6 +953,14 @@ final class AppState: ObservableObject {
     func moveImage(by delta: CGSize) {
         imageOffset.width += delta.width
         imageOffset.height += delta.height
+    }
+
+    func setLeftPanelWidth(_ width: CGFloat) {
+        leftPanelWidth = max(220, min(width, 520))
+    }
+
+    func setRightPanelWidth(_ width: CGFloat) {
+        rightPanelWidth = max(240, min(width, 760))
     }
 
     func updateCursorGeoCoordinate(pixelX: Int, pixelY: Int) {

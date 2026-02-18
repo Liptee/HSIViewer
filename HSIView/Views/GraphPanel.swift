@@ -8,7 +8,7 @@ struct GraphPanel: View {
     @State private var editingROISample: SpectrumROISample?
     @State private var hiddenSampleIDs: Set<UUID> = []
     @FocusState private var hasFocus: Bool
-    let panelWidth: CGFloat = 400
+    var panelWidth: CGFloat = 400
     
     private enum GraphMode {
         case inactive

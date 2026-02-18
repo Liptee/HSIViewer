@@ -20,6 +20,8 @@ struct ContentView: View {
         zScoreThreshold: 3.0,
         method: .ols
     )
+    @State private var leftPanelDragStartWidth: CGFloat?
+    @State private var rightPanelDragStartWidth: CGFloat?
     @FocusState private var isImageFocused: Bool
     
     private let imageCoordinateSpaceName = "image-canvas"
@@ -69,13 +71,27 @@ struct ContentView: View {
             topBar
             
             HStack(spacing: 0) {
-                if state.cube != nil && state.viewMode != .mask {
+                let canShowLeftPanel = state.cube != nil && state.viewMode != .mask && state.isLeftPanelVisible
+                let canShowRightPanel = state.cube != nil && state.isRightPanelVisible
+                let graphToggleWidth: CGFloat = 20
+                let graphPanelWidth = max(220, state.rightPanelWidth - graphToggleWidth)
+
+                if canShowLeftPanel {
                     PipelinePanel()
                         .environmentObject(state)
+                        .frame(width: state.leftPanelWidth)
                         .padding(.leading, 12)
                         .disabled(state.isCurrentCubeProcessingInProgress)
                     
-                    Divider()
+                    panelResizeHandle { translation in
+                        if leftPanelDragStartWidth == nil {
+                            leftPanelDragStartWidth = state.leftPanelWidth
+                        }
+                        let baseWidth = leftPanelDragStartWidth ?? state.leftPanelWidth
+                        state.setLeftPanelWidth(baseWidth + translation.width)
+                    } onEnded: {
+                        leftPanelDragStartWidth = nil
+                    }
                 }
                 
                 if state.viewMode == .mask && state.cube != nil {
@@ -317,9 +333,17 @@ struct ContentView: View {
                 }
                 .coordinateSpace(name: imageCoordinateSpaceName)
                 
-                if let cube = state.cube {
-                        Divider()
-                        
+                if canShowRightPanel, let cube = state.cube {
+                    panelResizeHandle { translation in
+                        if rightPanelDragStartWidth == nil {
+                            rightPanelDragStartWidth = state.rightPanelWidth
+                        }
+                        let baseWidth = rightPanelDragStartWidth ?? state.rightPanelWidth
+                        state.setRightPanelWidth(baseWidth - translation.width)
+                    } onEnded: {
+                        rightPanelDragStartWidth = nil
+                    }
+
                     ZStack(alignment: .trailing) {
                         ScrollView {
                             VStack(spacing: 12) {
@@ -330,11 +354,12 @@ struct ContentView: View {
                             }
                             .padding(12)
                         }
-                        .frame(width: 260)
+                        .frame(maxWidth: .infinity)
                         
-                        GraphPanel()
+                        GraphPanel(panelWidth: graphPanelWidth)
                             .environmentObject(state)
                     }
+                    .frame(width: state.rightPanelWidth)
                     .padding(.trailing, 12)
                 }
             } // end else for mask mode check
@@ -382,6 +407,37 @@ struct ContentView: View {
         }
     }
     
+    private func panelResizeHandle(
+        onChanged: @escaping (CGSize) -> Void,
+        onEnded: @escaping () -> Void
+    ) -> some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 10)
+            .contentShape(Rectangle())
+            .overlay {
+                Rectangle()
+                    .fill(Color(NSColor.separatorColor).opacity(0.8))
+                    .frame(width: 1)
+            }
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        onChanged(value.translation)
+                    }
+                    .onEnded { _ in
+                        onEnded()
+                    }
+            )
+    }
+
     @ViewBuilder
     private var sidebar: some View {
         VStack(spacing: 0) {
