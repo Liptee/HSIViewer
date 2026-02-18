@@ -23,6 +23,7 @@
 "menu.language.system" = "System";
 "menu.main_window" = "Main Window";
 "menu.open" = "Open…";
+"menu.import_mask" = "Import Mask…";
 "menu.propagate_processing" = "Propagate Processing";
 "menu.propagate_wavelengths" = "Propagate Wavelengths";
 "menu.show_left_panel" = "Show Left Panel";
@@ -919,6 +920,19 @@
 "export.mat.error.write_wavelength_file" = "Failed to write wavelength file: %@";
 "image_load.error.unsupported_format" = "Unsupported format: %@";
 "image_load.error.read_details" = "Read error: %@";
+"mask.import.busy" = "Importing mask…";
+"mask.import.error.no_cube" = "Open an HSI cube before importing a mask.";
+"mask.import.error.spatial_size_unavailable" = "Unable to determine the spatial size of the current image.";
+"mask.import.error.unsupported_format" = "Unsupported mask format: %@";
+"mask.import.error.read_details" = "Mask import error: %@";
+"mask.import.error.size_mismatch" = "Mask size %1$@ does not match image size %2$lldx%3$lld.";
+"mask.import.error.invalid_class_value" = "Invalid class value: %@. Only integer values in the range 0...255 are supported.";
+"mask.import.error.png_read" = "Failed to read PNG mask.";
+"mask.import.error.npy_read" = "Failed to read NumPy mask.";
+"mask.import.error.mat.list_failed" = "Failed to read variables from MAT file.";
+"mask.import.error.mat.no_matching_2d" = "MAT file does not contain a 2D mask of size %1$lldx%2$lld.";
+"mask.import.error.mat.variable_load_failed" = "Failed to load MAT variable: %@";
+"mask.import.error.mat.unsupported_type" = "Unsupported MAT data type for mask import.";
 "mask.class_name_numbered" = "Class %d";
 
 "ENVI формат требует доступ к директории с парными файлами" = "ENVI format requires access to the directory with paired files";

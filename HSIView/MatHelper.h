@@ -21,7 +21,7 @@ typedef enum {
 typedef struct {
     void *data;      // Указатель на данные (может быть double*, float*, uint8_t*, и т.д.)
     size_t dims[3];  // dims[0], dims[1], dims[2]
-    int rank;        // должно быть 3
+    int rank;        // 2 или 3
     MatDataType data_type;  // Тип данных
 } MatCube3D;
 
@@ -42,9 +42,19 @@ bool load_cube_by_name(const char *path,
                        char *outName,
                        size_t outNameLen);
 
+bool load_2d_array_by_name(const char *path,
+                           const char *varName,
+                           MatCube3D *outCube,
+                           char *outName,
+                           size_t outNameLen);
+
 bool list_mat_cube_variables(const char *path,
                              MatCubeInfo **outList,
                              size_t *outCount);
+
+bool list_mat_2d_variables(const char *path,
+                           MatCubeInfo **outList,
+                           size_t *outCount);
 
 void free_mat_cube_info(MatCubeInfo *list);
 

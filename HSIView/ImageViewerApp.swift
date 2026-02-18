@@ -92,6 +92,11 @@ struct HSIViewApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Button(appState.localized("menu.import_mask")) {
+                    importMask()
+                }
+                .disabled(appState.cube == nil || appState.isBusy)
+
                 Divider()
 
                 Button(appState.localized("menu.assemble_hsi")) {
@@ -220,5 +225,23 @@ struct HSIViewApp: App {
         guard response == .OK, let url = panel.url else { return }
         
         appState.open(url: url)
+    }
+
+    private func importMask() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = appState.localized("common.open")
+
+        let npyType = UTType(filenameExtension: "npy") ?? .data
+        let matType = UTType(filenameExtension: "mat") ?? .data
+        let pngType = UTType.png
+        panel.allowedContentTypes = [npyType, matType, pngType]
+
+        let response = panel.runModal()
+        guard response == .OK, let url = panel.url else { return }
+
+        appState.importMask(url: url)
     }
 }

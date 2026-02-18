@@ -12,54 +12,42 @@ struct MaskEditorView: View {
     @State private var dragOffset: CGSize = .zero
     
     var body: some View {
-        HStack(spacing: 0) {
-            MaskLayersPanelView(maskState: maskState)
-                .frame(width: 240)
-            
-            Divider()
-            
-            GeometryReader { geo in
-                ZStack {
-                    if let cube = state.cube {
-                        maskCanvas(cube: cube, geoSize: geo.size)
-                            .scaleEffect(state.zoomScale * tempZoomScale)
-                            .offset(
-                                x: state.imageOffset.width + dragOffset.width,
-                                y: state.imageOffset.height + dragOffset.height
-                            )
-                    } else {
-                        Text(AppLocalizer.localized("Нет данных"))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .frame(width: geo.size.width, height: geo.size.height)
-                .clipped()
-                .contentShape(Rectangle())
-                .gesture(magnificationGesture)
-                .gesture(drawingGesture(geoSize: geo.size))
-                .onHover { isHovering in
-                    if isHovering {
-                        NSCursor.crosshair.push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-                .onAppear {
-                    currentGeoSize = geo.size
-                    setupShiftKeyMonitor()
-                }
-                .onDisappear {
-                    removeShiftKeyMonitor()
-                }
-                .onChange(of: geo.size) { newSize in
-                    currentGeoSize = newSize
+        GeometryReader { geo in
+            ZStack {
+                if let cube = state.cube {
+                    maskCanvas(cube: cube, geoSize: geo.size)
+                        .scaleEffect(state.zoomScale * tempZoomScale)
+                        .offset(
+                            x: state.imageOffset.width + dragOffset.width,
+                            y: state.imageOffset.height + dragOffset.height
+                        )
+                } else {
+                    Text(AppLocalizer.localized("Нет данных"))
+                        .foregroundColor(.secondary)
                 }
             }
-            
-            Divider()
-            
-            MaskToolsPanelView(maskState: maskState)
-                .frame(width: 200)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(magnificationGesture)
+            .gesture(drawingGesture(geoSize: geo.size))
+            .onHover { isHovering in
+                if isHovering {
+                    NSCursor.crosshair.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .onAppear {
+                currentGeoSize = geo.size
+                setupShiftKeyMonitor()
+            }
+            .onDisappear {
+                removeShiftKeyMonitor()
+            }
+            .onChange(of: geo.size) { newSize in
+                currentGeoSize = newSize
+            }
         }
     }
     
@@ -220,46 +208,131 @@ struct MaskEditorView: View {
 struct MaskOverlayView: View {
     @ObservedObject var maskState: MaskEditorState
     let displaySize: CGSize
-    
+    @StateObject private var imageCache = MaskLayerImageCache()
+
     var body: some View {
-        Canvas { context, size in
-            let visibleMasks = maskState.maskLayers.filter { $0.visible }
-            
-            for mask in visibleMasks {
-                let opacity = maskState.isShiftPressed
-                    ? (mask.id == maskState.activeLayerID ? 0.7 : 0.0)
-                    : mask.opacity
-                
-                guard opacity > 0 else { continue }
-                
-                drawMask(mask, in: context, size: size, opacity: opacity)
+        let masksToRender: [MaskLayer] = {
+            if maskState.isShiftPressed, let activeID = maskState.activeLayerID {
+                return maskState.maskLayers.filter { $0.visible && $0.id == activeID }
+            }
+            return maskState.maskLayers.filter { $0.visible }
+        }()
+
+        ZStack(alignment: .topLeading) {
+            ForEach(masksToRender, id: \.id) { mask in
+                let opacity = maskState.isShiftPressed ? 0.7 : mask.opacity
+                if opacity > 0, let cgImage = imageCache.image(for: mask) {
+                    Image(decorative: cgImage, scale: 1.0)
+                        .resizable()
+                        .interpolation(.none)
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .opacity(opacity)
+                }
             }
         }
         .frame(width: displaySize.width, height: displaySize.height)
     }
-    
-    private func drawMask(_ mask: MaskLayer, in context: GraphicsContext, size: CGSize, opacity: Double) {
-        guard mask.width > 0, mask.height > 0 else { return }
-        
-        let scaleX = size.width / CGFloat(mask.width)
-        let scaleY = size.height / CGFloat(mask.height)
-        
-        let color = Color(mask.color).opacity(opacity)
-        
-        for y in 0..<mask.height {
-            for x in 0..<mask.width {
-                let idx = y * mask.width + x
-                if mask.data[idx] != 0 {
-                    let rect = CGRect(
-                        x: CGFloat(x) * scaleX,
-                        y: CGFloat(y) * scaleY,
-                        width: scaleX + 0.5,
-                        height: scaleY + 0.5
-                    )
-                    context.fill(Path(rect), with: .color(color))
+}
+
+private final class MaskLayerImageCache: ObservableObject {
+    private struct CacheKey: Hashable {
+        let layerID: UUID
+        let renderVersion: UInt64
+        let width: Int
+        let height: Int
+        let red: UInt8
+        let green: UInt8
+        let blue: UInt8
+    }
+
+    private var images: [CacheKey: CGImage] = [:]
+    private var lruKeys: [CacheKey] = []
+    private let maxEntries: Int = 48
+
+    func image(for layer: MaskLayer) -> CGImage? {
+        guard layer.width > 0, layer.height > 0 else { return nil }
+        let key = cacheKey(for: layer)
+
+        if let cached = images[key] {
+            touch(key)
+            return cached
+        }
+
+        guard let built = buildImage(for: layer, key: key) else { return nil }
+        images[key] = built
+        lruKeys.append(key)
+        trimCacheIfNeeded()
+        return built
+    }
+
+    private func cacheKey(for layer: MaskLayer) -> CacheKey {
+        let rgb = layer.color.usingColorSpace(.sRGB) ?? layer.color
+        return CacheKey(
+            layerID: layer.id,
+            renderVersion: layer.renderVersion,
+            width: layer.width,
+            height: layer.height,
+            red: byte(from: rgb.redComponent),
+            green: byte(from: rgb.greenComponent),
+            blue: byte(from: rgb.blueComponent)
+        )
+    }
+
+    private func buildImage(for layer: MaskLayer, key: CacheKey) -> CGImage? {
+        let pixelCount = layer.width * layer.height
+        guard pixelCount > 0, layer.data.count >= pixelCount else { return nil }
+
+        var rgba = [UInt8](repeating: 0, count: pixelCount * 4)
+        layer.data.withUnsafeBufferPointer { dataPtr in
+            rgba.withUnsafeMutableBufferPointer { rgbaPtr in
+                guard let dataBase = dataPtr.baseAddress,
+                      let rgbaBase = rgbaPtr.baseAddress else {
+                    return
+                }
+
+                for i in 0..<pixelCount where dataBase[i] != 0 {
+                    let offset = i * 4
+                    rgbaBase[offset] = key.red
+                    rgbaBase[offset + 1] = key.green
+                    rgbaBase[offset + 2] = key.blue
+                    rgbaBase[offset + 3] = 255
                 }
             }
         }
+
+        let data = Data(rgba)
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+
+        return CGImage(
+            width: layer.width,
+            height: layer.height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: layer.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
+    }
+
+    private func touch(_ key: CacheKey) {
+        guard let index = lruKeys.firstIndex(of: key) else { return }
+        let moved = lruKeys.remove(at: index)
+        lruKeys.append(moved)
+    }
+
+    private func trimCacheIfNeeded() {
+        while lruKeys.count > maxEntries {
+            let oldest = lruKeys.removeFirst()
+            images.removeValue(forKey: oldest)
+        }
+    }
+
+    private func byte(from component: CGFloat) -> UInt8 {
+        UInt8(clamping: Int((component * 255.0).rounded()))
     }
 }
 
@@ -370,10 +443,16 @@ struct LayerRowView: View {
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
     
-    @State private var showOpacityPopover: Bool = false
+    @State private var isHovered: Bool = false
     
     private var maskLayer: MaskLayer? { layer as? MaskLayer }
     private var isReference: Bool { layer is ReferenceLayer }
+    private var hoverAccent: Color {
+        if let mask = maskLayer {
+            return Color(mask.color)
+        }
+        return Color.accentColor
+    }
     
     var body: some View {
         VStack(spacing: 4) {
@@ -387,12 +466,7 @@ struct LayerRowView: View {
                 .frame(width: 20)
                 
                 if let mask = maskLayer {
-                    ColorPicker("", selection: Binding(
-                        get: { Color(mask.color) },
-                        set: { onColorChange(NSColor($0)) }
-                    ), supportsOpacity: false)
-                    .labelsHidden()
-                    .frame(width: 18, height: 18)
+                    LayerColorSwatch(color: mask.color, onColorChange: onColorChange)
                 } else {
                     Image(systemName: "photo")
                         .font(.system(size: 10))
@@ -404,50 +478,56 @@ struct LayerRowView: View {
                     TextField(AppLocalizer.localized("Имя"), text: $editingName, onCommit: onFinishEditing)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text(layer.name)
                         .font(.system(size: 11))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .onTapGesture(count: 2, perform: onStartEditing)
                 }
-                
-                Spacer()
-                
+
                 if let mask = maskLayer {
-                    Button(action: onToggleDrawing) {
-                        Image(systemName: mask.activeForDrawing ? "pencil.circle.fill" : "pencil.circle")
-                            .font(.system(size: 11))
-                            .foregroundColor(mask.activeForDrawing ? .accentColor : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(mask.activeForDrawing ? "Отключить рисование" : "Включить рисование")
-                    
-                    Button(action: onToggleLock) {
-                        Image(systemName: mask.locked ? "lock.fill" : "lock.open")
-                            .font(.system(size: 10))
-                            .foregroundColor(mask.locked ? .orange : .secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .help(mask.locked ? "Разблокировать" : "Заблокировать")
-                    
-                    VStack(spacing: 2) {
-                        Button(action: { onMoveUp?() }) {
-                            Image(systemName: "chevron.up")
-                                .font(.system(size: 8, weight: .bold))
+                    HStack(spacing: 8) {
+                        Button(action: onToggleDrawing) {
+                            Image(systemName: mask.activeForDrawing ? "pencil.circle.fill" : "pencil.circle")
+                                .font(.system(size: 11))
+                                .foregroundColor(mask.activeForDrawing ? .accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
-                        .disabled(onMoveUp == nil)
-                        .foregroundColor(onMoveUp != nil ? .primary : .secondary.opacity(0.3))
-                        
-                        Button(action: { onMoveDown?() }) {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8, weight: .bold))
+                        .help(mask.activeForDrawing ? "Отключить рисование" : "Включить рисование")
+
+                        Button(action: onToggleLock) {
+                            Image(systemName: mask.locked ? "lock.fill" : "lock.open")
+                                .font(.system(size: 10))
+                                .foregroundColor(mask.locked ? .orange : .secondary)
                         }
                         .buttonStyle(.plain)
-                        .disabled(onMoveDown == nil)
-                        .foregroundColor(onMoveDown != nil ? .primary : .secondary.opacity(0.3))
+                        .help(mask.locked ? "Разблокировать" : "Заблокировать")
+
+                        VStack(spacing: 2) {
+                            Button(action: { onMoveUp?() }) {
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(onMoveUp == nil)
+                            .foregroundColor(onMoveUp != nil ? .primary : .secondary.opacity(0.3))
+
+                            Button(action: { onMoveDown?() }) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(onMoveDown == nil)
+                            .foregroundColor(onMoveDown != nil ? .primary : .secondary.opacity(0.3))
+                        }
+                        .frame(width: 16)
                     }
-                    .frame(width: 16)
+                    .frame(width: 62, alignment: .trailing)
                 }
             }
             
@@ -481,8 +561,14 @@ struct LayerRowView: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isActive ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
         )
+        .scaleEffect(isHovered ? 1.012 : 1.0)
+        .shadow(color: hoverAccent.opacity(isHovered ? 0.28 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .contextMenu {
             if !isReference {
                 Button("Переименовать", action: onStartEditing)
@@ -495,6 +581,54 @@ struct LayerRowView: View {
                 Divider()
                 Button("Удалить", role: .destructive, action: onDelete)
             }
+        }
+    }
+}
+
+private struct LayerColorSwatch: View {
+    let color: NSColor
+    let onColorChange: (NSColor) -> Void
+    @State private var showPicker: Bool = false
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Button(action: { showPicker = true }) {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(color))
+                .frame(width: 18, height: 18)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.08 : 1.0)
+        .shadow(color: Color(color).opacity(isHovered ? 0.35 : 0.0), radius: isHovered ? 6 : 0, x: 0, y: 3)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .popover(isPresented: $showPicker, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(AppLocalizer.localized("Цвет"))
+                    .font(.system(size: 11, weight: .semibold))
+                ColorPicker(
+                    "",
+                    selection: Binding(
+                        get: { Color(color) },
+                        set: { onColorChange(NSColor($0)) }
+                    ),
+                    supportsOpacity: false
+                )
+                .labelsHidden()
+            }
+            .padding(10)
+            .frame(width: 140)
         }
     }
 }
@@ -533,11 +667,12 @@ struct MaskToolsPanelView: View {
                 
                 HStack {
                     ForEach([1, 5, 10, 25, 50], id: \.self) { size in
-                        Button("\(size)") {
+                        MaskPresetSizeButton(
+                            size: size,
+                            isSelected: maskState.brushSize == size
+                        ) {
                             maskState.brushSize = size
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
                     }
                 }
             }
@@ -552,6 +687,7 @@ struct MaskToolsPanelView: View {
                     Button(action: { maskState.undo(for: activeID) }) {
                         Label("Отменить (⌘Z)", systemImage: "arrow.uturn.backward")
                     }
+                    .buttonStyle(HoverLiftButtonStyle(accent: .accentColor))
                     .disabled(!maskState.canUndo(for: activeID))
                     .keyboardShortcut("z", modifiers: .command)
                 }
@@ -586,6 +722,7 @@ private struct MaskToolButton: View {
     let tool: MaskDrawingTool
     let isSelected: Bool
     let action: () -> Void
+    @State private var isHovered: Bool = false
     
     var body: some View {
         Button(action: action) {
@@ -604,5 +741,69 @@ private struct MaskToolButton: View {
             )
         }
         .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .shadow(color: Color.accentColor.opacity(isHovered ? 0.35 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
+        .animation(.easeInOut(duration: 0.12), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+}
+
+private struct MaskPresetSizeButton: View {
+    let size: Int
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Button("\(size)", action: action)
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .scaleEffect(isHovered ? 1.08 : 1.0)
+            .shadow(
+                color: Color.accentColor.opacity(isHovered || isSelected ? 0.28 : 0.0),
+                radius: isHovered || isSelected ? 6 : 0,
+                x: 0,
+                y: 3
+            )
+            .animation(.easeInOut(duration: 0.12), value: isHovered)
+            .onHover { hovering in
+                isHovered = hovering
+            }
+    }
+}
+
+private struct HoverLiftButtonStyle: ButtonStyle {
+    let accent: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        HoverLiftButtonBody(
+            label: configuration.label,
+            accent: accent,
+            isPressed: configuration.isPressed
+        )
+    }
+}
+
+private struct HoverLiftButtonBody<Label: View>: View {
+    let label: Label
+    let accent: Color
+    let isPressed: Bool
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        label
+            .scaleEffect(isPressed ? 0.98 : (isHovered ? 1.03 : 1.0))
+            .shadow(color: accent.opacity(isHovered ? 0.3 : 0.0), radius: isHovered ? 6 : 0, x: 0, y: 3)
+            .animation(.easeInOut(duration: 0.12), value: isHovered)
+            .onHover { hovering in
+                isHovered = hovering
+            }
     }
 }

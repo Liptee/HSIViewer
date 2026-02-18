@@ -23,6 +23,7 @@
 "menu.language.system" = "Системный";
 "menu.main_window" = "Основное окно";
 "menu.open" = "Открыть…";
+"menu.import_mask" = "Импорт маски…";
 "menu.propagate_processing" = "Распространить обработку";
 "menu.propagate_wavelengths" = "Распространить длины волн";
 "menu.show_left_panel" = "Показать левую панель";
@@ -490,4 +491,17 @@
 "export.mat.error.write_wavelength_file" = "Не удалось записать файл длин волн: %@";
 "image_load.error.unsupported_format" = "Неподдерживаемый формат: %@";
 "image_load.error.read_details" = "Ошибка чтения: %@";
+"mask.import.busy" = "Импорт маски…";
+"mask.import.error.no_cube" = "Сначала откройте ГСИ перед импортом маски.";
+"mask.import.error.spatial_size_unavailable" = "Не удалось определить пространственный размер текущего изображения.";
+"mask.import.error.unsupported_format" = "Неподдерживаемый формат маски: %@";
+"mask.import.error.read_details" = "Ошибка импорта маски: %@";
+"mask.import.error.size_mismatch" = "Размер маски %1$@ не совпадает с размером изображения %2$lldx%3$lld.";
+"mask.import.error.invalid_class_value" = "Некорректное значение класса: %@. Поддерживаются только целые значения в диапазоне 0...255.";
+"mask.import.error.png_read" = "Не удалось прочитать PNG маску.";
+"mask.import.error.npy_read" = "Не удалось прочитать NumPy маску.";
+"mask.import.error.mat.list_failed" = "Не удалось прочитать переменные из MAT файла.";
+"mask.import.error.mat.no_matching_2d" = "MAT файл не содержит 2D маску размера %1$lldx%2$lld.";
+"mask.import.error.mat.variable_load_failed" = "Не удалось загрузить переменную MAT: %@";
+"mask.import.error.mat.unsupported_type" = "Неподдерживаемый тип данных MAT для импорта маски.";
 "mask.class_name_numbered" = "Класс %d";

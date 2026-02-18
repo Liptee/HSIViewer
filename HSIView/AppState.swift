@@ -243,6 +243,9 @@ final class AppState: ObservableObject {
     private var pendingRestoreSpectrumDescriptors: [SpectrumSampleDescriptor]?
     private var pendingRestoreROISampleDescriptors: [SpectrumROISampleDescriptor]?
     private var pendingRestoreRulerPointDescriptors: [RulerPointDescriptor]?
+    private var maskEditorCubePath: String?
+    private var maskSpatialOps: [PipelineOperation] = []
+    private var maskSpatialBaseSize: (width: Int, height: Int)?
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -1192,77 +1195,127 @@ final class AppState: ObservableObject {
     }
     
     func initializeMaskEditor() {
-        guard let cube = cube else { return }
+        guard let cube = cube, let currentURL = cubeURL?.standardizedFileURL else { return }
         let dims = cube.dims
         let dimsArray = [dims.0, dims.1, dims.2]
         guard let axes = cube.axes(for: activeLayout) else { return }
         
         let width = dimsArray[axes.width]
         let height = dimsArray[axes.height]
-        
-        let rgbImage: NSImage?
-        switch colorSynthesisConfig.mode {
-        case .trueColorRGB:
-            rgbImage = ImageRenderer.renderRGB(
-                cube: cube,
-                layout: activeLayout,
-                wavelengths: wavelengths,
-                mapping: colorSynthesisConfig.mapping
-            )
-        case .rangeWideRGB:
-            rgbImage = ImageRenderer.renderRGBRange(
-                cube: cube,
-                layout: activeLayout,
-                wavelengths: wavelengths,
-                rangeMapping: colorSynthesisConfig.rangeMapping
-            )
-        case .pcaVisualization:
-            rgbImage = pcaRenderedImage
-        }
-        
+
+        let rgbImage = currentMaskReferenceImage(for: cube)
         maskEditorState.initialize(width: width, height: height, rgbImage: rgbImage)
+        maskEditorCubePath = currentURL.path
+        trackMaskSpatialContextForCurrentPipeline()
+    }
+
+    func prepareMaskEditorForCurrentCube() {
+        guard let cube = cube, let currentURL = cubeURL?.standardizedFileURL else { return }
+        let currentPath = currentURL.path
+
+        if maskEditorCubePath == currentPath, !maskEditorState.maskLayers.isEmpty {
+            syncMaskEditorWithPipeline()
+            updateMaskReferenceImage()
+            return
+        }
+
+        if let snapshot = sessionSnapshots[currentURL]?.maskEditorSnapshot,
+           restoreMaskEditor(from: snapshot, for: cube) {
+            maskEditorCubePath = currentPath
+            return
+        }
+
+        initializeMaskEditor()
     }
     
     func syncMaskEditorWithPipeline() {
-        guard viewMode == .mask, let cube = cube else { return }
-        let dims = cube.dims
-        let dimsArray = [dims.0, dims.1, dims.2]
-        guard let axes = cube.axes(for: activeLayout) else { return }
-        
-        let width = dimsArray[axes.width]
-        let height = dimsArray[axes.height]
-        let rotationTurns = pipelineRotationTurns()
-        
-        maskEditorState.syncWithImageSize(width: width, height: height, rotationTurns: rotationTurns)
+        adjustMaskGeometryForCurrentPipeline()
     }
     
     func updateMaskReferenceImage() {
         guard viewMode == .mask, let cube = cube else { return }
-        let rgbImage: NSImage?
-        switch colorSynthesisConfig.mode {
-        case .trueColorRGB:
-            rgbImage = ImageRenderer.renderRGB(
-                cube: cube,
-                layout: activeLayout,
-                wavelengths: wavelengths,
-                mapping: colorSynthesisConfig.mapping
-            )
-        case .rangeWideRGB:
-            rgbImage = ImageRenderer.renderRGBRange(
-                cube: cube,
-                layout: activeLayout,
-                wavelengths: wavelengths,
-                rangeMapping: colorSynthesisConfig.rangeMapping
-            )
-        case .pcaVisualization:
-            rgbImage = pcaRenderedImage
-        }
+        let rgbImage = currentMaskReferenceImage(for: cube)
         
         if let refLayer = maskEditorState.referenceLayers.first,
            let index = maskEditorState.layers.firstIndex(where: { $0.id == refLayer.id }),
            var ref = maskEditorState.layers[index] as? ReferenceLayer {
             ref.rgbImage = rgbImage
             maskEditorState.layers[index] = ref
+        }
+    }
+
+    private func currentMaskReferenceImage(for cube: HyperCube) -> NSImage? {
+        switch colorSynthesisConfig.mode {
+        case .trueColorRGB:
+            return ImageRenderer.renderRGB(
+                cube: cube,
+                layout: activeLayout,
+                wavelengths: wavelengths,
+                mapping: colorSynthesisConfig.mapping
+            )
+        case .rangeWideRGB:
+            return ImageRenderer.renderRGBRange(
+                cube: cube,
+                layout: activeLayout,
+                wavelengths: wavelengths,
+                rangeMapping: colorSynthesisConfig.rangeMapping
+            )
+        case .pcaVisualization:
+            return pcaRenderedImage
+        }
+    }
+
+    private func restoreMaskEditor(from snapshot: MaskEditorSnapshotDescriptor, for cube: HyperCube) -> Bool {
+        guard let size = cubeSpatialSize(for: cube) else { return false }
+        let reference = currentMaskReferenceImage(for: cube)
+        guard maskEditorState.restore(from: snapshot, rgbImage: reference) else { return false }
+        if snapshot.width != size.width || snapshot.height != size.height {
+            maskEditorState.syncWithImageSize(width: size.width, height: size.height)
+        }
+        trackMaskSpatialContextForCurrentPipeline()
+        return true
+    }
+
+    func importMask(url: URL) {
+        guard let cube else {
+            loadError = L("mask.import.error.no_cube")
+            return
+        }
+        guard let size = cubeSpatialSize(for: cube) else {
+            loadError = L("mask.import.error.spatial_size_unavailable")
+            return
+        }
+
+        _ = SecurityScopedBookmarkStore.shared.startAccessingIfPossible(url: url)
+        beginBusy(message: L("mask.import.busy"))
+        let referenceImage = currentMaskReferenceImage(for: cube)
+        let sourceCubeID = cube.id
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = MaskImportService.importMask(from: url, targetSize: size)
+            DispatchQueue.main.async {
+                self.endBusy()
+                guard self.cube?.id == sourceCubeID else { return }
+                switch result {
+                case .success(let payload):
+                    self.maskEditorState.applyImportedMask(
+                        classMap: payload.classMap,
+                        width: payload.width,
+                        height: payload.height,
+                        rgbImage: referenceImage
+                    )
+                    self.maskEditorCubePath = self.cubeURL?.standardizedFileURL.path
+                    self.trackMaskSpatialContextForCurrentPipeline()
+                    if self.viewMode != .mask {
+                        self.viewMode = .mask
+                    }
+                    self.persistCurrentSession()
+                    self.loadError = nil
+                case .failure(let error):
+                    self.loadError = error.localizedDescription
+                }
+            }
         }
     }
     
@@ -1419,6 +1472,8 @@ final class AppState: ObservableObject {
     
     private func handleCubeChange(previousCube: HyperCube?) {
         adjustSpectrumGeometry(previousCube: previousCube, newCube: cube)
+        adjustMaskGeometryForCurrentPipeline()
+        updateMaskReferenceImage()
         refreshSpectrumSamples()
         refreshROISamples()
         refreshRulerPoints()
@@ -3208,6 +3263,10 @@ final class AppState: ObservableObject {
         spectrumSpatialOps = []
         spectrumSpatialBaseSize = nil
         pendingRestoreRulerPointDescriptors = nil
+        maskEditorState.clear()
+        maskEditorCubePath = nil
+        maskSpatialOps = []
+        maskSpatialBaseSize = nil
         updateResolvedLayout()
     }
     
@@ -3224,6 +3283,7 @@ final class AppState: ObservableObject {
     
     private func makeSnapshot() -> CubeSessionSnapshot? {
         guard cube != nil else { return nil }
+        let currentCubePath = cubeURL?.standardizedFileURL.path
         let descriptors = spectrumSamples.map {
             SpectrumSampleDescriptor(
                 id: $0.id,
@@ -3265,6 +3325,10 @@ final class AppState: ObservableObject {
             }
             return layout
         }()
+        let maskSnapshot: MaskEditorSnapshotDescriptor? = {
+            guard maskEditorCubePath == currentCubePath else { return nil }
+            return maskEditorState.snapshotDescriptor()
+        }()
         
         return CubeSessionSnapshot(
             pipelineOperations: pipelineOperations,
@@ -3298,7 +3362,8 @@ final class AppState: ObservableObject {
             wdviSlope: wdviSlope,
             wdviIntercept: wdviIntercept,
             ndPaletteRaw: ndPalette.rawValue,
-            ndThreshold: ndThreshold
+            ndThreshold: ndThreshold,
+            maskEditorSnapshot: maskSnapshot
         )
     }
     
@@ -3752,6 +3817,55 @@ final class AppState: ObservableObject {
         
         spectrumSpatialSize = newSize ?? spectrumSpatialSize
         spectrumRotationTurns = currentTurns
+    }
+
+    private func trackMaskSpatialContextForCurrentPipeline() {
+        maskSpatialOps = spatialOperations(from: pipelineOperations)
+        maskSpatialBaseSize = spatialBaseSize()
+    }
+
+    private func adjustMaskGeometryForCurrentPipeline() {
+        guard let currentURL = cubeURL?.standardizedFileURL else { return }
+        guard maskEditorCubePath == currentURL.path else { return }
+
+        let currentOps = spatialOperations(from: pipelineOperations)
+        guard let currentBaseTuple = spatialBaseSize() else { return }
+        let currentBase = SpatialSize(width: currentBaseTuple.width, height: currentBaseTuple.height)
+        let targetSize = spatialSizes(from: currentBase, ops: currentOps).last ?? currentBase
+
+        guard !maskEditorState.maskLayers.isEmpty else {
+            maskSpatialOps = currentOps
+            maskSpatialBaseSize = currentBaseTuple
+            return
+        }
+
+        if let previousBaseTuple = maskSpatialBaseSize {
+            let previousOps = maskSpatialOps
+            let previousBase = SpatialSize(width: previousBaseTuple.width, height: previousBaseTuple.height)
+
+            if previousOps != currentOps || previousBase != currentBase {
+                maskEditorState.remapMasks(to: targetSize.width, height: targetSize.height) { x, y in
+                    guard let source = self.transformPoint(
+                        x: x,
+                        y: y,
+                        fromOps: currentOps,
+                        fromBaseSize: currentBase,
+                        toOps: previousOps,
+                        toBaseSize: previousBase
+                    ) else { return nil }
+                    return (x: source.x, y: source.y)
+                }
+            } else if let firstMask = maskEditorState.maskLayers.first,
+                      firstMask.width != targetSize.width || firstMask.height != targetSize.height {
+                maskEditorState.syncWithImageSize(width: targetSize.width, height: targetSize.height)
+            }
+        } else if let firstMask = maskEditorState.maskLayers.first,
+                  firstMask.width != targetSize.width || firstMask.height != targetSize.height {
+            maskEditorState.syncWithImageSize(width: targetSize.width, height: targetSize.height)
+        }
+
+        maskSpatialOps = currentOps
+        maskSpatialBaseSize = currentBaseTuple
     }
 
     private func spatialOperations(from operations: [PipelineOperation]) -> [PipelineOperation] {

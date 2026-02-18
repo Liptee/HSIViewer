@@ -793,6 +793,7 @@ static void swap_elements_in_place(void *data, size_t count, size_t elem_size) {
 typedef struct {
     const char *target_name;
     bool first_only;
+    int expected_rank;
     MatCube3D *out_cube;
     char *out_name;
     size_t out_name_len;
@@ -813,7 +814,7 @@ static bool load_visitor(const ParsedMatrix *matrix,
         return true;
     }
 
-    if (matrix->rank != 3) {
+    if (matrix->rank != ctx->expected_rank) {
         return true;
     }
 
@@ -849,8 +850,8 @@ static bool load_visitor(const ParsedMatrix *matrix,
     ctx->out_cube->data = copy;
     ctx->out_cube->dims[0] = matrix->dims[0];
     ctx->out_cube->dims[1] = matrix->dims[1];
-    ctx->out_cube->dims[2] = matrix->dims[2];
-    ctx->out_cube->rank = 3;
+    ctx->out_cube->dims[2] = (ctx->expected_rank == 3) ? matrix->dims[2] : 1;
+    ctx->out_cube->rank = ctx->expected_rank;
     ctx->out_cube->data_type = matrix->data_type;
 
     if (ctx->out_name && ctx->out_name_len > 0) {
@@ -867,6 +868,7 @@ typedef struct {
     MatCubeInfo *list;
     size_t count;
     size_t capacity;
+    int expected_rank;
 } ListContext;
 
 static bool list_visitor(const ParsedMatrix *matrix,
@@ -879,11 +881,11 @@ static bool list_visitor(const ParsedMatrix *matrix,
         return false;
     }
 
-    if (matrix->rank != 3) {
+    ListContext *ctx = (ListContext *)context;
+    if (matrix->rank != ctx->expected_rank) {
         return true;
     }
 
-    ListContext *ctx = (ListContext *)context;
     if (ctx->count == ctx->capacity) {
         size_t new_capacity = (ctx->capacity == 0) ? 8 : (ctx->capacity * 2);
         MatCubeInfo *new_list = (MatCubeInfo *)realloc(ctx->list, new_capacity * sizeof(MatCubeInfo));
@@ -904,7 +906,7 @@ static bool list_visitor(const ParsedMatrix *matrix,
     slot->name[sizeof(slot->name) - 1] = '\0';
     slot->dims[0] = matrix->dims[0];
     slot->dims[1] = matrix->dims[1];
-    slot->dims[2] = matrix->dims[2];
+    slot->dims[2] = (ctx->expected_rank == 3) ? matrix->dims[2] : 1;
     slot->data_type = matrix->data_type;
 
     ctx->count += 1;
@@ -929,6 +931,7 @@ bool load_first_3d_double_cube(const char *path,
     LoadContext ctx = {
         .target_name = NULL,
         .first_only = true,
+        .expected_rank = 3,
         .out_cube = outCube,
         .out_name = outName,
         .out_name_len = outNameLen,
@@ -972,6 +975,7 @@ bool load_cube_by_name(const char *path,
     LoadContext ctx = {
         .target_name = varName,
         .first_only = false,
+        .expected_rank = 3,
         .out_cube = outCube,
         .out_name = outName,
         .out_name_len = outNameLen,
@@ -1013,6 +1017,89 @@ bool list_mat_cube_variables(const char *path,
 
     ListContext ctx;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.expected_rank = 3;
+
+    bool stop = false;
+    bool ok = scan_elements(file.data,
+                            file.size,
+                            128,
+                            file.little_endian,
+                            list_visitor,
+                            &ctx,
+                            &stop);
+    release_file(&file);
+    if (!ok) {
+        free(ctx.list);
+        return false;
+    }
+
+    *outList = ctx.list;
+    *outCount = ctx.count;
+    return true;
+}
+
+bool load_2d_array_by_name(const char *path,
+                           const char *varName,
+                           MatCube3D *outCube,
+                           char *outName,
+                           size_t outNameLen) {
+    if (!path || !varName || !outCube) {
+        return false;
+    }
+
+    clear_cube(outCube);
+
+    MatFileBuffer file;
+    if (!load_file(path, &file)) {
+        return false;
+    }
+
+    LoadContext ctx = {
+        .target_name = varName,
+        .first_only = false,
+        .expected_rank = 2,
+        .out_cube = outCube,
+        .out_name = outName,
+        .out_name_len = outNameLen,
+        .found = false
+    };
+
+    bool stop = false;
+    bool ok = scan_elements(file.data,
+                            file.size,
+                            128,
+                            file.little_endian,
+                            load_visitor,
+                            &ctx,
+                            &stop);
+    release_file(&file);
+    if (!ok) {
+        free_cube(outCube);
+        clear_cube(outCube);
+        return false;
+    }
+
+    return ctx.found;
+}
+
+bool list_mat_2d_variables(const char *path,
+                           MatCubeInfo **outList,
+                           size_t *outCount) {
+    if (!path || !outList || !outCount) {
+        return false;
+    }
+
+    *outList = NULL;
+    *outCount = 0;
+
+    MatFileBuffer file;
+    if (!load_file(path, &file)) {
+        return false;
+    }
+
+    ListContext ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.expected_rank = 2;
 
     bool stop = false;
     bool ok = scan_elements(file.data,
