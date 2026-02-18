@@ -22,6 +22,7 @@ struct CubeSessionSnapshot {
     var imageOffset: CGSize
     var spectrumSamples: [SpectrumSampleDescriptor]
     var roiSamples: [SpectrumROISampleDescriptor]
+    var rulerPoints: [RulerPointDescriptor]
     var roiAggregationMode: SpectrumROIAggregationMode
     var colorSynthesisConfig: ColorSynthesisConfig
     var ndPreset: NDIndexPreset
@@ -55,6 +56,7 @@ struct CubeSessionSnapshot {
         imageOffset: .zero,
         spectrumSamples: [],
         roiSamples: [],
+        rulerPoints: [],
         roiAggregationMode: .mean,
         colorSynthesisConfig: .default(channelCount: 0, wavelengths: nil),
         ndPreset: .ndvi,
@@ -114,5 +116,17 @@ struct SpectrumROISampleDescriptor: Equatable {
         self.displayName = displayName
         self.values = values
         self.wavelengths = wavelengths
+    }
+}
+
+struct RulerPointDescriptor: Equatable {
+    var id: UUID
+    var pixelX: Int
+    var pixelY: Int
+
+    init(id: UUID, pixelX: Int, pixelY: Int) {
+        self.id = id
+        self.pixelX = pixelX
+        self.pixelY = pixelY
     }
 }

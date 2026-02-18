@@ -161,6 +161,9 @@ final class AppState: ObservableObject {
     @Published var pendingSpectrumSample: SpectrumSample?
     @Published var roiSamples: [SpectrumROISample] = []
     @Published var pendingROISample: SpectrumROISample?
+    @Published var rulerPoints: [RulerPoint] = []
+    @Published var rulerMode: RulerMode = .measure
+    @Published var selectedRulerPointID: UUID?
     @Published var roiAggregationMode: SpectrumROIAggregationMode = .mean {
         didSet {
             guard oldValue != roiAggregationMode else { return }
@@ -235,6 +238,7 @@ final class AppState: ObservableObject {
     private var pipelineProcessingMessagesByCubeID: [UUID: String] = [:]
     private var pendingRestoreSpectrumDescriptors: [SpectrumSampleDescriptor]?
     private var pendingRestoreROISampleDescriptors: [SpectrumROISampleDescriptor]?
+    private var pendingRestoreRulerPointDescriptors: [RulerPointDescriptor]?
     private var processingClipboard: ProcessingClipboard? {
         didSet {
             hasProcessingClipboard = processingClipboard != nil
@@ -965,6 +969,17 @@ final class AppState: ObservableObject {
     }
     
     func toggleAnalysisTool(_ tool: AnalysisTool) {
+        if tool == .ruler {
+            if activeAnalysisTool == .ruler {
+                rulerMode = (rulerMode == .measure) ? .edit : .measure
+            } else {
+                activeAnalysisTool = .ruler
+                rulerMode = .measure
+                selectedRulerPointID = nil
+            }
+            return
+        }
+
         if activeAnalysisTool == tool {
             activeAnalysisTool = .none
         } else {
@@ -973,6 +988,7 @@ final class AppState: ObservableObject {
                 isGraphPanelExpanded = true
             }
         }
+        selectedRulerPointID = nil
     }
     
     func extractSpectrum(at pixelX: Int, pixelY: Int) {
@@ -1096,6 +1112,67 @@ final class AppState: ObservableObject {
         }
 
         return false
+    }
+
+    func addRulerPoint(pixelX: Int, pixelY: Int) {
+        guard let clamped = clampedSpatialPointForCurrentCube(x: pixelX, y: pixelY) else { return }
+        rulerPoints.append(
+            RulerPoint(
+                pixelX: clamped.x,
+                pixelY: clamped.y
+            )
+        )
+        selectedRulerPointID = nil
+    }
+
+    func updateRulerPoint(id: UUID, pixelX: Int, pixelY: Int) {
+        guard let idx = rulerPoints.firstIndex(where: { $0.id == id }) else { return }
+        guard let clamped = clampedSpatialPointForCurrentCube(x: pixelX, y: pixelY) else { return }
+        rulerPoints[idx].pixelX = clamped.x
+        rulerPoints[idx].pixelY = clamped.y
+    }
+
+    func clearRulerPoints() {
+        rulerPoints.removeAll()
+        selectedRulerPointID = nil
+    }
+
+    func activateRulerEditMode() {
+        guard cube != nil else { return }
+        activeAnalysisTool = .ruler
+        rulerMode = .edit
+    }
+
+    func toggleRulerModeByHotkey() {
+        guard cube != nil else { return }
+        if activeAnalysisTool != .ruler {
+            activeAnalysisTool = .ruler
+            rulerMode = .edit
+            selectedRulerPointID = nil
+            return
+        }
+        rulerMode = (rulerMode == .measure) ? .edit : .measure
+        if rulerMode == .measure {
+            selectedRulerPointID = nil
+        }
+    }
+
+    func selectRulerPoint(id: UUID?) {
+        guard let id else {
+            selectedRulerPointID = nil
+            return
+        }
+        if rulerPoints.contains(where: { $0.id == id }) {
+            selectedRulerPointID = id
+        } else {
+            selectedRulerPointID = nil
+        }
+    }
+
+    func deleteSelectedRulerPoint() {
+        guard let selected = selectedRulerPointID else { return }
+        rulerPoints.removeAll { $0.id == selected }
+        selectedRulerPointID = nil
     }
     
     func toggleGraphPanel() {
@@ -1332,6 +1409,7 @@ final class AppState: ObservableObject {
         adjustSpectrumGeometry(previousCube: previousCube, newCube: cube)
         refreshSpectrumSamples()
         refreshROISamples()
+        refreshRulerPoints()
     }
     
     func addOperation(type: PipelineOperationType) {
@@ -1634,13 +1712,7 @@ final class AppState: ObservableObject {
             updateWavelengthsFromPipelineResult()
             updateSpectralTrimRangeFromPipeline()
             updateChannelCount()
-            if let descriptors = pendingRestoreSpectrumDescriptors,
-               let roiDescriptors = pendingRestoreROISampleDescriptors {
-                restoreSpectrumSamples(from: descriptors)
-                restoreROISamples(from: roiDescriptors)
-                pendingRestoreSpectrumDescriptors = nil
-                pendingRestoreROISampleDescriptors = nil
-            }
+            restorePendingSpatialSelectionsIfNeeded()
             return
         }
         
@@ -1678,13 +1750,7 @@ final class AppState: ObservableObject {
                         self.updateWavelengthsFromPipelineResult()
                         self.updateSpectralTrimRangeFromPipeline()
                         self.updateChannelCount()
-                        if let descriptors = self.pendingRestoreSpectrumDescriptors,
-                           let roiDescriptors = self.pendingRestoreROISampleDescriptors {
-                            self.restoreSpectrumSamples(from: descriptors)
-                            self.restoreROISamples(from: roiDescriptors)
-                            self.pendingRestoreSpectrumDescriptors = nil
-                            self.pendingRestoreROISampleDescriptors = nil
-                        }
+                        self.restorePendingSpatialSelectionsIfNeeded()
                         self.persistCurrentSession()
                     } else if let sourceCubeURL {
                         self.updatePipelineSnapshot(for: sourceCubeURL, operations: updatedOperations)
@@ -1724,13 +1790,7 @@ final class AppState: ObservableObject {
                         self.updateWavelengthsFromPipelineResult()
                         self.updateSpectralTrimRangeFromPipeline()
                         self.updateChannelCount()
-                        if let descriptors = self.pendingRestoreSpectrumDescriptors,
-                           let roiDescriptors = self.pendingRestoreROISampleDescriptors {
-                            self.restoreSpectrumSamples(from: descriptors)
-                            self.restoreROISamples(from: roiDescriptors)
-                            self.pendingRestoreSpectrumDescriptors = nil
-                            self.pendingRestoreROISampleDescriptors = nil
-                        }
+                        self.restorePendingSpatialSelectionsIfNeeded()
                         self.persistCurrentSession()
                     } else if let sourceCubeURL {
                         self.updatePipelineSnapshot(for: sourceCubeURL, operations: mutableOperations)
@@ -1759,6 +1819,20 @@ final class AppState: ObservableObject {
             wavelengths: stored,
             geoReference: cube.geoReference
         )
+    }
+
+    private func restorePendingSpatialSelectionsIfNeeded() {
+        guard let descriptors = pendingRestoreSpectrumDescriptors,
+              let roiDescriptors = pendingRestoreROISampleDescriptors,
+              let rulerDescriptors = pendingRestoreRulerPointDescriptors else {
+            return
+        }
+        restoreSpectrumSamples(from: descriptors)
+        restoreROISamples(from: roiDescriptors)
+        restoreRulerPoints(from: rulerDescriptors)
+        pendingRestoreSpectrumDescriptors = nil
+        pendingRestoreROISampleDescriptors = nil
+        pendingRestoreRulerPointDescriptors = nil
     }
 
     private func updateWavelengthsFromPipelineResult() {
@@ -3034,6 +3108,7 @@ final class AppState: ObservableObject {
             spectrumSpatialSize = nil
             pendingRestoreSpectrumDescriptors = snapshot.spectrumSamples
             pendingRestoreROISampleDescriptors = snapshot.roiSamples
+            pendingRestoreRulerPointDescriptors = snapshot.rulerPoints
             spectrumSpatialOps = spatialOperations(from: pipelineOperations)
             spectrumSpatialBaseSize = spatialBaseSize()
             applyPipeline()
@@ -3044,8 +3119,10 @@ final class AppState: ObservableObject {
             }
             restoreSpectrumSamples(from: snapshot.spectrumSamples)
             restoreROISamples(from: snapshot.roiSamples)
+            restoreRulerPoints(from: snapshot.rulerPoints)
             pendingRestoreSpectrumDescriptors = nil
             pendingRestoreROISampleDescriptors = nil
+            pendingRestoreRulerPointDescriptors = nil
         }
     }
     
@@ -3112,11 +3189,13 @@ final class AppState: ObservableObject {
         lastPipelineResult = nil
         lastPipelineBaseCubeID = nil
         layout = .auto
+        rulerMode = .measure
         resetSpectrumSelections()
         spectrumSpatialSize = nil
         spectrumRotationTurns = pipelineRotationTurns()
         spectrumSpatialOps = []
         spectrumSpatialBaseSize = nil
+        pendingRestoreRulerPointDescriptors = nil
         updateResolvedLayout()
     }
     
@@ -3157,6 +3236,9 @@ final class AppState: ObservableObject {
                 wavelengths: $0.wavelengths
             )
         }
+        let rulerDescriptors = rulerPoints.map {
+            RulerPointDescriptor(id: $0.id, pixelX: $0.pixelX, pixelY: $0.pixelY)
+        }
         
         let clampedConfig = ColorSynthesisConfig(
             mode: colorSynthesisConfig.mode,
@@ -3193,6 +3275,7 @@ final class AppState: ObservableObject {
             imageOffset: imageOffset,
             spectrumSamples: descriptors,
             roiSamples: roiDescriptors,
+            rulerPoints: rulerDescriptors,
             roiAggregationMode: roiAggregationMode,
             colorSynthesisConfig: clampedConfig,
             ndPreset: ndPreset,
@@ -3597,6 +3680,26 @@ final class AppState: ObservableObject {
             )
         }
     }
+
+    private func refreshRulerPoints() {
+        guard cube != nil else {
+            rulerPoints.removeAll()
+            selectedRulerPointID = nil
+            return
+        }
+        guard !rulerPoints.isEmpty else { return }
+        rulerPoints = rulerPoints.compactMap { point in
+            guard let clamped = clampedSpatialPointForCurrentCube(x: point.pixelX, y: point.pixelY) else {
+                return nil
+            }
+            return RulerPoint(
+                id: point.id,
+                pixelX: clamped.x,
+                pixelY: clamped.y
+            )
+        }
+        syncSelectedRulerPointSelection()
+    }
     
     private func adjustSpectrumGeometry(previousCube: HyperCube?, newCube: HyperCube?) {
         let currentTurns = pipelineRotationTurns()
@@ -3617,6 +3720,7 @@ final class AppState: ObservableObject {
             || pendingSpectrumSample != nil
             || !roiSamples.isEmpty
             || pendingROISample != nil
+            || !rulerPoints.isEmpty
         
         if !hasSamples {
             spectrumSpatialOps = currentSpatialOps
@@ -3751,6 +3855,24 @@ final class AppState: ObservableObject {
                 pendingROISample = nil
             }
         }
+
+        rulerPoints = rulerPoints.compactMap { point in
+            guard let mapped = transformPoint(
+                x: point.pixelX,
+                y: point.pixelY,
+                fromOps: fromOps,
+                fromBaseSize: oldBase,
+                toOps: toOps,
+                toBaseSize: newBase
+            ) else { return nil }
+
+            return RulerPoint(
+                id: point.id,
+                pixelX: mapped.x,
+                pixelY: mapped.y
+            )
+        }
+        syncSelectedRulerPointSelection()
     }
 
     private enum SpatialTransformDirection {
@@ -4095,6 +4217,14 @@ final class AppState: ObservableObject {
         let height = dimsArray[axes.height]
         return (width, height)
     }
+
+    private func clampedSpatialPointForCurrentCube(x: Int, y: Int) -> SpatialPoint? {
+        guard let cube, let size = cubeSpatialSize(for: cube) else { return nil }
+        guard size.width > 0, size.height > 0 else { return nil }
+        let clampedX = max(0, min(x, size.width - 1))
+        let clampedY = max(0, min(y, size.height - 1))
+        return SpatialPoint(x: clampedX, y: clampedY)
+    }
     
     private func rotateSpectrumSamples(by turns: Int, previousSize: (width: Int, height: Int)) {
         guard turns % 4 != 0 else { return }
@@ -4315,6 +4445,33 @@ final class AppState: ObservableObject {
         pendingROISample = nil
         roiColorCounter = max(nextColorIndex, restored.count)
     }
+
+    private func restoreRulerPoints(from descriptors: [RulerPointDescriptor]) {
+        guard cube != nil else {
+            rulerPoints.removeAll()
+            selectedRulerPointID = nil
+            return
+        }
+
+        rulerPoints = descriptors.compactMap { descriptor in
+            guard let clamped = clampedSpatialPointForCurrentCube(x: descriptor.pixelX, y: descriptor.pixelY) else {
+                return nil
+            }
+            return RulerPoint(
+                id: descriptor.id,
+                pixelX: clamped.x,
+                pixelY: clamped.y
+            )
+        }
+        syncSelectedRulerPointSelection()
+    }
+
+    private func syncSelectedRulerPointSelection() {
+        guard let selected = selectedRulerPointID else { return }
+        if !rulerPoints.contains(where: { $0.id == selected }) {
+            selectedRulerPointID = nil
+        }
+    }
     
     private func resetSpectrumSelections() {
         spectrumSamples.removeAll()
@@ -4323,7 +4480,14 @@ final class AppState: ObservableObject {
         roiSamples.removeAll()
         pendingROISample = nil
         roiColorCounter = 0
+        rulerPoints.removeAll()
+        selectedRulerPointID = nil
     }
+}
+
+enum RulerMode: String {
+    case measure
+    case edit
 }
 
 struct LibraryExportProgressState: Equatable {
@@ -4348,6 +4512,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
     case none
     case spectrumGraph
     case spectrumGraphROI
+    case ruler
     
     var id: String { rawValue }
     
@@ -4356,6 +4521,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .none: return ""
         case .spectrumGraph: return L("График спектра")
         case .spectrumGraphROI: return L("График спектра ROI")
+        case .ruler: return L("Линейка")
         }
     }
     
@@ -4364,6 +4530,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .none: return ""
         case .spectrumGraph: return "chart.xyaxis.line"
         case .spectrumGraphROI: return "square.dashed.inset.filled"
+        case .ruler: return "ruler"
         }
     }
 }
@@ -4372,6 +4539,18 @@ struct CursorGeoCoordinate: Equatable {
     let pixelX: Int
     let pixelY: Int
     let mapCoordinate: MapCoordinate
+}
+
+struct RulerPoint: Identifiable, Equatable {
+    let id: UUID
+    var pixelX: Int
+    var pixelY: Int
+
+    init(id: UUID = UUID(), pixelX: Int, pixelY: Int) {
+        self.id = id
+        self.pixelX = pixelX
+        self.pixelY = pixelY
+    }
 }
 
 struct SpectrumSample: Identifiable, Equatable {

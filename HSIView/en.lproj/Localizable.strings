@@ -212,6 +212,12 @@
 
 "График спектра" = "Spectrum graph";
 "График спектра ROI" = "ROI spectrum graph";
+"Линейка" = "Ruler";
+"ruler.overlay.pixels" = "Pixels: %@ px";
+"ruler.overlay.distance" = "Distance: %@";
+"ruler.overlay.distance_unit" = "Distance: %@ %@";
+"ruler.unit.m" = "m";
+"ruler.unit.km" = "km";
 "Нет сохранённых точек" = "No saved points";
 "Сохранено: %lld" = "Saved: %lld";
 "Нет сохранённых областей" = "No saved regions";

@@ -160,6 +160,12 @@
 
 "graph.panel.title.spectrum" = "График спектра";
 "graph.panel.title.roi" = "График спектра ROI";
+"Линейка" = "Линейка";
+"ruler.overlay.pixels" = "Пиксели: %@ px";
+"ruler.overlay.distance" = "Расстояние: %@";
+"ruler.overlay.distance_unit" = "Расстояние: %@ %@";
+"ruler.unit.m" = "м";
+"ruler.unit.km" = "км";
 "graph.panel.status.no_points" = "Нет сохранённых точек";
 "graph.panel.status.saved_points" = "Сохранено: %d";
 "graph.panel.status.no_roi" = "Нет сохранённых областей";

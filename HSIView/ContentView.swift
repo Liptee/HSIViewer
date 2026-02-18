@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var currentGeoSize: CGSize = .zero
     @State private var roiDragStartPixel: PixelCoordinate?
     @State private var roiPreviewRect: SpectrumROIRect?
+    @State private var rulerHoverPixel: PixelCoordinate?
     @State private var showWDVIAutoSheet: Bool = false
     @State private var wdviAutoConfig = WDVIAutoEstimationConfig(
         selectedROIIDs: [],
@@ -160,6 +161,8 @@ struct ContentView: View {
                                 guard !state.alignmentPointsEditable else { return }
                                 if state.activeAnalysisTool == .spectrumGraphROI {
                                     handleROIDrag(value: value, geoSize: geo.size)
+                                } else if state.activeAnalysisTool == .ruler {
+                                    return
                                 } else {
                                     dragOffset = value.translation
                                 }
@@ -168,6 +171,8 @@ struct ContentView: View {
                                 guard !state.alignmentPointsEditable else { return }
                                 if state.activeAnalysisTool == .spectrumGraphROI {
                                     handleROIDragEnd(value: value, geoSize: geo.size)
+                                } else if state.activeAnalysisTool == .ruler {
+                                    return
                                 } else {
                                     state.imageOffset.width += value.translation.width
                                     state.imageOffset.height += value.translation.height
@@ -178,6 +183,9 @@ struct ContentView: View {
                     .onTapGesture { location in
                         if state.activeAnalysisTool == .spectrumGraph {
                             handleImageClick(at: location, geoSize: geo.size)
+                        } else if state.activeAnalysisTool == .ruler,
+                                  state.rulerMode == .measure {
+                            handleRulerClick(at: location, geoSize: geo.size)
                         }
                     }
                     .focusable()
@@ -187,30 +195,59 @@ struct ContentView: View {
                         isImageFocused = true
                     }
                     .onKeyPress(.leftArrow) {
-                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
+                        guard state.activeAnalysisTool != .spectrumGraphROI,
+                              state.activeAnalysisTool != .ruler else { return .ignored }
                         state.moveImage(by: CGSize(width: 20, height: 0))
                         return .handled
                     }
                     .onKeyPress(.rightArrow) {
-                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
+                        guard state.activeAnalysisTool != .spectrumGraphROI,
+                              state.activeAnalysisTool != .ruler else { return .ignored }
                         state.moveImage(by: CGSize(width: -20, height: 0))
                         return .handled
                     }
                     .onKeyPress(.upArrow) {
-                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
+                        guard state.activeAnalysisTool != .spectrumGraphROI,
+                              state.activeAnalysisTool != .ruler else { return .ignored }
                         state.moveImage(by: CGSize(width: 0, height: 20))
                         return .handled
                     }
                     .onKeyPress(.downArrow) {
-                        guard state.activeAnalysisTool != .spectrumGraphROI else { return .ignored }
+                        guard state.activeAnalysisTool != .spectrumGraphROI,
+                              state.activeAnalysisTool != .ruler else { return .ignored }
                         state.moveImage(by: CGSize(width: 0, height: -20))
                         return .handled
+                    }
+                    .onKeyPress(characters: CharacterSet(charactersIn: "dD"), phases: [.down]) { keyPress in
+                        guard keyPress.modifiers.isEmpty else { return .ignored }
+                        guard state.cube != nil else { return .ignored }
+                        state.toggleRulerModeByHotkey()
+                        return .handled
+                    }
+                    .onKeyPress(.delete) {
+                        guard state.activeAnalysisTool == .ruler,
+                              state.rulerMode == .edit else { return .ignored }
+                        state.deleteSelectedRulerPoint()
+                        return .handled
+                    }
+                    .onKeyPress(.deleteForward) {
+                        guard state.activeAnalysisTool == .ruler,
+                              state.rulerMode == .edit else { return .ignored }
+                        state.deleteSelectedRulerPoint()
+                        return .handled
+                    }
+                    .onDeleteCommand {
+                        guard state.activeAnalysisTool == .ruler,
+                              state.rulerMode == .edit else { return }
+                        state.deleteSelectedRulerPoint()
                     }
                     .onChange(of: geo.size) { newSize in
                         currentGeoSize = newSize
                     }
                     .onHover { isHovering in
-                        if (state.activeAnalysisTool == .spectrumGraph || state.activeAnalysisTool == .spectrumGraphROI),
+                        if (state.activeAnalysisTool == .spectrumGraph
+                            || state.activeAnalysisTool == .spectrumGraphROI
+                            || state.activeAnalysisTool == .ruler),
                            state.cube != nil {
                             if isHovering {
                                 NSCursor.crosshair.push()
@@ -220,18 +257,26 @@ struct ContentView: View {
                         }
                     }
                     .onContinuousHover(coordinateSpace: .local) { phase in
-                        guard state.cube?.geoReference != nil else {
-                            state.clearCursorGeoCoordinate()
-                            return
-                        }
                         switch phase {
                         case .active(let location):
                             guard let pixel = pixelCoordinate(for: location, geoSize: geo.size) else {
+                                rulerHoverPixel = nil
                                 state.clearCursorGeoCoordinate()
                                 return
                             }
-                            state.updateCursorGeoCoordinate(pixelX: pixel.x, pixelY: pixel.y)
+                            if state.activeAnalysisTool == .ruler,
+                               state.rulerMode == .measure {
+                                rulerHoverPixel = pixel
+                            } else {
+                                rulerHoverPixel = nil
+                            }
+                            if state.cube?.geoReference != nil {
+                                state.updateCursorGeoCoordinate(pixelX: pixel.x, pixelY: pixel.y)
+                            } else {
+                                state.clearCursorGeoCoordinate()
+                            }
                         case .ended:
+                            rulerHoverPixel = nil
                             state.clearCursorGeoCoordinate()
                         }
                     }
@@ -239,12 +284,36 @@ struct ContentView: View {
                         NSCursor.pop()
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
+                        rulerHoverPixel = nil
+                    }
+                    .onChange(of: state.rulerMode) { mode in
+                        if mode != .measure {
+                            rulerHoverPixel = nil
+                        }
                     }
                     .onChange(of: state.cubeURL) { _ in
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
+                        rulerHoverPixel = nil
                         state.clearCursorGeoCoordinate()
                     }
+                    .background(
+                        RulerDeleteKeyCatcher(
+                            isActive: Binding(
+                                get: {
+                                    state.activeAnalysisTool == .ruler
+                                        && state.rulerMode == .edit
+                                        && state.selectedRulerPointID != nil
+                                },
+                                set: { _ in }
+                            ),
+                            onDelete: {
+                                state.deleteSelectedRulerPoint()
+                            }
+                        )
+                        .frame(width: 0, height: 0)
+                        .allowsHitTesting(false)
+                    )
                 }
                 .coordinateSpace(name: imageCoordinateSpaceName)
                 
@@ -794,6 +863,21 @@ struct ContentView: View {
                     originalSize: nsImage.size,
                     displaySize: fittedSize
                 )
+            } else if state.activeAnalysisTool == .ruler {
+                RulerOverlay(
+                    points: state.rulerPoints,
+                    hoverPixel: state.rulerMode == .measure ? rulerHoverPixel : nil,
+                    mode: state.rulerMode,
+                    selectedPointID: state.selectedRulerPointID,
+                    geoReference: state.cube?.geoReference,
+                    originalSize: nsImage.size,
+                    displaySize: fittedSize
+                ) { id, x, y in
+                    state.updateRulerPoint(id: id, pixelX: x, pixelY: y)
+                } onSelectPoint: { id in
+                    state.selectRulerPoint(id: id)
+                    isImageFocused = true
+                }
             }
             
             if state.showAlignmentVisualization && !state.alignmentPointsEditable {
@@ -1784,6 +1868,12 @@ struct ContentView: View {
         guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
         state.extractSpectrum(at: pixel.x, pixelY: pixel.y)
     }
+
+    private func handleRulerClick(at location: CGPoint, geoSize: CGSize) {
+        guard state.activeAnalysisTool == .ruler, state.rulerMode == .measure else { return }
+        guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
+        state.addRulerPoint(pixelX: pixel.x, pixelY: pixel.y)
+    }
     
     private func pixelCoordinate(for location: CGPoint, geoSize: CGSize) -> PixelCoordinate? {
         guard currentImageSize.width > 0, currentImageSize.height > 0 else { return nil }
@@ -2067,6 +2157,252 @@ private struct SpectrumROIsOverlay: View {
         let width = CGFloat(rect.width) * scaleX
         let height = CGFloat(rect.height) * scaleY
         return CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+private struct RulerOverlay: View {
+    let points: [RulerPoint]
+    let hoverPixel: PixelCoordinate?
+    let mode: RulerMode
+    let selectedPointID: UUID?
+    let geoReference: MapGeoReference?
+    let originalSize: CGSize
+    let displaySize: CGSize
+    let onMovePoint: (UUID, Int, Int) -> Void
+    let onSelectPoint: (UUID?) -> Void
+
+    @State private var dragStartPositions: [UUID: CGPoint] = [:]
+
+    private struct Segment: Identifiable {
+        let id: String
+        let startX: Int
+        let startY: Int
+        let endX: Int
+        let endY: Int
+        let isTemporary: Bool
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(committedSegments) { segment in
+                segmentView(segment)
+            }
+
+            if let temp = temporarySegment {
+                segmentView(temp)
+            }
+
+            ForEach(points) { point in
+                let position = displayPosition(x: point.pixelX, y: point.pixelY)
+                let isSelected = selectedPointID == point.id
+                Circle()
+                    .fill(isSelected ? Color.orange : Color.accentColor)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.95), lineWidth: isSelected ? 2.0 : 1.5)
+                    )
+                    .frame(width: isSelected ? 14 : 12, height: isSelected ? 14 : 12)
+                    .position(x: position.x, y: position.y)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if dragStartPositions[point.id] == nil {
+                                    dragStartPositions[point.id] = displayPosition(x: point.pixelX, y: point.pixelY)
+                                }
+                                let start = dragStartPositions[point.id] ?? displayPosition(x: point.pixelX, y: point.pixelY)
+                                let candidate = CGPoint(
+                                    x: start.x + value.translation.width,
+                                    y: start.y + value.translation.height
+                                )
+                                let pixel = pixelCoordinate(fromDisplay: candidate)
+                                onMovePoint(point.id, pixel.x, pixel.y)
+                            }
+                            .onEnded { _ in
+                                dragStartPositions.removeValue(forKey: point.id)
+                            }
+                    )
+                    .onTapGesture {
+                        guard mode == .edit else { return }
+                        let newValue: UUID? = (selectedPointID == point.id) ? nil : point.id
+                        onSelectPoint(newValue)
+                    }
+            }
+        }
+        .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+    }
+
+    private var committedSegments: [Segment] {
+        guard points.count > 1 else { return [] }
+        return (0..<(points.count - 1)).map { index in
+            Segment(
+                id: "\(points[index].id.uuidString)-\(points[index + 1].id.uuidString)",
+                startX: points[index].pixelX,
+                startY: points[index].pixelY,
+                endX: points[index + 1].pixelX,
+                endY: points[index + 1].pixelY,
+                isTemporary: false
+            )
+        }
+    }
+
+    private var temporarySegment: Segment? {
+        guard mode == .measure else { return nil }
+        guard let start = points.last, let hoverPixel else { return nil }
+        guard start.pixelX != hoverPixel.x || start.pixelY != hoverPixel.y else { return nil }
+        return Segment(
+            id: "temp-\(start.id.uuidString)-\(hoverPixel.x)-\(hoverPixel.y)",
+            startX: start.pixelX,
+            startY: start.pixelY,
+            endX: hoverPixel.x,
+            endY: hoverPixel.y,
+            isTemporary: true
+        )
+    }
+
+    @ViewBuilder
+    private func segmentView(_ segment: Segment) -> some View {
+        let start = displayPosition(x: segment.startX, y: segment.startY)
+        let end = displayPosition(x: segment.endX, y: segment.endY)
+        let label = segmentLabel(segment)
+        let midPoint = CGPoint(
+            x: (start.x + end.x) / 2 + 8,
+            y: (start.y + end.y) / 2 - 8
+        )
+
+        Path { path in
+            path.move(to: start)
+            path.addLine(to: end)
+        }
+        .stroke(
+            segment.isTemporary ? Color.accentColor.opacity(0.8) : Color.accentColor,
+            style: StrokeStyle(lineWidth: 2.0, lineCap: .round, dash: segment.isTemporary ? [5, 4] : [])
+        )
+
+        Text(label)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundColor(.primary)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .position(x: midPoint.x, y: midPoint.y)
+    }
+
+    private func segmentLabel(_ segment: Segment) -> String {
+        let pixelDistance = hypot(
+            Double(segment.endX - segment.startX),
+            Double(segment.endY - segment.startY)
+        )
+        var lines: [String] = [
+            LF("ruler.overlay.pixels", compactNumber(pixelDistance))
+        ]
+
+        if let geoDistance = geoDistanceLabel(segment) {
+            lines.append(geoDistance)
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func geoDistanceLabel(_ segment: Segment) -> String? {
+        guard let geoReference else { return nil }
+
+        let start = geoReference.mapCoordinate(forPixelX: segment.startX, pixelY: segment.startY)
+        let end = geoReference.mapCoordinate(forPixelX: segment.endX, pixelY: segment.endY)
+
+        if geoReference.isGeographic {
+            let meters = haversineMeters(
+                lat1: start.y,
+                lon1: start.x,
+                lat2: end.y,
+                lon2: end.x
+            )
+            let value = meters >= 1000 ? meters / 1000 : meters
+            let unit = meters >= 1000 ? L("ruler.unit.km") : L("ruler.unit.m")
+            return LF("ruler.overlay.distance_unit", compactNumber(value), unit)
+        }
+
+        let distance = hypot(end.x - start.x, end.y - start.y)
+        if let units = geoReference.units?.trimmingCharacters(in: .whitespacesAndNewlines), !units.isEmpty {
+            return LF("ruler.overlay.distance_unit", compactNumber(distance), units)
+        }
+        return LF("ruler.overlay.distance", compactNumber(distance))
+    }
+
+    private func haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
+        let earthRadius = 6_371_000.0
+        let phi1 = lat1 * .pi / 180.0
+        let phi2 = lat2 * .pi / 180.0
+        let dPhi = (lat2 - lat1) * .pi / 180.0
+        let dLambda = (lon2 - lon1) * .pi / 180.0
+
+        let a = sin(dPhi / 2) * sin(dPhi / 2)
+            + cos(phi1) * cos(phi2) * sin(dLambda / 2) * sin(dLambda / 2)
+        let c = 2 * atan2(sqrt(a), sqrt(max(1e-12, 1 - a)))
+        return earthRadius * c
+    }
+
+    private func compactNumber(_ value: Double) -> String {
+        let number = String(format: "%.2f", value)
+        return number.replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
+
+    private func displayPosition(x: Int, y: Int) -> CGPoint {
+        let width = max(originalSize.width - 1, 1)
+        let height = max(originalSize.height - 1, 1)
+        let xRatio = CGFloat(x) / width
+        let yRatio = CGFloat(y) / height
+        return CGPoint(
+            x: xRatio * displaySize.width,
+            y: yRatio * displaySize.height
+        )
+    }
+
+    private func pixelCoordinate(fromDisplay point: CGPoint) -> PixelCoordinate {
+        let clampedX = max(0, min(point.x, displaySize.width))
+        let clampedY = max(0, min(point.y, displaySize.height))
+        let maxX = max(Int(originalSize.width) - 1, 0)
+        let maxY = max(Int(originalSize.height) - 1, 0)
+        let rawX = Int((clampedX / max(displaySize.width, 1)) * originalSize.width)
+        let rawY = Int((clampedY / max(displaySize.height, 1)) * originalSize.height)
+        return PixelCoordinate(
+            x: max(0, min(rawX, maxX)),
+            y: max(0, min(rawY, maxY))
+        )
+    }
+}
+
+private struct RulerDeleteKeyCatcher: NSViewRepresentable {
+    @Binding var isActive: Bool
+    let onDelete: () -> Void
+
+    func makeNSView(context: Context) -> KeyView {
+        let view = KeyView()
+        view.onDelete = onDelete
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyView, context: Context) {
+        nsView.onDelete = onDelete
+        guard isActive else { return }
+        if nsView.window?.firstResponder !== nsView {
+            nsView.window?.makeFirstResponder(nsView)
+        }
+    }
+
+    final class KeyView: NSView {
+        var onDelete: (() -> Void)?
+
+        override var acceptsFirstResponder: Bool { true }
+
+        override func keyDown(with event: NSEvent) {
+            switch event.keyCode {
+            case 51, 117:
+                onDelete?()
+            default:
+                super.keyDown(with: event)
+            }
+        }
     }
 }
 
