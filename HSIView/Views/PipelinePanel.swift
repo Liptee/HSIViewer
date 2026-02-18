@@ -27,7 +27,7 @@ struct PipelinePanel: View {
             footer
         }
         }
-        .frame(width: 280)
+        .frame(maxWidth: .infinity)
         .popover(isPresented: $showingAddMenu, arrowEdge: .trailing) {
             addOperationMenu
         }

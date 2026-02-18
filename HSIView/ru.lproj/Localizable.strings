@@ -25,6 +25,8 @@
 "menu.open" = "Открыть…";
 "menu.propagate_processing" = "Распространить обработку";
 "menu.propagate_wavelengths" = "Распространить длины волн";
+"menu.show_left_panel" = "Показать левую панель";
+"menu.show_right_panel" = "Показать правую панель";
 
 "library.title" = "Библиотека";
 "library.drop_release_to_add" = "Отпустите, чтобы добавить";
