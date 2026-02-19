@@ -154,8 +154,17 @@ enum MaskExporter {
         }
         
         do {
+            let fileManager = FileManager.default
+            if !fileManager.fileExists(atPath: url.path) {
+                guard fileManager.createFile(atPath: url.path, contents: nil) else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+
             let fileHandle = try FileHandle(forWritingTo: url)
             defer { try? fileHandle.close() }
+            try fileHandle.truncate(atOffset: 0)
+            try fileHandle.seek(toOffset: 0)
             
             var header = [UInt8](repeating: 0x20, count: 116)
             let headerText = "MATLAB 5.0 MAT-file, Platform: macOS, Created by HSIView"
@@ -166,7 +175,7 @@ enum MaskExporter {
             
             fileHandle.write(Data(header))
             
-            var subsys = [UInt8](repeating: 0, count: 8)
+            let subsys = [UInt8](repeating: 0, count: 8)
             fileHandle.write(Data(subsys))
             
             var version: UInt16 = 0x0100
@@ -222,11 +231,14 @@ enum MaskExporter {
         file.write(Data(bytes: &dataType, count: 4))
         
         let numElements = width * height
+        let matOrderedMask = reorderRowMajorToColumnMajor(mask, width: width, height: height)
         let nameBytes = Array(name.utf8)
         let namePadding = (8 - (nameBytes.count % 8)) % 8
         let dataPadding = (8 - (numElements % 8)) % 8
         
-        var totalSize: UInt32 = UInt32(56 + nameBytes.count + namePadding + 8 + numElements + dataPadding)
+        // MI_MATRIX payload size (without outer 8-byte tag):
+        // flags(16) + dims(16) + nameTagAndData(8 + name + pad) + dataTagAndData(8 + data + pad)
+        var totalSize: UInt32 = UInt32(48 + nameBytes.count + namePadding + numElements + dataPadding)
         file.write(Data(bytes: &totalSize, count: 4))
         
         var flags: [UInt32] = [6, 8, 0x00FF0008, 0]
@@ -248,10 +260,25 @@ enum MaskExporter {
         var dataLen: UInt32 = UInt32(numElements)
         file.write(Data(bytes: &dataTag, count: 4))
         file.write(Data(bytes: &dataLen, count: 4))
-        file.write(Data(mask))
+        file.write(Data(matOrderedMask))
         if dataPadding > 0 {
             file.write(Data(repeating: 0, count: dataPadding))
         }
+    }
+
+    private static func reorderRowMajorToColumnMajor(_ values: [UInt8], width: Int, height: Int) -> [UInt8] {
+        guard width > 0, height > 0, values.count == width * height else { return values }
+
+        var reordered = [UInt8](repeating: 0, count: values.count)
+        for y in 0..<height {
+            let rowOffset = y * width
+            for x in 0..<width {
+                let rowMajorIndex = rowOffset + x
+                let columnMajorIndex = y + height * x
+                reordered[columnMajorIndex] = values[rowMajorIndex]
+            }
+        }
+        return reordered
     }
     
     private static func writeMetadataStruct(to file: FileHandle, name: String, metadata: [MaskClassMetadata]) {
@@ -266,10 +293,12 @@ enum MaskExporter {
         let jsonBytes = Array(jsonString.utf8)
         let jsonPadding = (8 - (jsonBytes.count % 8)) % 8
         
-        var totalSize: UInt32 = UInt32(56 + nameBytes.count + namePadding + 8 + jsonBytes.count + jsonPadding)
+        // Same MI_MATRIX payload layout as above.
+        var totalSize: UInt32 = UInt32(48 + nameBytes.count + namePadding + jsonBytes.count + jsonPadding)
         file.write(Data(bytes: &totalSize, count: 4))
         
-        var flags: [UInt32] = [6, 8, 0x00FF0004, 0]
+        // Store metadata as a numeric uint8 vector with UTF-8 JSON bytes.
+        var flags: [UInt32] = [6, 8, 0x00FF0009, 0]
         file.write(Data(bytes: &flags, count: 16))
         
         var dims: [UInt32] = [5, 8, 1, UInt32(jsonBytes.count)]
@@ -284,7 +313,7 @@ enum MaskExporter {
             file.write(Data(repeating: 0, count: namePadding))
         }
         
-        var dataTag: UInt32 = 4
+        var dataTag: UInt32 = 2
         var dataLen: UInt32 = UInt32(jsonBytes.count)
         file.write(Data(bytes: &dataTag, count: 4))
         file.write(Data(bytes: &dataLen, count: 4))
@@ -294,4 +323,3 @@ enum MaskExporter {
         }
     }
 }
-
