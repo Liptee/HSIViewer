@@ -101,8 +101,14 @@ struct ContentView: View {
                 }
                 
                 if state.viewMode == .mask && state.cube != nil {
-                    MaskEditorView(maskState: state.maskEditorState)
-                        .environmentObject(state)
+                    ZStack(alignment: .trailing) {
+                        MaskEditorView(maskState: state.maskEditorState)
+                            .environmentObject(state)
+
+                        GraphPanel(panelWidth: graphPanelWidth)
+                            .environmentObject(state)
+                            .padding(.trailing, 12)
+                    }
                 } else {
                     GeometryReader { geo in
                         ZStack {
@@ -340,7 +346,7 @@ struct ContentView: View {
                     .coordinateSpace(name: imageCoordinateSpaceName)
                 }
 
-                if canShowRightPanel, state.cube != nil {
+                if canShowRightPanel, state.cube != nil, state.viewMode != .mask {
                     panelResizeHandle { translation in
                         if rightPanelDragStartWidth == nil {
                             rightPanelDragStartWidth = state.rightPanelWidth
@@ -351,11 +357,7 @@ struct ContentView: View {
                         rightPanelDragStartWidth = nil
                     }
 
-                    if state.viewMode == .mask {
-                        MaskToolsPanelView(maskState: state.maskEditorState)
-                            .frame(width: state.rightPanelWidth)
-                            .padding(.trailing, 12)
-                    } else if let cube = state.cube {
+                    if let cube = state.cube {
                         ZStack(alignment: .trailing) {
                             ScrollView {
                                 VStack(spacing: 12) {
@@ -2186,7 +2188,7 @@ private struct PipelineProcessingToastView: View {
     }
 }
 
-private struct SpectrumPointsOverlay: View {
+struct SpectrumPointsOverlay: View {
     let samples: [SpectrumSample]
     let originalSize: CGSize
     let displaySize: CGSize
@@ -2220,7 +2222,7 @@ private struct SpectrumPointsOverlay: View {
     }
 }
 
-private struct SpectrumROIsOverlay: View {
+struct SpectrumROIsOverlay: View {
     let samples: [SpectrumROISample]
     let temporaryRect: SpectrumROIRect?
     let originalSize: CGSize
@@ -2268,7 +2270,7 @@ private struct SpectrumROIsOverlay: View {
     }
 }
 
-private struct RulerOverlay: View {
+struct RulerOverlay: View {
     let points: [RulerPoint]
     let hoverPixel: PixelCoordinate?
     let mode: RulerMode
@@ -2480,7 +2482,7 @@ private struct RulerOverlay: View {
     }
 }
 
-private struct RulerDeleteKeyCatcher: NSViewRepresentable {
+struct RulerDeleteKeyCatcher: NSViewRepresentable {
     @Binding var isActive: Bool
     let onDelete: () -> Void
 
@@ -2512,11 +2514,6 @@ private struct RulerDeleteKeyCatcher: NSViewRepresentable {
             }
         }
     }
-}
-
-private struct PixelCoordinate: Equatable {
-    let x: Int
-    let y: Int
 }
 
 struct TrimActionButton: View {
