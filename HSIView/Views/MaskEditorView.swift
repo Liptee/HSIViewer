@@ -10,6 +10,10 @@ struct MaskEditorView: View {
     @State private var currentGeoSize: CGSize = .zero
     @State private var tempZoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
+    @State private var roiDragStartPixel: PixelCoordinate?
+    @State private var roiPreviewRect: SpectrumROIRect?
+    @State private var rulerHoverPixel: PixelCoordinate?
+    @FocusState private var isImageFocused: Bool
     
     var body: some View {
         GeometryReader { geo in
@@ -30,24 +34,117 @@ struct MaskEditorView: View {
             .clipped()
             .contentShape(Rectangle())
             .gesture(magnificationGesture)
-            .gesture(drawingGesture(geoSize: geo.size))
-            .onHover { isHovering in
-                if isHovering {
-                    NSCursor.crosshair.push()
-                } else {
-                    NSCursor.pop()
+            .gesture(interactionGesture(geoSize: geo.size))
+            .onTapGesture { location in
+                if state.activeAnalysisTool == .spectrumGraph {
+                    handleSpectrumClick(at: location, geoSize: geo.size)
+                } else if state.activeAnalysisTool == .ruler,
+                          state.rulerMode == .measure {
+                    handleRulerClick(at: location, geoSize: geo.size)
                 }
             }
+            .onHover { isHovering in
+                if (state.activeAnalysisTool == .none
+                    || state.activeAnalysisTool == .spectrumGraph
+                    || state.activeAnalysisTool == .spectrumGraphROI
+                    || state.activeAnalysisTool == .ruler),
+                   state.cube != nil {
+                    if isHovering {
+                        NSCursor.crosshair.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+            }
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                switch phase {
+                case .active(let location):
+                    guard let pixel = pixelCoordinate(for: location, geoSize: geo.size) else {
+                        rulerHoverPixel = nil
+                        state.clearCursorGeoCoordinate()
+                        return
+                    }
+                    if state.activeAnalysisTool == .ruler,
+                       state.rulerMode == .measure {
+                        rulerHoverPixel = pixel
+                    } else {
+                        rulerHoverPixel = nil
+                    }
+                    if state.cube?.geoReference != nil {
+                        state.updateCursorGeoCoordinate(pixelX: pixel.x, pixelY: pixel.y)
+                    } else {
+                        state.clearCursorGeoCoordinate()
+                    }
+                case .ended:
+                    rulerHoverPixel = nil
+                    state.clearCursorGeoCoordinate()
+                }
+            }
+            .focusable()
+            .focusEffectDisabled()
+            .focused($isImageFocused)
             .onAppear {
                 currentGeoSize = geo.size
                 setupShiftKeyMonitor()
+                isImageFocused = true
             }
             .onDisappear {
                 removeShiftKeyMonitor()
             }
+            .onKeyPress(.delete) {
+                guard state.activeAnalysisTool == .ruler,
+                      state.rulerMode == .edit else { return .ignored }
+                state.deleteSelectedRulerPoint()
+                return .handled
+            }
+            .onKeyPress(.deleteForward) {
+                guard state.activeAnalysisTool == .ruler,
+                      state.rulerMode == .edit else { return .ignored }
+                state.deleteSelectedRulerPoint()
+                return .handled
+            }
+            .onDeleteCommand {
+                guard state.activeAnalysisTool == .ruler,
+                      state.rulerMode == .edit else { return }
+                state.deleteSelectedRulerPoint()
+            }
+            .onChange(of: state.activeAnalysisTool) { _ in
+                NSCursor.pop()
+                roiPreviewRect = nil
+                roiDragStartPixel = nil
+                rulerHoverPixel = nil
+            }
+            .onChange(of: state.rulerMode) { mode in
+                if mode != .measure {
+                    rulerHoverPixel = nil
+                }
+            }
+            .onChange(of: state.cubeURL) { _ in
+                roiPreviewRect = nil
+                roiDragStartPixel = nil
+                rulerHoverPixel = nil
+                state.clearCursorGeoCoordinate()
+            }
             .onChange(of: geo.size) { newSize in
                 currentGeoSize = newSize
             }
+            .background(
+                ContentView.RulerDeleteKeyCatcher(
+                    isActive: Binding(
+                        get: {
+                            state.activeAnalysisTool == .ruler
+                                && state.rulerMode == .edit
+                                && state.selectedRulerPointID != nil
+                        },
+                        set: { _ in }
+                    ),
+                    onDelete: {
+                        state.deleteSelectedRulerPoint()
+                    }
+                )
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+            )
         }
     }
     
@@ -74,9 +171,14 @@ struct MaskEditorView: View {
             }
     }
     
-    private func drawingGesture(geoSize: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+    private func interactionGesture(geoSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 1)
             .onChanged { value in
+                if state.activeAnalysisTool == .spectrumGraphROI {
+                    handleROIDrag(value: value, geoSize: geoSize)
+                    return
+                }
+                guard state.activeAnalysisTool == .none else { return }
                 if !isDrawing {
                     isDrawing = true
                     lastDrawPoint = nil
@@ -84,7 +186,13 @@ struct MaskEditorView: View {
                 
                 handleDrawing(at: value.location, geoSize: geoSize)
             }
-            .onEnded { _ in
+            .onEnded { value in
+                if state.activeAnalysisTool == .spectrumGraphROI {
+                    handleROIDragEnd(value: value, geoSize: geoSize)
+                } else if state.activeAnalysisTool == .none, !isDrawing {
+                    // Preserve single-click behavior for mask tools (brush/fill/eraser).
+                    handleDrawing(at: value.location, geoSize: geoSize)
+                }
                 isDrawing = false
                 lastDrawPoint = nil
             }
@@ -169,6 +277,52 @@ struct MaskEditorView: View {
         
         return CGPoint(x: normalizedX, y: normalizedY)
     }
+
+    private func pixelCoordinate(for location: CGPoint, geoSize: CGSize) -> PixelCoordinate? {
+        guard let imagePoint = convertToImageCoordinates(point: location, geoSize: geoSize) else { return nil }
+        let maxX = max(Int(currentImageSize.width) - 1, 0)
+        let maxY = max(Int(currentImageSize.height) - 1, 0)
+        let pixelX = max(0, min(Int(imagePoint.x), maxX))
+        let pixelY = max(0, min(Int(imagePoint.y), maxY))
+        return PixelCoordinate(x: pixelX, y: pixelY)
+    }
+
+    private func handleSpectrumClick(at location: CGPoint, geoSize: CGSize) {
+        guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
+        state.extractSpectrum(at: pixel.x, pixelY: pixel.y)
+    }
+
+    private func handleRulerClick(at location: CGPoint, geoSize: CGSize) {
+        guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
+        state.addRulerPoint(pixelX: pixel.x, pixelY: pixel.y)
+    }
+
+    private func roiRect(from start: PixelCoordinate, to end: PixelCoordinate) -> SpectrumROIRect {
+        let minX = min(start.x, end.x)
+        let minY = min(start.y, end.y)
+        let width = abs(end.x - start.x) + 1
+        let height = abs(end.y - start.y) + 1
+        return SpectrumROIRect(minX: minX, minY: minY, width: width, height: height)
+    }
+
+    private func handleROIDrag(value: DragGesture.Value, geoSize: CGSize) {
+        guard let startPixel = roiDragStartPixel ?? pixelCoordinate(for: value.startLocation, geoSize: geoSize) else { return }
+        guard let currentPixel = pixelCoordinate(for: value.location, geoSize: geoSize) else { return }
+        roiDragStartPixel = startPixel
+        roiPreviewRect = roiRect(from: startPixel, to: currentPixel)
+    }
+
+    private func handleROIDragEnd(value: DragGesture.Value, geoSize: CGSize) {
+        defer {
+            roiDragStartPixel = nil
+            roiPreviewRect = nil
+        }
+        guard
+            let startPixel = roiDragStartPixel ?? pixelCoordinate(for: value.startLocation, geoSize: geoSize),
+            let endPixel = pixelCoordinate(for: value.location, geoSize: geoSize)
+        else { return }
+        state.extractROISpectrum(for: roiRect(from: startPixel, to: endPixel))
+    }
     
     private func fittingSize(imageSize: CGSize, in containerSize: CGSize) -> CGSize {
         guard imageSize.width > 0, imageSize.height > 0 else { return containerSize }
@@ -199,6 +353,36 @@ struct MaskEditorView: View {
                 displaySize: fittedSize
             )
             .allowsHitTesting(false)
+
+            if state.activeAnalysisTool == .spectrumGraph {
+                ContentView.SpectrumPointsOverlay(
+                    samples: state.activeSpectrumSamples,
+                    originalSize: imageSize,
+                    displaySize: fittedSize
+                )
+            } else if state.activeAnalysisTool == .spectrumGraphROI {
+                ContentView.SpectrumROIsOverlay(
+                    samples: state.activeROISamples,
+                    temporaryRect: roiPreviewRect,
+                    originalSize: imageSize,
+                    displaySize: fittedSize
+                )
+            } else if state.activeAnalysisTool == .ruler {
+                ContentView.RulerOverlay(
+                    points: state.rulerPoints,
+                    hoverPixel: state.rulerMode == .measure ? rulerHoverPixel : nil,
+                    mode: state.rulerMode,
+                    selectedPointID: state.selectedRulerPointID,
+                    geoReference: state.cube?.geoReference,
+                    originalSize: imageSize,
+                    displaySize: fittedSize
+                ) { id, x, y in
+                    state.updateRulerPoint(id: id, pixelX: x, pixelY: y)
+                } onSelectPoint: { id in
+                    state.selectRulerPoint(id: id)
+                    isImageFocused = true
+                }
+            }
         }
         .frame(width: fittedSize.width, height: fittedSize.height)
         .background(Color.black.opacity(0.02))

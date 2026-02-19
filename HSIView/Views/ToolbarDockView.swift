@@ -18,6 +18,13 @@ struct ToolbarDockView: View {
                         state.toggleAnalysisTool(tool)
                     }
                 }
+                
+                if state.viewMode == .mask {
+                    Divider()
+                        .frame(height: 18)
+                    MaskInlineTools(maskState: state.maskEditorState)
+                        .environmentObject(state)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -31,6 +38,129 @@ struct ToolbarDockView: View {
             return "ruler.fill"
         }
         return tool.iconName
+    }
+}
+
+private struct MaskInlineTools: View {
+    @EnvironmentObject var state: AppState
+    @ObservedObject var maskState: MaskEditorState
+    @State private var showMaskSettings: Bool = false
+
+    private func activateMaskTool(_ tool: MaskDrawingTool) {
+        if state.activeAnalysisTool != .none {
+            state.activeAnalysisTool = .none
+        }
+        state.selectedRulerPointID = nil
+        state.maskEditorState.currentTool = tool
+    }
+
+    private func isMaskToolActive(_ tool: MaskDrawingTool) -> Bool {
+        state.viewMode == .mask
+            && state.activeAnalysisTool == .none
+            && state.maskEditorState.currentTool == tool
+    }
+
+    private func maskToolBackground(for tool: MaskDrawingTool) -> Color {
+        if isMaskToolActive(tool) {
+            return Color.accentColor.opacity(0.15)
+        }
+        return Color.clear
+    }
+    
+    var body: some View {
+        Group {
+            ForEach(MaskDrawingTool.allCases) { tool in
+                Button {
+                    activateMaskTool(tool)
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(maskToolBackground(for: tool))
+                        if isMaskToolActive(tool) {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.accentColor, lineWidth: 1.5)
+                        }
+                        Image(systemName: tool.iconName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(isMaskToolActive(tool) ? .accentColor : .secondary)
+                    }
+                    .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help(tool.localizedTitle)
+            }
+            
+            Button {
+                showMaskSettings.toggle()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color(NSColor.controlBackgroundColor).opacity(0.65))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(AppLocalizer.localized("Параметры инструмента маски"))
+            .popover(isPresented: $showMaskSettings, arrowEdge: .bottom) {
+                MaskToolSettingsPopover(maskState: maskState)
+            }
+            
+            if let activeID = maskState.activeLayerID {
+                Button {
+                    maskState.undo(for: activeID)
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color(NSColor.controlBackgroundColor).opacity(0.65))
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!maskState.canUndo(for: activeID))
+                .keyboardShortcut("z", modifiers: .command)
+                .help(AppLocalizer.localized("Отменить (⌘Z)"))
+            }
+        }
+    }
+}
+
+private struct MaskToolSettingsPopover: View {
+    @ObservedObject var maskState: MaskEditorState
+    private let presetSizes: [Int] = [1, 5, 10, 25, 50]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(LF("mask.brush_size_px", maskState.brushSize))
+                .font(.system(size: 11, weight: .semibold))
+            
+            Slider(
+                value: Binding(
+                    get: { Double(maskState.brushSize) },
+                    set: { maskState.brushSize = Int($0) }
+                ),
+                in: 1...100,
+                step: 1
+            )
+            .frame(width: 190)
+            
+            HStack(spacing: 6) {
+                ForEach(presetSizes, id: \.self) { size in
+                    Button("\(size)") {
+                        maskState.brushSize = size
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(maskState.brushSize == size ? .accentColor : nil)
+                }
+            }
+        }
+        .padding(12)
     }
 }
 

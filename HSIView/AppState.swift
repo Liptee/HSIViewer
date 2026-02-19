@@ -4667,6 +4667,11 @@ struct CursorGeoCoordinate: Equatable {
     let mapCoordinate: MapCoordinate
 }
 
+struct PixelCoordinate: Equatable {
+    let x: Int
+    let y: Int
+}
+
 struct RulerPoint: Identifiable, Equatable {
     let id: UUID
     var pixelX: Int
