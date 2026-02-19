@@ -35,6 +35,13 @@ struct MaskEditorView: View {
             .contentShape(Rectangle())
             .gesture(magnificationGesture)
             .gesture(interactionGesture(geoSize: geo.size))
+            .background(
+                ContentView.TrackpadScrollCatcher { delta in
+                    guard state.cube != nil else { return }
+                    state.moveImage(by: delta)
+                }
+                .allowsHitTesting(false)
+            )
             .onTapGesture { location in
                 if state.activeAnalysisTool == .spectrumGraph {
                     handleSpectrumClick(at: location, geoSize: geo.size)
