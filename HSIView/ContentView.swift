@@ -172,6 +172,14 @@ struct ContentView: View {
                         }
                     }
                     .allowsHitTesting(!state.isCurrentCubeProcessingInProgress)
+                    .background(
+                        TrackpadScrollCatcher { delta in
+                            guard state.cube != nil else { return }
+                            guard !state.isCurrentCubeProcessingInProgress else { return }
+                            state.moveImage(by: delta)
+                        }
+                        .allowsHitTesting(false)
+                    )
                                     .gesture(
                                         MagnificationGesture()
                                             .onChanged { value in
@@ -2511,6 +2519,77 @@ struct RulerDeleteKeyCatcher: NSViewRepresentable {
                 onDelete?()
             default:
                 super.keyDown(with: event)
+            }
+        }
+    }
+}
+
+struct TrackpadScrollCatcher: NSViewRepresentable {
+    let onScroll: (CGSize) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScroll: onScroll)
+    }
+
+    func makeNSView(context: Context) -> TrackingView {
+        let view = TrackingView()
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+        context.coordinator.onScroll = onScroll
+        context.coordinator.attach(to: nsView)
+    }
+
+    static func dismantleNSView(_ nsView: TrackingView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
+
+    final class TrackingView: NSView {}
+
+    final class Coordinator {
+        private weak var view: NSView?
+        private var monitor: Any?
+        var onScroll: (CGSize) -> Void
+
+        init(onScroll: @escaping (CGSize) -> Void) {
+            self.onScroll = onScroll
+        }
+
+        func attach(to view: NSView) {
+            self.view = view
+            installMonitorIfNeeded()
+        }
+
+        func detach() {
+            guard let monitor else { return }
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+
+        deinit {
+            detach()
+        }
+
+        private func installMonitorIfNeeded() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self else { return event }
+                guard event.hasPreciseScrollingDeltas else { return event }
+                guard let view = self.view,
+                      let window = view.window,
+                      event.window === window else {
+                    return event
+                }
+
+                let location = view.convert(event.locationInWindow, from: nil)
+                guard view.bounds.contains(location) else { return event }
+
+                let delta = CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY)
+                guard delta.width != 0 || delta.height != 0 else { return event }
+                self.onScroll(delta)
+                return event
             }
         }
     }
