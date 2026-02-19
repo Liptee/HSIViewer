@@ -185,6 +185,9 @@ struct SpatialAutoCropSettings: Equatable {
     var maxWidth: Int?
     var minHeight: Int?
     var maxHeight: Int?
+    var saveAspectRatio: Bool
+    var aspectRatioTolerancePercent: Double
+    var enableEarlyCandidatePruning: Bool
     var positionStep: Int
     var sizeStep: Int
     var useCoarseToFine: Bool
@@ -200,6 +203,9 @@ struct SpatialAutoCropSettings: Equatable {
         maxWidth: nil,
         minHeight: nil,
         maxHeight: nil,
+        saveAspectRatio: false,
+        aspectRatioTolerancePercent: 5.0,
+        enableEarlyCandidatePruning: true,
         positionStep: 4,
         sizeStep: 4,
         useCoarseToFine: true,
@@ -1964,13 +1970,26 @@ class CubeAutoSpatialCropper {
         guard settings.sourceChannels.allSatisfy({ $0 >= 0 && $0 < sourceChannels }) else { return nil }
         guard settings.referenceChannels.allSatisfy({ $0 >= 0 && $0 < referenceChannels }) else { return nil }
 
-        let minWidthDefault = min(sourceWidth, max(1, referenceWidth))
-        let minHeightDefault = min(sourceHeight, max(1, referenceHeight))
+        let minWidthDefault = settings.saveAspectRatio
+            ? 1
+            : min(sourceWidth, max(1, referenceWidth))
+        let minHeightDefault = settings.saveAspectRatio
+            ? 1
+            : min(sourceHeight, max(1, referenceHeight))
 
         let minWidth = bounded(settings.minWidth ?? minWidthDefault, min: 1, max: sourceWidth)
         let maxWidth = bounded(settings.maxWidth ?? sourceWidth, min: minWidth, max: sourceWidth)
         let minHeight = bounded(settings.minHeight ?? minHeightDefault, min: 1, max: sourceHeight)
         let maxHeight = bounded(settings.maxHeight ?? sourceHeight, min: minHeight, max: sourceHeight)
+        func matchesReferenceAspectRatio(width: Int, height: Int) -> Bool {
+            guard settings.saveAspectRatio else { return true }
+            guard width > 0, height > 0, referenceWidth > 0, referenceHeight > 0 else { return false }
+            let targetAspect = Double(referenceWidth) / Double(referenceHeight)
+            let candidateAspect = Double(width) / Double(height)
+            let tolerance = max(0.0, settings.aspectRatioTolerancePercent) / 100.0
+            let relativeDeviation = abs(candidateAspect - targetAspect) / targetAspect
+            return relativeDeviation <= tolerance + 1e-12
+        }
 
         let positionStep = max(1, settings.positionStep)
         let sizeStep = max(1, settings.sizeStep)
@@ -2023,7 +2042,8 @@ class CubeAutoSpatialCropper {
             sourceHeight: sourceHeight,
             widthValues: coarseWidthValues,
             heightValues: coarseHeightValues,
-            positionStep: coarsePositionStep
+            positionStep: coarsePositionStep,
+            sizeFilter: matchesReferenceAspectRatio
         )
         let refinementReserve = (settings.useCoarseToFine && settings.keepRefinementReserve)
             ? max(sizeStep, positionStep)
@@ -2089,6 +2109,7 @@ class CubeAutoSpatialCropper {
         func evaluateCandidate(_ candidate: CropCandidate) -> Double? {
             guard candidate.width > 0, candidate.height > 0 else { return nil }
             guard candidate.x >= 0, candidate.y >= 0 else { return nil }
+            guard matchesReferenceAspectRatio(width: candidate.width, height: candidate.height) else { return nil }
             guard candidate.x + candidate.width <= sourceWidth,
                   candidate.y + candidate.height <= sourceHeight else {
                 return nil
@@ -2144,7 +2165,9 @@ class CubeAutoSpatialCropper {
                 )
                 metricSum += score
 
-                if settings.metric == .mse, let currentBest = bestScore {
+                if settings.metric == .mse,
+                   settings.enableEarlyCandidatePruning,
+                   let currentBest = bestScore {
                     let partial = metricSum / Double(idx + 1)
                     if partial > currentBest {
                         return nil
@@ -2184,7 +2207,8 @@ class CubeAutoSpatialCropper {
             sourceHeight: sourceHeight,
             widthValues: coarseWidthValues,
             heightValues: coarseHeightValues,
-            positionStep: coarsePositionStep
+            positionStep: coarsePositionStep,
+            sizeFilter: matchesReferenceAspectRatio
         ) { candidate in
             guard let score = evaluateCandidate(candidate) else { return }
             if settings.useCoarseToFine {
@@ -2204,22 +2228,29 @@ class CubeAutoSpatialCropper {
 
                 let localWidths = steppedValues(min: minLocalWidth, max: maxLocalWidth, step: refineSizeStep)
                 let localHeights = steppedValues(min: minLocalHeight, max: maxLocalHeight, step: refineSizeStep)
+                let localSizes = enumerateSizePairs(
+                    sourceWidth: sourceWidth,
+                    sourceHeight: sourceHeight,
+                    widthValues: localWidths,
+                    heightValues: localHeights,
+                    sizeFilter: matchesReferenceAspectRatio
+                )
 
-                for height in localHeights {
-                    for width in localWidths {
-                        let maxX = max(0, sourceWidth - width)
-                        let maxY = max(0, sourceHeight - height)
-                        let minLocalX = bounded(seed.x - positionRadius, min: 0, max: maxX)
-                        let maxLocalX = bounded(seed.x + positionRadius, min: minLocalX, max: maxX)
-                        let minLocalY = bounded(seed.y - positionRadius, min: 0, max: maxY)
-                        let maxLocalY = bounded(seed.y + positionRadius, min: minLocalY, max: maxY)
+                for size in localSizes {
+                    let width = size.width
+                    let height = size.height
+                    let maxX = max(0, sourceWidth - width)
+                    let maxY = max(0, sourceHeight - height)
+                    let minLocalX = bounded(seed.x - positionRadius, min: 0, max: maxX)
+                    let maxLocalX = bounded(seed.x + positionRadius, min: minLocalX, max: maxX)
+                    let minLocalY = bounded(seed.y - positionRadius, min: 0, max: maxY)
+                    let maxLocalY = bounded(seed.y + positionRadius, min: minLocalY, max: maxY)
 
-                        let xValues = steppedValues(min: minLocalX, max: maxLocalX, step: refinePositionStep)
-                        let yValues = steppedValues(min: minLocalY, max: maxLocalY, step: refinePositionStep)
-                        for y in yValues {
-                            for x in xValues {
-                                _ = evaluateCandidate(CropCandidate(x: x, y: y, width: width, height: height))
-                            }
+                    let xValues = steppedValues(min: minLocalX, max: maxLocalX, step: refinePositionStep)
+                    let yValues = steppedValues(min: minLocalY, max: maxLocalY, step: refinePositionStep)
+                    for y in yValues {
+                        for x in xValues {
+                            _ = evaluateCandidate(CropCandidate(x: x, y: y, width: width, height: height))
                         }
                     }
                 }
@@ -2270,18 +2301,28 @@ class CubeAutoSpatialCropper {
         widthValues: [Int],
         heightValues: [Int],
         positionStep: Int,
+        sizeFilter: ((Int, Int) -> Bool)? = nil,
+        preferSmallerResolutions: Bool = false,
         body: (CropCandidate) -> Void
     ) {
-        for height in heightValues where height > 0 && height <= sourceHeight {
+        let sizePairs = enumerateSizePairs(
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight,
+            widthValues: widthValues,
+            heightValues: heightValues,
+            sizeFilter: sizeFilter,
+            preferSmallerResolutions: preferSmallerResolutions
+        )
+        for size in sizePairs {
+            let width = size.width
+            let height = size.height
             let maxY = sourceHeight - height
             let yValues = steppedValues(min: 0, max: maxY, step: positionStep)
-            for width in widthValues where width > 0 && width <= sourceWidth {
-                let maxX = sourceWidth - width
-                let xValues = steppedValues(min: 0, max: maxX, step: positionStep)
-                for y in yValues {
-                    for x in xValues {
-                        body(CropCandidate(x: x, y: y, width: width, height: height))
-                    }
+            let maxX = sourceWidth - width
+            let xValues = steppedValues(min: 0, max: maxX, step: positionStep)
+            for y in yValues {
+                for x in xValues {
+                    body(CropCandidate(x: x, y: y, width: width, height: height))
                 }
             }
         }
@@ -2292,17 +2333,59 @@ class CubeAutoSpatialCropper {
         sourceHeight: Int,
         widthValues: [Int],
         heightValues: [Int],
-        positionStep: Int
+        positionStep: Int,
+        sizeFilter: ((Int, Int) -> Bool)? = nil,
+        preferSmallerResolutions: Bool = false
     ) -> Int {
+        let sizePairs = enumerateSizePairs(
+            sourceWidth: sourceWidth,
+            sourceHeight: sourceHeight,
+            widthValues: widthValues,
+            heightValues: heightValues,
+            sizeFilter: sizeFilter,
+            preferSmallerResolutions: preferSmallerResolutions
+        )
         var total = 0
-        for height in heightValues where height > 0 && height <= sourceHeight {
+        for size in sizePairs {
+            let width = size.width
+            let height = size.height
             let yCount = steppedValues(min: 0, max: sourceHeight - height, step: positionStep).count
-            for width in widthValues where width > 0 && width <= sourceWidth {
-                let xCount = steppedValues(min: 0, max: sourceWidth - width, step: positionStep).count
-                total += xCount * yCount
-            }
+            let xCount = steppedValues(min: 0, max: sourceWidth - width, step: positionStep).count
+            total += xCount * yCount
         }
         return total
+    }
+
+    private static func enumerateSizePairs(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        widthValues: [Int],
+        heightValues: [Int],
+        sizeFilter: ((Int, Int) -> Bool)? = nil,
+        preferSmallerResolutions: Bool = false
+    ) -> [(width: Int, height: Int)] {
+        var sizes: [(width: Int, height: Int)] = []
+        sizes.reserveCapacity(widthValues.count * heightValues.count)
+        for height in heightValues where height > 0 && height <= sourceHeight {
+            for width in widthValues where width > 0 && width <= sourceWidth {
+                if let sizeFilter, !sizeFilter(width, height) { continue }
+                sizes.append((width: width, height: height))
+            }
+        }
+
+        guard preferSmallerResolutions else { return sizes }
+        sizes.sort { lhs, rhs in
+            let lhsArea = lhs.width * lhs.height
+            let rhsArea = rhs.width * rhs.height
+            if lhsArea != rhsArea {
+                return lhsArea < rhsArea
+            }
+            if lhs.height != rhs.height {
+                return lhs.height < rhs.height
+            }
+            return lhs.width < rhs.width
+        }
+        return sizes
     }
 
     private static func steppedValues(min: Int, max: Int, step: Int) -> [Int] {
@@ -2542,6 +2625,7 @@ class CubeAutoSpatialCropper {
     private static func isFinite(_ value: Double) -> Bool {
         value.isFinite && !value.isNaN
     }
+
 }
 
 class CubeCalibrator {
