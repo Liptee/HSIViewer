@@ -638,6 +638,9 @@
 "Шаг размера" = "Size step";
 "Грубый поиск + уточнение (coarse-to-fine)" = "Coarse search + refinement (coarse-to-fine)";
 "Оставлять уточняющий резерв" = "Keep refinement margin";
+"Раннее отсечение кандидатов (MSE)" = "Early candidate pruning (MSE)";
+"Сохранять соотношение сторон референса" = "Save reference aspect ratio";
+"Допустимое отклонение соотношения сторон (%)" = "Allowed aspect ratio deviation (%)";
 "Downsample для метрики" = "Downsample for metric";
 "Быстро" = "Fast";
 "Баланс" = "Balanced";

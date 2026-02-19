@@ -446,6 +446,9 @@
 "pipeline.auto_crop.source_channels_out_of_range" = "Каналы source вне допустимого диапазона 0...%d";
 "pipeline.auto_crop.reference_channels_out_of_range" = "Каналы reference вне диапазона 0...%d";
 "pipeline.auto_crop.area_found" = "Найдена область: %1$dx%2$d, %3$@=%4$@, проверено %5$d";
+"Сохранять соотношение сторон референса" = "Сохранять соотношение сторон референса";
+"Допустимое отклонение соотношения сторон (%)" = "Допустимое отклонение соотношения сторон (%)";
+"Раннее отсечение кандидатов (MSE)" = "Раннее отсечение кандидатов (MSE)";
 "pipeline.alignment.error.unsupported_version" = "Неподдерживаемая версия файла: %d";
 "pipeline.alignment.error.invalid_layout" = "Неизвестный layout в файле: %@";
 "pipeline.alignment.error.invalid_method" = "Неизвестный метод оптимизации: %@";

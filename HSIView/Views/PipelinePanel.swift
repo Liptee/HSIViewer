@@ -559,10 +559,13 @@ struct OperationEditorView: View {
     @State private var autoCropMaxWidth: Int = 1
     @State private var autoCropMinHeight: Int = 1
     @State private var autoCropMaxHeight: Int = 1
+    @State private var autoCropSaveAspectRatio: Bool = false
+    @State private var autoCropAspectRatioTolerancePercent: Double = 5.0
     @State private var autoCropPositionStep: Int = 4
     @State private var autoCropSizeStep: Int = 4
     @State private var autoCropUseCoarseToFine: Bool = true
     @State private var autoCropKeepRefinementReserve: Bool = true
+    @State private var autoCropEnableEarlyPruning: Bool = true
     @State private var autoCropDownsampleFactor: Int = 2
     @State private var autoCropProgress: Double = 0
     @State private var autoCropProgressMessage: String = ""
@@ -2325,6 +2328,23 @@ struct OperationEditorView: View {
                                     .frame(width: 64)
                             }
                         }
+
+                        Toggle(state.localized("Сохранять соотношение сторон референса"), isOn: $autoCropSaveAspectRatio)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.small)
+                        if autoCropSaveAspectRatio {
+                            HStack(spacing: 8) {
+                                Text(state.localized("Допустимое отклонение соотношения сторон (%)"))
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                                TextField("5.0", value: $autoCropAspectRatioTolerancePercent, format: .number.precision(.fractionLength(0...2)))
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 72)
+                                Stepper("", value: $autoCropAspectRatioTolerancePercent, in: 0...100, step: 0.5)
+                                    .labelsHidden()
+                                    .controlSize(.mini)
+                            }
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -2363,6 +2383,11 @@ struct OperationEditorView: View {
                             .toggleStyle(.checkbox)
                             .controlSize(.small)
                             .disabled(!autoCropUseCoarseToFine)
+
+                        Toggle(state.localized("Раннее отсечение кандидатов (MSE)"), isOn: $autoCropEnableEarlyPruning)
+                            .toggleStyle(.checkbox)
+                            .controlSize(.small)
+                            .disabled(autoCropMetric != .mse)
 
                         HStack(spacing: 8) {
                             Text(state.localized("Downsample для метрики"))
@@ -2479,6 +2504,9 @@ struct OperationEditorView: View {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
         .onChange(of: autoCropMaxHeight) { _ in
+            clampAutoCropLimitInputs(cropSize: cropSize)
+        }
+        .onChange(of: autoCropAspectRatioTolerancePercent) { _ in
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
         .onChange(of: autoCropPositionStep) { _ in
@@ -3582,10 +3610,13 @@ struct OperationEditorView: View {
         autoCropMaxWidth = boundedInt(effective.maxWidth ?? widthLimit, min: autoCropMinWidth, max: widthLimit)
         autoCropMinHeight = boundedInt(effective.minHeight ?? min(heightLimit, max(1, heightLimit / 2)), min: 1, max: heightLimit)
         autoCropMaxHeight = boundedInt(effective.maxHeight ?? heightLimit, min: autoCropMinHeight, max: heightLimit)
+        autoCropSaveAspectRatio = effective.saveAspectRatio
+        autoCropAspectRatioTolerancePercent = max(0.0, effective.aspectRatioTolerancePercent)
         autoCropPositionStep = max(1, effective.positionStep)
         autoCropSizeStep = max(1, effective.sizeStep)
         autoCropUseCoarseToFine = effective.useCoarseToFine
         autoCropKeepRefinementReserve = effective.keepRefinementReserve
+        autoCropEnableEarlyPruning = effective.enableEarlyCandidatePruning
         autoCropDownsampleFactor = max(1, effective.downsampleFactor)
     }
 
@@ -3608,6 +3639,9 @@ struct OperationEditorView: View {
             maxWidth: maxWidth,
             minHeight: minHeight,
             maxHeight: maxHeight,
+            saveAspectRatio: autoCropSaveAspectRatio,
+            aspectRatioTolerancePercent: max(0.0, autoCropAspectRatioTolerancePercent),
+            enableEarlyCandidatePruning: autoCropEnableEarlyPruning,
             positionStep: max(1, autoCropPositionStep),
             sizeStep: max(1, autoCropSizeStep),
             useCoarseToFine: autoCropUseCoarseToFine,
@@ -3644,6 +3678,7 @@ struct OperationEditorView: View {
         autoCropMaxWidth = boundedInt(autoCropMaxWidth, min: autoCropMinWidth, max: widthLimit)
         autoCropMinHeight = boundedInt(autoCropMinHeight, min: 1, max: heightLimit)
         autoCropMaxHeight = boundedInt(autoCropMaxHeight, min: autoCropMinHeight, max: heightLimit)
+        autoCropAspectRatioTolerancePercent = max(0.0, min(autoCropAspectRatioTolerancePercent, 100.0))
         autoCropPositionStep = max(1, autoCropPositionStep)
         autoCropSizeStep = max(1, autoCropSizeStep)
         autoCropDownsampleFactor = max(1, autoCropDownsampleFactor)
@@ -3704,17 +3739,20 @@ struct OperationEditorView: View {
             autoCropDownsampleFactor = 4
             autoCropUseCoarseToFine = true
             autoCropKeepRefinementReserve = true
+            autoCropEnableEarlyPruning = true
         case .balanced:
             autoCropPositionStep = 4
             autoCropSizeStep = 4
             autoCropDownsampleFactor = 2
             autoCropUseCoarseToFine = true
             autoCropKeepRefinementReserve = true
+            autoCropEnableEarlyPruning = true
         case .precise:
             autoCropPositionStep = 1
             autoCropSizeStep = 1
             autoCropDownsampleFactor = 1
             autoCropUseCoarseToFine = false
+            autoCropEnableEarlyPruning = false
         }
     }
 
@@ -3765,6 +3803,9 @@ struct OperationEditorView: View {
             maxWidth: autoCropLimitWidth ? max(autoCropMinWidth, autoCropMaxWidth) : nil,
             minHeight: autoCropLimitHeight ? min(autoCropMinHeight, autoCropMaxHeight) : nil,
             maxHeight: autoCropLimitHeight ? max(autoCropMinHeight, autoCropMaxHeight) : nil,
+            saveAspectRatio: autoCropSaveAspectRatio,
+            aspectRatioTolerancePercent: max(0.0, autoCropAspectRatioTolerancePercent),
+            enableEarlyCandidatePruning: autoCropEnableEarlyPruning,
             positionStep: max(1, autoCropPositionStep),
             sizeStep: max(1, autoCropSizeStep),
             useCoarseToFine: autoCropUseCoarseToFine,
