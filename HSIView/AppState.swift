@@ -1318,6 +1318,49 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    func importMaskMetadata(url: URL) {
+        guard let cube else {
+            loadError = L("mask.import.error.no_cube")
+            return
+        }
+        guard let size = cubeSpatialSize(for: cube) else {
+            loadError = L("mask.import.error.spatial_size_unavailable")
+            return
+        }
+
+        _ = SecurityScopedBookmarkStore.shared.startAccessingIfPossible(url: url)
+        beginBusy(message: L("mask.metadata.import.busy"))
+        let sourceCubeID = cube.id
+        let referenceImage = currentMaskReferenceImage(for: cube)
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = MaskImportService.importMaskMetadata(from: url)
+            DispatchQueue.main.async {
+                self.endBusy()
+                guard self.cube?.id == sourceCubeID else { return }
+                switch result {
+                case .success(let metadata):
+                    self.maskEditorState.applyImportedClassMetadata(
+                        metadata,
+                        width: size.width,
+                        height: size.height,
+                        rgbImage: referenceImage
+                    )
+                    self.maskEditorCubePath = self.cubeURL?.standardizedFileURL.path
+                    self.trackMaskSpatialContextForCurrentPipeline()
+                    if self.viewMode != .mask {
+                        self.viewMode = .mask
+                    }
+                    self.persistCurrentSession()
+                    self.loadError = nil
+                case .failure(let error):
+                    self.loadError = error.localizedDescription
+                }
+            }
+        }
+    }
     
     func applyNormalization() {
         guard let original = originalCube else { return }

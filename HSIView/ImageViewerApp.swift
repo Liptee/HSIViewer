@@ -97,6 +97,11 @@ struct HSIViewApp: App {
                 }
                 .disabled(appState.cube == nil || appState.isBusy)
 
+                Button(appState.localized("menu.import_mask_metadata")) {
+                    importMaskMetadata()
+                }
+                .disabled(appState.cube == nil || appState.isBusy)
+
                 Divider()
 
                 Button(appState.localized("menu.assemble_hsi")) {
@@ -243,5 +248,22 @@ struct HSIViewApp: App {
         guard response == .OK, let url = panel.url else { return }
 
         appState.importMask(url: url)
+    }
+
+    private func importMaskMetadata() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = appState.localized("common.open")
+
+        let jsonType = UTType.json
+        let matType = UTType(filenameExtension: "mat") ?? .data
+        panel.allowedContentTypes = [jsonType, matType]
+
+        let response = panel.runModal()
+        guard response == .OK, let url = panel.url else { return }
+
+        appState.importMaskMetadata(url: url)
     }
 }

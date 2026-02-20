@@ -508,3 +508,17 @@
 "mask.import.error.mat.variable_load_failed" = "Не удалось загрузить переменную MAT: %@";
 "mask.import.error.mat.unsupported_type" = "Неподдерживаемый тип данных MAT для импорта маски.";
 "mask.class_name_numbered" = "Класс %d";
+
+"menu.import_mask_metadata" = "Импорт метаданных маски…";
+"export.mask.metadata.toggle" = "Экспортировать метаданные";
+"export.mask.metadata.sidecar_info" = "Метаданные классов будут сохранены рядом с маской в отдельный JSON файл.";
+"export.mask.metadata.mat.prefix" = "Префикс ключей метаданных:";
+"export.mask.metadata.mat.keys_info" = "Ключи метаданных MAT: %1$@, %2$@, %3$@, %4$@.";
+"mask.metadata.import.busy" = "Импорт метаданных маски…";
+"mask.metadata.import.error.unsupported_format" = "Неподдерживаемый формат метаданных: %@";
+"mask.metadata.import.error.read_details" = "Ошибка импорта метаданных: %@";
+"mask.metadata.import.error.invalid_json" = "Не удалось разобрать JSON метаданных.";
+"mask.metadata.import.error.no_classes" = "В файле не найдено метаданных классов.";
+"mask.metadata.import.error.invalid_class_value" = "Некорректное значение метаданных класса: %@.";
+"mask.metadata.import.error.mat.list_failed" = "Не удалось прочитать переменные из MAT файла метаданных.";
+"mask.metadata.import.error.mat.not_found" = "В MAT файле не найдены метаданные классов маски.";

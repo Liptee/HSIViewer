@@ -938,6 +938,20 @@
 "mask.import.error.mat.unsupported_type" = "Unsupported MAT data type for mask import.";
 "mask.class_name_numbered" = "Class %d";
 
+"menu.import_mask_metadata" = "Import Mask Metadata…";
+"export.mask.metadata.toggle" = "Export metadata";
+"export.mask.metadata.sidecar_info" = "Class metadata will be saved as a sidecar JSON file next to the exported mask.";
+"export.mask.metadata.mat.prefix" = "Metadata key prefix:";
+"export.mask.metadata.mat.keys_info" = "MAT metadata keys: %1$@, %2$@, %3$@, %4$@.";
+"mask.metadata.import.busy" = "Importing mask metadata…";
+"mask.metadata.import.error.unsupported_format" = "Unsupported metadata format: %@";
+"mask.metadata.import.error.read_details" = "Metadata import error: %@";
+"mask.metadata.import.error.invalid_json" = "Unable to parse metadata JSON.";
+"mask.metadata.import.error.no_classes" = "No class metadata found in the file.";
+"mask.metadata.import.error.invalid_class_value" = "Invalid class metadata value: %@.";
+"mask.metadata.import.error.mat.list_failed" = "Failed to read variables from MAT metadata file.";
+"mask.metadata.import.error.mat.not_found" = "No mask class metadata was found in the MAT file.";
+
 "ENVI формат требует доступ к директории с парными файлами" = "ENVI format requires access to the directory with paired files";
 "NDSI (снег)" = "NDSI (snow)";
 "NDVI (растительность)" = "NDVI (vegetation)";
