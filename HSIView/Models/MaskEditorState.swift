@@ -417,9 +417,110 @@ final class MaskEditorState: ObservableObject {
     }
     
     func classMetadata() -> [MaskClassMetadata] {
-        maskLayers.map {
-            MaskClassMetadata(id: Int($0.classValue), name: $0.name, color: $0.color)
+        maskLayers
+            .map { MaskClassMetadata(id: Int($0.classValue), name: $0.name, color: $0.color) }
+            .sorted { $0.id < $1.id }
+    }
+
+    func applyImportedClassMetadata(
+        _ importedMetadata: [MaskClassMetadata],
+        width: Int,
+        height: Int,
+        rgbImage: NSImage? = nil
+    ) {
+        guard width > 0, height > 0 else { return }
+
+        let normalized = Self.normalizedMetadata(importedMetadata)
+        guard !normalized.isEmpty else { return }
+
+        if maskLayers.isEmpty {
+            layers.removeAll()
+            undoStacks.removeAll()
+
+            let refLayer = ReferenceLayer(
+                id: UUID(),
+                name: L("Референс"),
+                width: width,
+                height: height,
+                visible: true,
+                rgbImage: rgbImage
+            )
+            layers.append(refLayer)
+
+            var firstLayerID: UUID?
+            for (index, item) in normalized.enumerated() {
+                let layer = MaskLayer(
+                    id: UUID(),
+                    name: item.name,
+                    width: width,
+                    height: height,
+                    classValue: UInt8(item.id),
+                    color: item.color
+                )
+                layers.append(layer)
+                undoStacks[layer.id] = []
+                if index == 0 {
+                    firstLayerID = layer.id
+                }
+            }
+
+            activeLayerID = firstLayerID
+            return
         }
+
+        if let referenceImage = rgbImage,
+           let refIndex = layers.firstIndex(where: { $0 is ReferenceLayer }),
+           var ref = layers[refIndex] as? ReferenceLayer {
+            ref.rgbImage = referenceImage
+            layers[refIndex] = ref
+        }
+
+        guard let firstMask = maskLayers.first else { return }
+        var firstUpdatedLayerID = activeLayerID
+
+        for item in normalized {
+            if let index = layers.firstIndex(where: {
+                guard let mask = $0 as? MaskLayer else { return false }
+                return Int(mask.classValue) == item.id
+            }), var mask = layers[index] as? MaskLayer {
+                mask.name = item.name
+                mask.color = item.color
+                layers[index] = mask
+                if firstUpdatedLayerID == nil {
+                    firstUpdatedLayerID = mask.id
+                }
+                continue
+            }
+
+            let newLayer = MaskLayer(
+                id: UUID(),
+                name: item.name,
+                width: firstMask.width,
+                height: firstMask.height,
+                classValue: UInt8(item.id),
+                color: item.color
+            )
+            layers.append(newLayer)
+            undoStacks[newLayer.id] = []
+            if firstUpdatedLayerID == nil {
+                firstUpdatedLayerID = newLayer.id
+            }
+        }
+
+        if activeLayerID == nil {
+            activeLayerID = firstUpdatedLayerID
+        }
+    }
+
+    private static func normalizedMetadata(_ metadata: [MaskClassMetadata]) -> [MaskClassMetadata] {
+        var byID: [Int: MaskClassMetadata] = [:]
+
+        for item in metadata {
+            guard item.id > 0 && item.id <= 255 else { continue }
+            byID[item.id] = item.clamped()
+        }
+
+        return byID.values.sorted { $0.id < $1.id }
     }
 }
 
@@ -672,5 +773,32 @@ struct MaskClassMetadata: Codable {
         self.colorR = Double(rgb.redComponent)
         self.colorG = Double(rgb.greenComponent)
         self.colorB = Double(rgb.blueComponent)
+    }
+
+    init(id: Int, name: String, colorR: Double, colorG: Double, colorB: Double) {
+        self.id = id
+        self.name = name
+        self.colorR = colorR
+        self.colorG = colorG
+        self.colorB = colorB
+    }
+
+    var color: NSColor {
+        NSColor(
+            red: CGFloat(max(0, min(1, colorR))),
+            green: CGFloat(max(0, min(1, colorG))),
+            blue: CGFloat(max(0, min(1, colorB))),
+            alpha: 1.0
+        )
+    }
+
+    func clamped() -> MaskClassMetadata {
+        MaskClassMetadata(
+            id: id,
+            name: name,
+            colorR: max(0, min(1, colorR)),
+            colorG: max(0, min(1, colorG)),
+            colorB: max(0, min(1, colorB))
+        )
     }
 }

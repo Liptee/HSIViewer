@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct MaskEditorView: View {
     @EnvironmentObject var state: AppState
@@ -528,10 +529,12 @@ private final class MaskLayerImageCache: ObservableObject {
 }
 
 struct MaskLayersPanelView: View {
+    @EnvironmentObject var state: AppState
     @ObservedObject var maskState: MaskEditorState
     @State private var editingLayerID: UUID?
     @State private var editingName: String = ""
     @State private var draggedLayerID: UUID?
+    @State private var isDropTargeted: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -614,6 +617,25 @@ struct MaskLayersPanelView: View {
                 .padding(8)
         }
         .background(.ultraThinMaterial)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
+        }
+        .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleMetadataDrop(providers:))
+    }
+
+    private func handleMetadataDrop(providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            provider.loadObject(ofClass: NSURL.self) { object, _ in
+                guard let url = object as? URL else { return }
+                DispatchQueue.main.async {
+                    state.importMaskMetadata(url: url)
+                }
+            }
+            handled = true
+        }
+        return handled
     }
 }
 

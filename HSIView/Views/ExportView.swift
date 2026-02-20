@@ -96,6 +96,8 @@ struct ExportView: View {
     @State private var exportError: String?
     @State private var maskExportColored: Bool = false
     @State private var maskVariableName: String = "mask"
+    @State private var maskExportMetadata: Bool = true
+    @State private var maskMATMetadataKeyPrefix: String = MaskMATMetadataKeySet.defaultPrefix
     @State private var tiffEnviCompatible: Bool = false
     @State private var enviOptions: EnviExportOptions = .default()
     @State private var hoveredCubeFormat: ExportFormat?
@@ -505,6 +507,46 @@ struct ExportView: View {
                         Text("Экспорт в цвете")
                             .font(.system(size: 11, weight: .medium))
                     }
+                }
+            }
+
+            Toggle(isOn: $maskExportMetadata) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 11))
+                    Text(L("export.mask.metadata.toggle"))
+                        .font(.system(size: 11, weight: .medium))
+                }
+            }
+
+            if maskExportMetadata {
+                switch selectedFormat {
+                case .maskPNG, .maskNpy:
+                    infoBox(
+                        icon: "doc.text",
+                        text: L("export.mask.metadata.sidecar_info")
+                    )
+                case .maskMat:
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Text(L("export.mask.metadata.mat.prefix"))
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+
+                            TextField(MaskMATMetadataKeySet.defaultPrefix, text: $maskMATMetadataKeyPrefix)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11, design: .monospaced))
+                                .frame(maxWidth: 240)
+                        }
+
+                        let keys = MaskMATMetadataKeySet(prefix: maskMATMetadataKeyPrefix)
+                        infoBox(
+                            icon: "info.circle",
+                            text: LF("export.mask.metadata.mat.keys_info", keys.prefix, keys.idsKey, keys.namesKey, keys.colorsKey)
+                        )
+                    }
+                default:
+                    EmptyView()
                 }
             }
             
@@ -1047,7 +1089,8 @@ struct ExportView: View {
         isExporting = true
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let result: Result<Void, Error>
+            var result: Result<Void, Error>
+            let metadata = state.maskEditorState.classMetadata()
             
             switch selectedFormat {
             case .maskPNG:
@@ -1060,17 +1103,25 @@ struct ExportView: View {
             case .maskNpy:
                 result = MaskExporter.exportAsNumPy(mask: mergedMask, width: width, height: height, to: url)
             case .maskMat:
-                let metadata = state.maskEditorState.classMetadata()
                 result = MaskExporter.exportAsMAT(
                     mask: mergedMask,
                     width: width,
                     height: height,
                     to: url,
                     maskVariableName: maskVariableName.isEmpty ? "mask" : maskVariableName,
-                    metadata: metadata
+                    metadata: maskExportMetadata ? metadata : nil,
+                    metadataKeys: MaskMATMetadataKeySet(prefix: maskMATMetadataKeyPrefix)
                 )
             default:
                 result = .failure(ExportError.invalidData)
+            }
+
+            if maskExportMetadata, (selectedFormat == .maskPNG || selectedFormat == .maskNpy),
+               case .success = result {
+                result = MaskExporter.exportMetadataAsJSON(
+                    metadata: metadata,
+                    to: metadataSidecarURL(forMaskURL: url)
+                )
             }
             
             DispatchQueue.main.async {
@@ -1083,6 +1134,13 @@ struct ExportView: View {
                 }
             }
         }
+    }
+
+    private func metadataSidecarURL(forMaskURL maskURL: URL) -> URL {
+        let baseName = maskURL.deletingPathExtension().lastPathComponent
+        return maskURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(baseName)_metadata.json")
     }
     
     private func formatMemorySize(bytes: Int) -> String {
