@@ -101,14 +101,8 @@ struct ContentView: View {
                 }
                 
                 if state.viewMode == .mask && state.cube != nil {
-                    ZStack(alignment: .trailing) {
-                        MaskEditorView(maskState: state.maskEditorState)
-                            .environmentObject(state)
-
-                        GraphPanel(panelWidth: graphPanelWidth)
-                            .environmentObject(state)
-                            .padding(.trailing, 12)
-                    }
+                    MaskEditorView(maskState: state.maskEditorState)
+                        .environmentObject(state)
                 } else {
                     GeometryReader { geo in
                         ZStack {
@@ -354,7 +348,7 @@ struct ContentView: View {
                     .coordinateSpace(name: imageCoordinateSpaceName)
                 }
 
-                if canShowRightPanel, state.cube != nil, state.viewMode != .mask {
+                if canShowRightPanel, state.cube != nil {
                     panelResizeHandle { translation in
                         if rightPanelDragStartWidth == nil {
                             rightPanelDragStartWidth = state.rightPanelWidth
