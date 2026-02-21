@@ -85,6 +85,11 @@ private enum GraphExportFormat {
     }
 }
 
+private enum GraphSeriesKind: String, Equatable {
+    case point
+    case roi
+}
+
 private struct GraphSeries: Identifiable, Equatable {
     let id: UUID
     let title: String
@@ -92,20 +97,319 @@ private struct GraphSeries: Identifiable, Equatable {
     let wavelengths: [Double]?
     let defaultColor: Color
     let sourceName: String?
+    let kind: GraphSeriesKind
+    let roiRect: SpectrumROIRect?
+    let isCurrentCubeSource: Bool
     
-    init(id: UUID, title: String, values: [Double], wavelengths: [Double]?, defaultColor: Color, sourceName: String? = nil) {
+    init(
+        id: UUID,
+        title: String,
+        values: [Double],
+        wavelengths: [Double]?,
+        defaultColor: Color,
+        sourceName: String? = nil,
+        kind: GraphSeriesKind,
+        roiRect: SpectrumROIRect? = nil,
+        isCurrentCubeSource: Bool
+    ) {
         self.id = id
         self.title = title
         self.values = values
         self.wavelengths = wavelengths
         self.defaultColor = defaultColor
         self.sourceName = sourceName
+        self.kind = kind
+        self.roiRect = roiRect
+        self.isCurrentCubeSource = isCurrentCubeSource
     }
 }
 
 private struct GraphSeriesJSONPayload: Encodable {
     let wavelengths: [Double]
     let intensity: [Double]
+}
+
+private enum GraphMetricType: String, CaseIterable, Identifiable {
+    case mse
+    case rmse
+    case psnr
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .mse: return L("graph.window.metrics.metric.mse")
+        case .rmse: return L("graph.window.metrics.metric.rmse")
+        case .psnr: return L("graph.window.metrics.metric.psnr")
+        }
+    }
+}
+
+private enum GraphMetricAlignmentMode: String, CaseIterable, Identifiable {
+    case byIndex
+    case byWavelength
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .byIndex: return L("graph.window.metrics.alignment.by_index")
+        case .byWavelength: return L("graph.window.metrics.alignment.by_wavelength")
+        }
+    }
+}
+
+private enum GraphMetricPSNRPeakMode: String, CaseIterable, Identifiable {
+    case dataRange
+    case custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .dataRange: return L("graph.window.metrics.psnr_peak.data_range")
+        case .custom: return L("graph.window.metrics.psnr_peak.custom")
+        }
+    }
+}
+
+private enum GraphMetricEvaluationMode: String, CaseIterable, Identifiable {
+    case averagedSpectrum
+    case perHyperpixelROI
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .averagedSpectrum:
+            return L("graph.window.metrics.evaluation.averaged")
+        case .perHyperpixelROI:
+            return L("graph.window.metrics.evaluation.per_hyperpixel")
+        }
+    }
+}
+
+private struct GraphMetricRequest: Identifiable {
+    let id = UUID()
+    let reference: GraphSeries
+    let target: GraphSeries
+}
+
+private struct GraphMetricResult {
+    let metric: GraphMetricType
+    let value: Double
+    let sampleCount: Int
+    let psnrPeakValue: Double?
+    let perPixelSummary: GraphMetricPerPixelSummary?
+}
+
+private struct GraphMetricPerPixelSummary {
+    let pixelCount: Int
+    let minValue: Double
+    let maxValue: Double
+    let meanValue: Double
+}
+
+private struct GraphMetricSettings {
+    var metric: GraphMetricType = .mse
+    var alignment: GraphMetricAlignmentMode = .byIndex
+    var resamplePointCount: Int = 256
+    var psnrPeakMode: GraphMetricPSNRPeakMode = .dataRange
+    var psnrCustomPeak: Double = 1.0
+    var evaluationMode: GraphMetricEvaluationMode = .averagedSpectrum
+}
+
+private enum GraphMetricError: LocalizedError {
+    case emptyData
+    case requiresWavelengths
+    case noOverlap
+    case invalidPSNRPeak
+    case perPixelRequiresROI
+    case perPixelCurrentCubeOnly
+    case roiSpatialMismatch
+    case roiDataUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyData:
+            return L("graph.window.metrics.error.empty")
+        case .requiresWavelengths:
+            return L("graph.window.metrics.error.need_wavelengths")
+        case .noOverlap:
+            return L("graph.window.metrics.error.no_overlap")
+        case .invalidPSNRPeak:
+            return L("graph.window.metrics.error.invalid_peak")
+        case .perPixelRequiresROI:
+            return L("graph.window.metrics.error.per_pixel_requires_roi")
+        case .perPixelCurrentCubeOnly:
+            return L("graph.window.metrics.error.per_pixel_current_cube_only")
+        case .roiSpatialMismatch:
+            return L("graph.window.metrics.error.roi_spatial_mismatch")
+        case .roiDataUnavailable:
+            return L("graph.window.metrics.error.roi_data_unavailable")
+        }
+    }
+}
+
+private enum GraphMetricsEngine {
+    static func calculate(
+        reference: GraphSeries,
+        target: GraphSeries,
+        settings: GraphMetricSettings
+    ) throws -> GraphMetricResult {
+        let aligned = try alignedValues(reference: reference, target: target, settings: settings)
+        let lhs = aligned.0
+        let rhs = aligned.1
+        guard !lhs.isEmpty, lhs.count == rhs.count else {
+            throw GraphMetricError.emptyData
+        }
+
+        let mse = zip(lhs, rhs).reduce(0.0) { partial, pair in
+            let diff = pair.0 - pair.1
+            return partial + diff * diff
+        } / Double(lhs.count)
+        let rmse = sqrt(mse)
+
+        switch settings.metric {
+        case .mse:
+            return GraphMetricResult(metric: .mse, value: mse, sampleCount: lhs.count, psnrPeakValue: nil, perPixelSummary: nil)
+        case .rmse:
+            return GraphMetricResult(metric: .rmse, value: rmse, sampleCount: lhs.count, psnrPeakValue: nil, perPixelSummary: nil)
+        case .psnr:
+            let peak = try psnrPeakValue(lhs: lhs, rhs: rhs, settings: settings)
+            let value: Double
+            if rmse == 0 {
+                value = .infinity
+            } else {
+                value = 20.0 * log10(peak / rmse)
+            }
+            return GraphMetricResult(metric: .psnr, value: value, sampleCount: lhs.count, psnrPeakValue: peak, perPixelSummary: nil)
+        }
+    }
+
+    private static func alignedValues(
+        reference: GraphSeries,
+        target: GraphSeries,
+        settings: GraphMetricSettings
+    ) throws -> ([Double], [Double]) {
+        switch settings.alignment {
+        case .byIndex:
+            let count = min(reference.values.count, target.values.count)
+            guard count > 0 else { throw GraphMetricError.emptyData }
+            var lhs: [Double] = []
+            var rhs: [Double] = []
+            lhs.reserveCapacity(count)
+            rhs.reserveCapacity(count)
+            for index in 0..<count {
+                let left = reference.values[index]
+                let right = target.values[index]
+                guard left.isFinite, right.isFinite else { continue }
+                lhs.append(left)
+                rhs.append(right)
+            }
+            guard !lhs.isEmpty else { throw GraphMetricError.emptyData }
+            return (lhs, rhs)
+        case .byWavelength:
+            let leftPairs = wavelengthPairs(for: reference)
+            let rightPairs = wavelengthPairs(for: target)
+            guard !leftPairs.isEmpty, !rightPairs.isEmpty else {
+                throw GraphMetricError.requiresWavelengths
+            }
+
+            let leftMin = leftPairs.first!.0
+            let leftMax = leftPairs.last!.0
+            let rightMin = rightPairs.first!.0
+            let rightMax = rightPairs.last!.0
+
+            let overlapMin = max(leftMin, rightMin)
+            let overlapMax = min(leftMax, rightMax)
+            guard overlapMax > overlapMin else {
+                throw GraphMetricError.noOverlap
+            }
+
+            let sampleCount = max(2, min(settings.resamplePointCount, 4096))
+            let denominator = max(sampleCount - 1, 1)
+            var lhs = [Double]()
+            var rhs = [Double]()
+            lhs.reserveCapacity(sampleCount)
+            rhs.reserveCapacity(sampleCount)
+
+            for index in 0..<sampleCount {
+                let t = Double(index) / Double(denominator)
+                let x = overlapMin + (overlapMax - overlapMin) * t
+                guard let yLeft = interpolate(x: x, points: leftPairs),
+                      let yRight = interpolate(x: x, points: rightPairs) else {
+                    continue
+                }
+                if yLeft.isFinite, yRight.isFinite {
+                    lhs.append(yLeft)
+                    rhs.append(yRight)
+                }
+            }
+
+            guard !lhs.isEmpty, lhs.count == rhs.count else {
+                throw GraphMetricError.noOverlap
+            }
+            return (lhs, rhs)
+        }
+    }
+
+    private static func wavelengthPairs(for series: GraphSeries) -> [(Double, Double)] {
+        guard let wavelengths = series.wavelengths else { return [] }
+        let count = min(wavelengths.count, series.values.count)
+        guard count > 1 else { return [] }
+
+        let pairs = (0..<count).compactMap { index -> (Double, Double)? in
+            let x = wavelengths[index]
+            let y = series.values[index]
+            guard x.isFinite, y.isFinite else { return nil }
+            return (x, y)
+        }
+
+        guard pairs.count > 1 else { return [] }
+        return pairs.sorted { lhs, rhs in lhs.0 < rhs.0 }
+    }
+
+    private static func interpolate(x: Double, points: [(Double, Double)]) -> Double? {
+        guard !points.isEmpty else { return nil }
+        if x <= points[0].0 { return points[0].1 }
+        if x >= points[points.count - 1].0 { return points[points.count - 1].1 }
+
+        var lower = 0
+        var upper = points.count - 1
+        while upper - lower > 1 {
+            let mid = (lower + upper) / 2
+            if points[mid].0 <= x {
+                lower = mid
+            } else {
+                upper = mid
+            }
+        }
+
+        let left = points[lower]
+        let right = points[upper]
+        let dx = right.0 - left.0
+        guard dx != 0 else { return left.1 }
+        let ratio = (x - left.0) / dx
+        return left.1 + (right.1 - left.1) * ratio
+    }
+
+    private static func psnrPeakValue(lhs: [Double], rhs: [Double], settings: GraphMetricSettings) throws -> Double {
+        switch settings.psnrPeakMode {
+        case .dataRange:
+            let maxValue = max(lhs.max() ?? 0, rhs.max() ?? 0)
+            let minValue = min(lhs.min() ?? 0, rhs.min() ?? 0)
+            let range = maxValue - minValue
+            if range > 0 { return range }
+            let absMax = max(abs(maxValue), abs(minValue))
+            return absMax > 0 ? absMax : 1.0
+        case .custom:
+            guard settings.psnrCustomPeak.isFinite, settings.psnrCustomPeak > 0 else {
+                throw GraphMetricError.invalidPSNRPeak
+            }
+            return settings.psnrCustomPeak
+        }
+    }
 }
 
 struct GraphWindowView: View {
@@ -222,41 +526,71 @@ struct GraphWindowView: View {
     }
     
     @State private var showLibraryPanel: Bool = true
+    @State private var metricSelectionSourceID: UUID?
+    @State private var metricRequest: GraphMetricRequest?
     
     init(spectrumCache: LibrarySpectrumCache) {
         self._spectrumCache = ObservedObject(wrappedValue: spectrumCache)
     }
     
     var body: some View {
-        HStack(spacing: 0) {
-            if showLibraryPanel {
+        ZStack(alignment: .top) {
+            HStack(spacing: 0) {
+                if showLibraryPanel {
+                    GlassEffectContainerWrapper {
+                        libraryPanel
+                            .frame(width: 220)
+                            .glassBackground(cornerRadius: 0)
+                    }
+                    
+                    Divider()
+                }
+                
                 GlassEffectContainerWrapper {
-                    libraryPanel
-                        .frame(width: 220)
+                    settingsPanel
+                        .frame(width: 240)
                         .glassBackground(cornerRadius: 0)
                 }
                 
                 Divider()
+                
+                VStack(spacing: 0) {
+                    header
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
+                    
+                    Divider()
+                    
+                content
+                        .padding(16)
+                }
             }
             
-            GlassEffectContainerWrapper {
-                settingsPanel
-                    .frame(width: 240)
-                    .glassBackground(cornerRadius: 0)
-            }
-            
-            Divider()
-            
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
+            if isMetricSelectionMode {
+                Color.black.opacity(0.32)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
                 
-                Divider()
-                
-            content
-                    .padding(16)
+                VStack(spacing: 6) {
+                    Text(L("graph.window.metrics.select_target_title"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                    if let source = metricSelectionSource {
+                        Text(LF("graph.window.metrics.select_target_subtitle", source.title))
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.92))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.black.opacity(0.6))
+                )
+                .padding(.top, 14)
+                .allowsHitTesting(false)
             }
         }
         .frame(minWidth: showLibraryPanel ? 1100 : 900, minHeight: 560)
@@ -271,12 +605,16 @@ struct GraphWindowView: View {
         .onChange(of: series) { _ in
             pruneGraphSettings()
             applyPaletteForMissing()
+            pruneMetricSelection()
             if autoScaleX || autoScaleY {
                 updateAxisBounds()
             }
         }
         .onChange(of: state.libraryEntries) { _ in
             pruneVisibleEntries()
+        }
+        .sheet(item: $metricRequest) { request in
+            GraphMetricsSheet(request: request)
         }
     }
     
@@ -626,6 +964,8 @@ struct GraphWindowView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(series) { item in
+                                let isSourceForMetric = metricSelectionSourceID == item.id
+                                let isMetricCandidate = isMetricSelectionMode && !isSourceForMetric
                                 let colorBinding = Binding<Color>(
                                     get: { color(for: item) },
                                     set: { newColor in
@@ -636,12 +976,14 @@ struct GraphWindowView: View {
                                     ColorPicker("", selection: colorBinding, supportsOpacity: false)
                                         .labelsHidden()
                                         .frame(width: 28)
+                                        .allowsHitTesting(!isMetricSelectionMode)
                                     Button(action: { toggleSeriesVisibility(id: item.id) }) {
                                         Image(systemName: state.graphSeriesHiddenIDs.contains(item.id) ? "eye.slash" : "eye")
                                             .font(.system(size: 11, weight: .semibold))
                                             .foregroundColor(state.graphSeriesHiddenIDs.contains(item.id) ? .secondary : .primary)
                                     }
                                     .buttonStyle(.plain)
+                                    .disabled(isMetricSelectionMode)
                                     SeriesStyleButton(
                                         title: item.title,
                                         initialStyle: effectiveStyle(for: item),
@@ -652,6 +994,7 @@ struct GraphWindowView: View {
                                             state.graphSeriesOverrides[item.id] = nil
                                         }
                                     )
+                                    .disabled(isMetricSelectionMode)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.title)
                                             .font(.system(size: 11))
@@ -674,8 +1017,38 @@ struct GraphWindowView: View {
                                     Spacer()
                                 }
                                 .padding(6)
-                                .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+                                .background(
+                                    Group {
+                                        if isMetricSelectionMode {
+                                            if isSourceForMetric {
+                                                Color.black.opacity(0.35)
+                                            } else {
+                                                Color.accentColor.opacity(0.16)
+                                            }
+                                        } else {
+                                            Color(NSColor.controlBackgroundColor).opacity(0.4)
+                                        }
+                                    }
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(
+                                            isMetricCandidate ? Color.accentColor.opacity(0.7) : Color.clear,
+                                            lineWidth: 1
+                                        )
+                                )
                                 .cornerRadius(6)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    guard isMetricSelectionMode else { return }
+                                    selectMetricComparisonTarget(item.id)
+                                }
+                                .contextMenu {
+                                    Button(L("graph.window.metrics.call_metric")) {
+                                        beginMetricSelection(from: item.id)
+                                    }
+                                    .disabled(series.count < 2)
+                                }
                             }
                         }
                     }
@@ -1020,7 +1393,9 @@ struct GraphWindowView: View {
                             values: $0.values,
                             wavelengths: $0.wavelengths,
                             defaultColor: Color($0.nsColor),
-                            sourceName: entry.displayName
+                            sourceName: entry.displayName,
+                            kind: .point,
+                            isCurrentCubeSource: true
                         )
                     }
                 } else if let cached = spectrumCache.entries[entry.id]?.spectrumSamples {
@@ -1031,7 +1406,9 @@ struct GraphWindowView: View {
                             values: sample.values,
                             wavelengths: sample.wavelengths,
                             defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
-                            sourceName: entry.displayName
+                            sourceName: entry.displayName,
+                            kind: .point,
+                            isCurrentCubeSource: false
                         )
                     }
                 }
@@ -1044,7 +1421,10 @@ struct GraphWindowView: View {
                             values: $0.values,
                             wavelengths: $0.wavelengths,
                             defaultColor: Color($0.nsColor),
-                            sourceName: entry.displayName
+                            sourceName: entry.displayName,
+                            kind: .roi,
+                            roiRect: $0.rect,
+                            isCurrentCubeSource: true
                         )
                     }
                 } else if let cached = spectrumCache.entries[entry.id]?.roiSamples {
@@ -1055,7 +1435,10 @@ struct GraphWindowView: View {
                             values: sample.values,
                             wavelengths: sample.wavelengths,
                             defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
-                            sourceName: entry.displayName
+                            sourceName: entry.displayName,
+                            kind: .roi,
+                            roiRect: SpectrumROIRect(minX: sample.minX, minY: sample.minY, width: sample.width, height: sample.height),
+                            isCurrentCubeSource: false
                         )
                     }
                 }
@@ -1118,6 +1501,35 @@ struct GraphWindowView: View {
     private func pruneVisibleEntries() {
         let existingIDs = Set(state.libraryEntries.map(\.id))
         spectrumCache.visibleEntries = spectrumCache.visibleEntries.intersection(existingIDs)
+    }
+
+    private var isMetricSelectionMode: Bool {
+        metricSelectionSourceID != nil
+    }
+
+    private var metricSelectionSource: GraphSeries? {
+        guard let sourceID = metricSelectionSourceID else { return nil }
+        return series.first(where: { $0.id == sourceID })
+    }
+
+    private func beginMetricSelection(from sourceID: UUID) {
+        guard series.count > 1 else { return }
+        metricSelectionSourceID = sourceID
+    }
+
+    private func selectMetricComparisonTarget(_ targetID: UUID) {
+        guard let source = metricSelectionSource else { return }
+        guard source.id != targetID else { return }
+        guard let target = series.first(where: { $0.id == targetID }) else { return }
+        metricSelectionSourceID = nil
+        metricRequest = GraphMetricRequest(reference: source, target: target)
+    }
+
+    private func pruneMetricSelection() {
+        guard let sourceID = metricSelectionSourceID else { return }
+        if !series.contains(where: { $0.id == sourceID }) {
+            metricSelectionSourceID = nil
+        }
     }
 
     private func toggleSeriesVisibility(id: UUID) {
@@ -1288,6 +1700,333 @@ struct GraphWindowView: View {
         }
     }
     
+}
+
+private struct GraphMetricsSheet: View {
+    let request: GraphMetricRequest
+
+    @EnvironmentObject private var state: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var settings = GraphMetricSettings()
+    @State private var result: GraphMetricResult?
+    @State private var errorText: String?
+
+    private var areBothROI: Bool {
+        request.reference.kind == .roi && request.target.kind == .roi
+    }
+
+    private var evaluationOptions: [GraphMetricEvaluationMode] {
+        areBothROI ? GraphMetricEvaluationMode.allCases : [.averagedSpectrum]
+    }
+
+    private var alignmentOptions: [GraphMetricAlignmentMode] {
+        hasWavelengths ? GraphMetricAlignmentMode.allCases : [.byIndex]
+    }
+
+    private var hasWavelengths: Bool {
+        request.reference.wavelengths != nil && request.target.wavelengths != nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(L("graph.window.metrics.sheet.title"))
+                .font(.system(size: 15, weight: .semibold))
+
+            Text(LF("graph.window.metrics.sheet.compare", request.reference.title, request.target.title))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L("graph.window.metrics.settings"))
+                    .font(.system(size: 11, weight: .semibold))
+
+                Picker(L("graph.window.metrics.evaluation_mode"), selection: $settings.evaluationMode) {
+                    ForEach(evaluationOptions) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker(L("graph.window.metrics.metric"), selection: $settings.metric) {
+                    ForEach(GraphMetricType.allCases) { metric in
+                        Text(metric.title).tag(metric)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker(L("graph.window.metrics.alignment"), selection: $settings.alignment) {
+                    ForEach(alignmentOptions) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if settings.alignment == .byWavelength {
+                    HStack {
+                        Text(L("graph.window.metrics.resample_points"))
+                            .font(.system(size: 11))
+                        Spacer()
+                        Stepper(value: $settings.resamplePointCount, in: 16...4096, step: 16) {
+                            Text("\(settings.resamplePointCount)")
+                                .font(.system(size: 11, design: .monospaced))
+                        }
+                    }
+                }
+
+                if settings.metric == .psnr {
+                    Picker(L("graph.window.metrics.psnr_peak"), selection: $settings.psnrPeakMode) {
+                        ForEach(GraphMetricPSNRPeakMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    if settings.psnrPeakMode == .custom {
+                        HStack {
+                            Text(L("graph.window.metrics.psnr_custom_value"))
+                                .font(.system(size: 11))
+                            Spacer()
+                            TextField("", value: $settings.psnrCustomPeak, format: .number)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 120)
+                                .font(.system(size: 11, design: .monospaced))
+                        }
+                    }
+                }
+
+                if settings.evaluationMode == .perHyperpixelROI {
+                    Text(L("graph.window.metrics.evaluation.per_hyperpixel_hint"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            HStack {
+                Button(L("common.cancel")) {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button(L("graph.window.metrics.calculate")) {
+                    calculate()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+            }
+
+            if let result {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L("graph.window.metrics.result"))
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("\(result.metric.title): \(formattedMetricValue(result.value))")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    Text(LF("graph.window.metrics.result.samples", result.sampleCount))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                    if let peak = result.psnrPeakValue {
+                        Text(LF("graph.window.metrics.result.peak", formattedNumber(peak)))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                    if let perPixel = result.perPixelSummary {
+                        Text(LF("graph.window.metrics.result.hyperpixels", perPixel.pixelCount))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text(LF("graph.window.metrics.result.mean", formattedMetricValue(perPixel.meanValue)))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text(LF("graph.window.metrics.result.min", formattedMetricValue(perPixel.minValue)))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text(LF("graph.window.metrics.result.max", formattedMetricValue(perPixel.maxValue)))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+                .cornerRadius(8)
+            }
+        }
+        .padding(16)
+        .frame(width: 430)
+        .onAppear {
+            if !hasWavelengths {
+                settings.alignment = .byIndex
+            }
+            if !areBothROI {
+                settings.evaluationMode = .averagedSpectrum
+            }
+        }
+    }
+
+    private func calculate() {
+        do {
+            let computed: GraphMetricResult
+            switch settings.evaluationMode {
+            case .averagedSpectrum:
+                computed = try GraphMetricsEngine.calculate(
+                    reference: request.reference,
+                    target: request.target,
+                    settings: settings
+                )
+            case .perHyperpixelROI:
+                computed = try calculatePerHyperpixelMetric()
+            }
+            result = computed
+            errorText = nil
+        } catch {
+            result = nil
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func calculatePerHyperpixelMetric() throws -> GraphMetricResult {
+        guard request.reference.kind == .roi, request.target.kind == .roi else {
+            throw GraphMetricError.perPixelRequiresROI
+        }
+        guard request.reference.isCurrentCubeSource, request.target.isCurrentCubeSource else {
+            throw GraphMetricError.perPixelCurrentCubeOnly
+        }
+        guard let referenceRect = request.reference.roiRect,
+              let targetRect = request.target.roiRect else {
+            throw GraphMetricError.roiDataUnavailable
+        }
+        guard referenceRect.width == targetRect.width,
+              referenceRect.height == targetRect.height else {
+            throw GraphMetricError.roiSpatialMismatch
+        }
+
+        let referencePixels = try pixelSpectra(in: referenceRect)
+        let targetPixels = try pixelSpectra(in: targetRect)
+        guard !referencePixels.isEmpty, referencePixels.count == targetPixels.count else {
+            throw GraphMetricError.roiDataUnavailable
+        }
+
+        var metricValues: [Double] = []
+        metricValues.reserveCapacity(referencePixels.count)
+        var perPixelSampleCount: Int = 0
+
+        for index in 0..<referencePixels.count {
+            let referenceSeries = GraphSeries(
+                id: UUID(),
+                title: request.reference.title,
+                values: referencePixels[index],
+                wavelengths: request.reference.wavelengths,
+                defaultColor: .clear,
+                kind: .roi,
+                isCurrentCubeSource: true
+            )
+            let targetSeries = GraphSeries(
+                id: UUID(),
+                title: request.target.title,
+                values: targetPixels[index],
+                wavelengths: request.target.wavelengths,
+                defaultColor: .clear,
+                kind: .roi,
+                isCurrentCubeSource: true
+            )
+            let perPixel = try GraphMetricsEngine.calculate(
+                reference: referenceSeries,
+                target: targetSeries,
+                settings: settings
+            )
+            perPixelSampleCount = perPixel.sampleCount
+            metricValues.append(perPixel.value)
+        }
+
+        guard !metricValues.isEmpty else { throw GraphMetricError.emptyData }
+        let meanValue = metricValues.reduce(0.0, +) / Double(metricValues.count)
+        let minValue = metricValues.min() ?? meanValue
+        let maxValue = metricValues.max() ?? meanValue
+        let summary = GraphMetricPerPixelSummary(
+            pixelCount: metricValues.count,
+            minValue: minValue,
+            maxValue: maxValue,
+            meanValue: meanValue
+        )
+        let peak: Double? = {
+            guard settings.metric == .psnr else { return nil }
+            switch settings.psnrPeakMode {
+            case .dataRange: return nil
+            case .custom: return settings.psnrCustomPeak
+            }
+        }()
+
+        return GraphMetricResult(
+            metric: settings.metric,
+            value: meanValue,
+            sampleCount: perPixelSampleCount,
+            psnrPeakValue: peak,
+            perPixelSummary: summary
+        )
+    }
+
+    private func pixelSpectra(in rect: SpectrumROIRect) throws -> [[Double]] {
+        guard rect.width > 0, rect.height > 0 else {
+            throw GraphMetricError.roiDataUnavailable
+        }
+        guard let cube = state.cube else {
+            throw GraphMetricError.perPixelCurrentCubeOnly
+        }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: state.activeLayout) else {
+            throw GraphMetricError.roiDataUnavailable
+        }
+
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard channels > 0 else {
+            throw GraphMetricError.roiDataUnavailable
+        }
+        guard rect.minX >= 0, rect.maxX < width, rect.minY >= 0, rect.maxY < height else {
+            throw GraphMetricError.roiDataUnavailable
+        }
+
+        var allSpectra: [[Double]] = []
+        allSpectra.reserveCapacity(rect.area)
+        for y in rect.minY..<(rect.minY + rect.height) {
+            for x in rect.minX..<(rect.minX + rect.width) {
+                var spectrum = [Double](repeating: 0.0, count: channels)
+                for channel in 0..<channels {
+                    var indices = [0, 0, 0]
+                    indices[axes.channel] = channel
+                    indices[axes.height] = y
+                    indices[axes.width] = x
+                    spectrum[channel] = cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+                }
+                allSpectra.append(spectrum)
+            }
+        }
+        return allSpectra
+    }
+
+    private func formattedMetricValue(_ value: Double) -> String {
+        if value.isInfinite {
+            return L("graph.window.metrics.value.infinity")
+        }
+        return formattedNumber(value)
+    }
+
+    private func formattedNumber(_ value: Double) -> String {
+        if value.isNaN || !value.isFinite {
+            return "nan"
+        }
+        return String(format: "%.8g", value)
+    }
 }
 
 private struct ExportableChartView: View {
