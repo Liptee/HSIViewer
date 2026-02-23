@@ -67,6 +67,9 @@
 "grid.context.delete_column" = "Delete Column";
 "grid.context.delete_row" = "Delete Row";
 "grid.context.return_to_library" = "Return to Library";
+"grid.context.group.items_count" = "Items in group: %d";
+"grid.context.group.empty" = "Group is empty";
+"grid.context.group.return_to_library" = "Return Group to Library";
 "grid.cell.empty" = "Empty";
 "grid.rename_row.title" = "Rename Row";
 "grid.rename_row.field_name" = "Row Name";

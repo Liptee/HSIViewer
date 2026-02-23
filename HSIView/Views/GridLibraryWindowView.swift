@@ -277,6 +277,7 @@ struct GridLibraryWindowView: View {
 
     private func columnHeader(for column: GridLibraryAxisItem) -> some View {
         let index = state.gridLibraryColumns.firstIndex(where: { $0.id == column.id }) ?? 0
+        let groupEntries = columnEntries(columnID: column.id)
         let isSelected = selectedColumnID == column.id
         let singleTap = TapGesture().onEnded {
             if selectedColumnID == column.id {
@@ -309,6 +310,8 @@ struct GridLibraryWindowView: View {
         .highPriorityGesture(doubleTap)
         .simultaneousGesture(singleTap)
         .contextMenu {
+            groupContextMenu(for: groupEntries, scope: .column(column.id))
+            Divider()
             Button(state.localized("grid.context.rename")) { startColumnRename(column) }
             Button(state.localized("grid.context.move_left")) { state.moveGridLibraryColumn(id: column.id, by: -1) }
                 .disabled(index == 0)
@@ -323,6 +326,7 @@ struct GridLibraryWindowView: View {
 
     private func rowHeader(for row: GridLibraryAxisItem) -> some View {
         let index = state.gridLibraryRows.firstIndex(where: { $0.id == row.id }) ?? 0
+        let groupEntries = rowEntries(rowID: row.id)
         let isSelected = selectedRowID == row.id
         let singleTap = TapGesture().onEnded {
             if selectedRowID == row.id {
@@ -355,6 +359,8 @@ struct GridLibraryWindowView: View {
         .highPriorityGesture(doubleTap)
         .simultaneousGesture(singleTap)
         .contextMenu {
+            groupContextMenu(for: groupEntries, scope: .row(row.id))
+            Divider()
             Button(state.localized("grid.context.rename")) { startRowRename(row) }
             Button(state.localized("grid.context.move_up")) { state.moveGridLibraryRow(id: row.id, by: -1) }
                 .disabled(index == 0)
@@ -678,6 +684,73 @@ struct GridLibraryWindowView: View {
         return [entry]
     }
 
+    @ViewBuilder
+    private func groupContextMenu(for targets: [CubeLibraryEntry], scope: GroupScope) -> some View {
+        let hasTargets = !targets.isEmpty
+        let canPastePoint = state.canPasteSpectrumPoint && hasTargets
+        let canPasteROI = state.canPasteSpectrumROI && hasTargets
+
+        if hasTargets {
+            Text(state.localizedFormat("grid.context.group.items_count", targets.count))
+        } else {
+            Text(state.localized("grid.context.group.empty"))
+        }
+
+        Button(state.localized("library.context.paste_processing")) {
+            for target in targets { state.pasteProcessing(to: target) }
+        }
+        .disabled(!state.hasProcessingClipboard || !hasTargets)
+
+        Button(state.localized("library.context.paste_wavelengths")) {
+            for target in targets { state.pasteWavelengths(to: target) }
+        }
+        .disabled(!state.hasWavelengthClipboard || !hasTargets)
+
+        Button(state.localized("library.context.paste_point")) {
+            for target in targets { state.pasteSpectrumPoint(to: target) }
+        }
+        .disabled(!canPastePoint)
+
+        Button(state.localized("library.context.paste_area")) {
+            for target in targets { state.pasteSpectrumROI(to: target) }
+        }
+        .disabled(!canPasteROI)
+
+        Divider()
+
+        Button(state.localized("grid.context.group.return_to_library")) {
+            clearGroupAssignments(scope: scope)
+        }
+        .disabled(!hasTargets)
+    }
+
+    private func rowEntries(rowID: UUID) -> [CubeLibraryEntry] {
+        state.gridLibraryColumns.compactMap { column in
+            guard let entryID = state.gridLibraryEntryID(rowID: rowID, columnID: column.id) else { return nil }
+            return state.libraryEntry(for: entryID)
+        }
+    }
+
+    private func columnEntries(columnID: UUID) -> [CubeLibraryEntry] {
+        state.gridLibraryRows.compactMap { row in
+            guard let entryID = state.gridLibraryEntryID(rowID: row.id, columnID: columnID) else { return nil }
+            return state.libraryEntry(for: entryID)
+        }
+    }
+
+    private func clearGroupAssignments(scope: GroupScope) {
+        switch scope {
+        case .row(let rowID):
+            for column in state.gridLibraryColumns {
+                state.clearGridLibraryCell(rowID: rowID, columnID: column.id)
+            }
+        case .column(let columnID):
+            for row in state.gridLibraryRows {
+                state.clearGridLibraryCell(rowID: row.id, columnID: columnID)
+            }
+        }
+    }
+
     private func handleSelection(for entry: CubeLibraryEntry, isCommandPressed: Bool) {
         if isCommandPressed {
             if selectedEntryIDs.contains(entry.id) {
@@ -757,5 +830,10 @@ struct GridLibraryWindowView: View {
     private func isCommandPressed() -> Bool {
         guard let event = NSApp.currentEvent else { return false }
         return event.modifierFlags.contains(.command)
+    }
+
+    private enum GroupScope {
+        case row(UUID)
+        case column(UUID)
     }
 }
