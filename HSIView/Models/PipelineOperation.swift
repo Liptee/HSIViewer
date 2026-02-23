@@ -157,6 +157,7 @@ struct SpectralInterpolationParameters: Equatable {
     var method: SpectralInterpolationMethod
     var extrapolation: SpectralExtrapolationMode
     var dataType: SpectralInterpolationDataType
+    var isConfiguredByUser: Bool
     
     static let `default` = SpectralInterpolationParameters(
         targetChannelCount: 0,
@@ -165,7 +166,8 @@ struct SpectralInterpolationParameters: Equatable {
         targetWavelengths: nil,
         method: .linear,
         extrapolation: .clamp,
-        dataType: .float64
+        dataType: .float64,
+        isConfiguredByUser: false
     )
 }
 
@@ -795,7 +797,8 @@ struct PipelineOperation: Identifiable, Equatable {
                     targetWavelengths: nil,
                     method: .linear,
                     extrapolation: .clamp,
-                    dataType: .float64
+                    dataType: .float64,
+                    isConfiguredByUser: false
                 )
             }
         case .spectralAlignment:
@@ -933,6 +936,9 @@ struct PipelineOperation: Identifiable, Equatable {
             return calibrationParams?.summaryText ?? L("Не настроено")
         case .spectralInterpolation:
             if let params = spectralInterpolationParams {
+                if !params.isConfiguredByUser {
+                    return L("Настройте параметры")
+                }
                 if let customWavelengths = params.targetWavelengths, !customWavelengths.isEmpty {
                     return LF("pipeline.operation.details.spectral_interp_file_channels", customWavelengths.count, params.method.rawValue)
                 }
@@ -995,7 +1001,7 @@ struct PipelineOperation: Identifiable, Equatable {
             guard let params = calibrationParams, params.isConfigured else { return cube }
             return CubeCalibrator.calibrate(cube: cube, parameters: params, layout: layout)
         case .spectralInterpolation:
-            guard let params = spectralInterpolationParams else { return cube }
+            guard let params = spectralInterpolationParams, params.isConfiguredByUser else { return cube }
             return CubeSpectralInterpolator.interpolate(cube: cube, parameters: params, layout: layout)
         case .spectralAlignment:
             guard let params = spectralAlignmentParams, params.canApply else { return cube }
@@ -1088,6 +1094,9 @@ extension PipelineOperation {
         case .spectralTrim:
             guard let params = spectralTrimParams else { return true }
             return params.startChannel == 0 && params.endChannel == max(channelCount - 1, 0)
+        case .spectralInterpolation:
+            guard let params = spectralInterpolationParams else { return true }
+            return !params.isConfiguredByUser
         case .dataTypeConversion:
             guard let targetType = targetDataType else { return true }
             return targetType == cube.originalDataType
