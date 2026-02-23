@@ -2,11 +2,21 @@ import SwiftUI
 
 struct ToolbarDockView: View {
     @EnvironmentObject var state: AppState
+
+    private var visibleAnalysisTools: [AnalysisTool] {
+        AnalysisTool.allCases.filter { tool in
+            guard tool != .none else { return false }
+            if tool == .spectrumGraphLayer {
+                return state.hasMaskLayerSpectra || state.activeAnalysisTool == .spectrumGraphLayer
+            }
+            return true
+        }
+    }
     
     var body: some View {
         GlassCapsule(padding: 0) {
             HStack(spacing: 6) {
-                ForEach(AnalysisTool.allCases.filter { $0 != .none }) { tool in
+                ForEach(visibleAnalysisTools) { tool in
                     ToolButton(
                         tool: tool,
                         iconName: iconName(for: tool),

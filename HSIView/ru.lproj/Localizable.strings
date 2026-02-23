@@ -168,6 +168,8 @@
 
 "graph.panel.title.spectrum" = "График спектра";
 "graph.panel.title.roi" = "График спектра ROI";
+"graph.panel.title.mask_layer" = "График спектра слоя";
+"График спектра слоя" = "График спектра слоя";
 "Линейка" = "Линейка";
 "ruler.overlay.pixels" = "Пиксели: %@ px";
 "ruler.overlay.distance" = "Расстояние: %@";
@@ -178,11 +180,15 @@
 "graph.panel.status.saved_points" = "Сохранено: %d";
 "graph.panel.status.no_roi" = "Нет сохранённых областей";
 "graph.panel.status.roi_count" = "Областей: %d";
+"graph.panel.status.no_mask_layer" = "Нет сохранённых спектров слоёв";
+"graph.panel.status.mask_layer_count" = "Слоёв: %d";
 "graph.panel.status.no_tool" = "Инструмент не выбран";
 "graph.panel.empty.click_image" = "Кликните на изображение";
 "graph.panel.empty.pixel_spectrum" = "чтобы увидеть спектр пикселя";
 "graph.panel.empty.draw_roi" = "Нарисуйте область на изображении";
 "graph.panel.empty.roi_spectrum" = "чтобы увидеть спектр ROI";
+"graph.panel.empty.select_mask_layer" = "Выберите слой маски";
+"graph.panel.empty.mask_layer_spectrum" = "чтобы увидеть спектр класса";
 "graph.panel.inactive.choose_tool" = "Выберите инструмент";
 "graph.panel.inactive.activate_analysis" = "Активируйте анализ в доке сверху";
 "graph.panel.help.collapse" = "Свернуть панель";
@@ -205,10 +211,12 @@
 "graph.action.edit" = "Редактировать";
 "graph.action.delete_point" = "Удалить точку";
 "graph.action.delete_roi" = "Удалить область";
+"graph.action.delete_mask_layer" = "Удалить спектр слоя";
 "graph.roi.method" = "Метод";
 
 "graph.window.dataset.points" = "Точки";
 "graph.window.dataset.roi" = "ROI";
+"graph.window.dataset.mask" = "Маска";
 "graph.window.style.lines" = "Линии";
 "graph.window.style.lines_points" = "Линии + точки";
 "graph.window.style.area" = "Площадь";
@@ -221,7 +229,7 @@
 "graph.window.show_all" = "Показать все";
 "graph.window.hide_all" = "Скрыть все";
 "graph.window.empty.no_saved_spectra" = "Нет сохранённых спектров";
-"graph.window.empty.add_points_roi" = "Добавьте точки или ROI\nна изображениях библиотеки";
+"graph.window.empty.add_points_roi" = "Добавьте точки, ROI или слои маски\nна изображениях библиотеки";
 "graph.window.no_data" = "Нет данных";
 "graph.window.show_library" = "Показать библиотеку";
 "graph.window.section.data" = "Данные";
@@ -247,7 +255,7 @@
 "graph.window.export.json" = "Экспорт JSON";
 "graph.window.export" = "Экспорт";
 "graph.window.empty.no_data_to_display" = "Нет данных для отображения";
-"graph.window.empty.save_points_or_regions" = "Сохраните точки или области в панели графика";
+"graph.window.empty.save_points_or_regions" = "Сохраните точки, области или слои маски в панели графика";
 "graph.window.legend" = "Легенда";
 "graph.window.points_count" = "%lld точек";
 "graph.window.line_shape" = "Форма линии";
@@ -634,6 +642,7 @@
 "pipeline.calibration.auto_white.factor.shape" = "Форма области";
 "pipeline.calibration.auto_white.factor.glare_penalty" = "Штраф засветки";
 "mask.layers.context.merge_selected" = "Объединить выбранные слои…";
+"mask.layers.context.show_spectrum" = "Вывести спектр";
 "mask.layers.merge.sheet.title" = "Объединение слоёв";
 "mask.layers.merge.sheet.selected_count" = "Выбрано слоёв: %d";
 "mask.layers.merge.sheet.name" = "Имя нового класса";

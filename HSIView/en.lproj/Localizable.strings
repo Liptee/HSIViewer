@@ -220,6 +220,7 @@
 
 "График спектра" = "Spectrum graph";
 "График спектра ROI" = "ROI spectrum graph";
+"График спектра слоя" = "Layer spectrum graph";
 "Линейка" = "Ruler";
 "ruler.overlay.pixels" = "Pixels: %@ px";
 "ruler.overlay.distance" = "Distance: %@";
@@ -323,15 +324,20 @@
 
 "graph.panel.title.spectrum" = "Spectrum graph";
 "graph.panel.title.roi" = "ROI spectrum graph";
+"graph.panel.title.mask_layer" = "Layer spectrum graph";
 "graph.panel.status.no_points" = "No saved points";
 "graph.panel.status.saved_points" = "Saved: %d";
 "graph.panel.status.no_roi" = "No saved regions";
 "graph.panel.status.roi_count" = "Regions: %d";
+"graph.panel.status.no_mask_layer" = "No saved layer spectra";
+"graph.panel.status.mask_layer_count" = "Layers: %d";
 "graph.panel.status.no_tool" = "No tool selected";
 "graph.panel.empty.click_image" = "Click on the image";
 "graph.panel.empty.pixel_spectrum" = "to view pixel spectrum";
 "graph.panel.empty.draw_roi" = "Draw a region on the image";
 "graph.panel.empty.roi_spectrum" = "to view ROI spectrum";
+"graph.panel.empty.select_mask_layer" = "Choose a mask layer";
+"graph.panel.empty.mask_layer_spectrum" = "to view class spectrum";
 "graph.panel.inactive.choose_tool" = "Choose a tool";
 "graph.panel.inactive.activate_analysis" = "Enable analysis in the top dock";
 "graph.panel.help.collapse" = "Collapse panel";
@@ -354,10 +360,12 @@
 "graph.action.edit" = "Edit";
 "graph.action.delete_point" = "Delete point";
 "graph.action.delete_roi" = "Delete region";
+"graph.action.delete_mask_layer" = "Delete layer spectrum";
 "graph.roi.method" = "Method";
 
 "graph.window.dataset.points" = "Points";
 "graph.window.dataset.roi" = "ROI";
+"graph.window.dataset.mask" = "Mask";
 "graph.window.style.lines" = "Lines";
 "graph.window.style.lines_points" = "Lines + points";
 "graph.window.style.area" = "Area";
@@ -370,7 +378,7 @@
 "graph.window.show_all" = "Show all";
 "graph.window.hide_all" = "Hide all";
 "graph.window.empty.no_saved_spectra" = "No saved spectra";
-"graph.window.empty.add_points_roi" = "Add points or ROI\non library images";
+"graph.window.empty.add_points_roi" = "Add points, ROI, or mask layers\non library images";
 "graph.window.no_data" = "No data";
 "graph.window.show_library" = "Show library";
 "graph.window.section.data" = "Data";
@@ -396,7 +404,7 @@
 "graph.window.export.json" = "Export JSON";
 "graph.window.export" = "Export";
 "graph.window.empty.no_data_to_display" = "No data to display";
-"graph.window.empty.save_points_or_regions" = "Save points or regions in the graph panel";
+"graph.window.empty.save_points_or_regions" = "Save points, regions, or mask layers in the graph panel";
 "graph.window.legend" = "Legend";
 "graph.window.points_count" = "%lld points";
 "graph.window.line_shape" = "Line shape";
@@ -1188,6 +1196,7 @@
 "pipeline.calibration.auto_white.factor.shape" = "Region shape";
 "pipeline.calibration.auto_white.factor.glare_penalty" = "Glare penalty";
 "mask.layers.context.merge_selected" = "Merge selected layers…";
+"mask.layers.context.show_spectrum" = "Show spectrum";
 "mask.layers.merge.sheet.title" = "Merge Layers";
 "mask.layers.merge.sheet.selected_count" = "Selected layers: %d";
 "mask.layers.merge.sheet.name" = "New class name";
