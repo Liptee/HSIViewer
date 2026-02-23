@@ -1187,3 +1187,10 @@
 "pipeline.calibration.auto_white.factor.area" = "Region size";
 "pipeline.calibration.auto_white.factor.shape" = "Region shape";
 "pipeline.calibration.auto_white.factor.glare_penalty" = "Glare penalty";
+"mask.layers.context.merge_selected" = "Merge selected layers…";
+"mask.layers.merge.sheet.title" = "Merge Layers";
+"mask.layers.merge.sheet.selected_count" = "Selected layers: %d";
+"mask.layers.merge.sheet.name" = "New class name";
+"mask.layers.merge.sheet.color" = "New class color";
+"mask.layers.merge.sheet.keep_originals" = "Keep original layers after merge";
+"mask.layers.merge.sheet.merge" = "Merge";
