@@ -270,10 +270,20 @@ final class AppState: ObservableObject {
         let normalizedMaxY: Double
         let displayName: String?
     }
+
+    struct SpectrumSelectionsClipboard {
+        let points: [SpectrumSampleClipboard]
+        let rois: [SpectrumROISampleClipboard]
+
+        var hasAny: Bool {
+            !points.isEmpty || !rois.isEmpty
+        }
+    }
     
     enum SpectrumClipboardContent {
         case point(SpectrumSampleClipboard)
         case roi(SpectrumROISampleClipboard)
+        case selections(SpectrumSelectionsClipboard)
     }
     
     var displayCube: HyperCube? {
@@ -1512,6 +1522,189 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    private func pasteSpectrumSelections(_ clipboard: SpectrumSelectionsClipboard, to entry: CubeLibraryEntry) {
+        guard clipboard.hasAny else { return }
+
+        let canonical = canonicalURL(entry.url)
+        var snapshot = sessionSnapshots[canonical] ?? CubeSessionSnapshot.empty
+        let isCurrent = cubeURL?.standardizedFileURL == canonical
+        let ops = spatialOperations(from: snapshot.pipelineOperations)
+
+        if isCurrent {
+            let fallbackSize = cube.flatMap { cubeSpatialSize(for: $0) }
+            guard let baseSize = spatialBaseSize() ?? fallbackSize else { return }
+            let baseSpatial = SpatialSize(width: baseSize.width, height: baseSize.height)
+
+            var didAppend = false
+
+            for pointClipboard in clipboard.points {
+                guard let basePoint = denormalizePoint(pointClipboard, size: baseSize) else { continue }
+                let mapped = applySpatialOpsToPoint(
+                    basePoint,
+                    base: baseSpatial,
+                    ops: ops,
+                    direction: .forward
+                ) ?? basePoint
+                let newID = UUID()
+                let colorIndex = spectrumColorCounter
+                if let sample = makeSpectrumSample(
+                    pixelX: mapped.x,
+                    pixelY: mapped.y,
+                    colorIndex: colorIndex,
+                    id: newID,
+                    displayName: pointClipboard.displayName
+                ) {
+                    spectrumSamples.append(sample)
+                    spectrumColorCounter = max(spectrumColorCounter, sample.colorIndex + 1)
+                    didAppend = true
+                }
+            }
+
+            for roiClipboard in clipboard.rois {
+                guard let baseRect = denormalizeRect(roiClipboard, size: baseSize) else { continue }
+                let mapped = applySpatialOpsToRect(
+                    baseRect,
+                    base: baseSpatial,
+                    ops: ops,
+                    direction: .forward
+                ) ?? baseRect
+                let newID = UUID()
+                let colorIndex = roiColorCounter
+                if let sample = makeROISample(
+                    rect: mapped,
+                    colorIndex: colorIndex,
+                    id: newID,
+                    displayName: roiClipboard.displayName
+                ) {
+                    roiSamples.append(sample)
+                    roiColorCounter = max(roiColorCounter, sample.colorIndex + 1)
+                    didAppend = true
+                }
+            }
+
+            if didAppend {
+                persistCurrentSession()
+            }
+            return
+        }
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+
+            let loadResult = ImageLoaderFactory.load(from: canonical)
+            guard case .success(let rawCube) = loadResult,
+                  let baseSize = self.cubeSpatialSize(for: rawCube, layout: snapshot.layout) else {
+                return
+            }
+
+            let baseSpatial = SpatialSize(width: baseSize.width, height: baseSize.height)
+
+            let pointColorStart = self.nextSpectrumColorIndex(in: snapshot.spectrumSamples)
+            var pointDescriptors: [SpectrumSampleDescriptor] = []
+            pointDescriptors.reserveCapacity(clipboard.points.count)
+            for (index, pointClipboard) in clipboard.points.enumerated() {
+                guard let basePoint = self.denormalizePoint(pointClipboard, size: baseSize) else { continue }
+                let mapped = self.applySpatialOpsToPoint(
+                    basePoint,
+                    base: baseSpatial,
+                    ops: ops,
+                    direction: .forward
+                ) ?? basePoint
+                pointDescriptors.append(
+                    SpectrumSampleDescriptor(
+                        id: UUID(),
+                        pixelX: mapped.x,
+                        pixelY: mapped.y,
+                        colorIndex: pointColorStart + index,
+                        displayName: pointClipboard.displayName,
+                        values: [],
+                        wavelengths: nil
+                    )
+                )
+            }
+
+            let roiColorStart = self.nextSpectrumColorIndex(in: snapshot.roiSamples)
+            var roiDescriptors: [SpectrumROISampleDescriptor] = []
+            roiDescriptors.reserveCapacity(clipboard.rois.count)
+            for (index, roiClipboard) in clipboard.rois.enumerated() {
+                guard let baseRect = self.denormalizeRect(roiClipboard, size: baseSize) else { continue }
+                let mapped = self.applySpatialOpsToRect(
+                    baseRect,
+                    base: baseSpatial,
+                    ops: ops,
+                    direction: .forward
+                ) ?? baseRect
+                roiDescriptors.append(
+                    SpectrumROISampleDescriptor(
+                        id: UUID(),
+                        minX: mapped.minX,
+                        minY: mapped.minY,
+                        width: mapped.width,
+                        height: mapped.height,
+                        colorIndex: roiColorStart + index,
+                        displayName: roiClipboard.displayName,
+                        values: [],
+                        wavelengths: nil
+                    )
+                )
+            }
+
+            guard !pointDescriptors.isEmpty || !roiDescriptors.isEmpty else { return }
+            DispatchQueue.main.async {
+                snapshot.spectrumSamples.append(contentsOf: pointDescriptors)
+                snapshot.roiSamples.append(contentsOf: roiDescriptors)
+                self.sessionSnapshots[canonical] = snapshot
+            }
+        }
+    }
+
+    private func makeSpectrumSampleClipboard(
+        pixelX: Int,
+        pixelY: Int,
+        displayName: String?,
+        baseSize: (width: Int, height: Int),
+        ops: [PipelineOperation]
+    ) -> SpectrumSampleClipboard {
+        let sourcePoint = SpatialPoint(x: pixelX, y: pixelY)
+        let baseSpatial = SpatialSize(width: baseSize.width, height: baseSize.height)
+        let originalPoint = applySpatialOpsToPoint(
+            sourcePoint,
+            base: baseSpatial,
+            ops: ops,
+            direction: .inverse
+        ) ?? sourcePoint
+
+        return SpectrumSampleClipboard(
+            normalizedX: normalizeCoordinate(originalPoint.x, size: baseSize.width),
+            normalizedY: normalizeCoordinate(originalPoint.y, size: baseSize.height),
+            displayName: displayName
+        )
+    }
+
+    private func makeSpectrumROISampleClipboard(
+        rect: SpectrumROIRect,
+        displayName: String?,
+        baseSize: (width: Int, height: Int),
+        ops: [PipelineOperation]
+    ) -> SpectrumROISampleClipboard {
+        let baseSpatial = SpatialSize(width: baseSize.width, height: baseSize.height)
+        let originalRect = applySpatialOpsToRect(
+            rect,
+            base: baseSpatial,
+            ops: ops,
+            direction: .inverse
+        ) ?? rect
+        let normalized = normalizeRect(originalRect, size: baseSize)
+
+        return SpectrumROISampleClipboard(
+            normalizedMinX: normalized.minX,
+            normalizedMinY: normalized.minY,
+            normalizedMaxX: normalized.maxX,
+            normalizedMaxY: normalized.maxY,
+            displayName: displayName
+        )
+    }
     
     private func handleCubeChange(previousCube: HyperCube?) {
         adjustSpectrumGeometry(previousCube: previousCube, newCube: cube)
@@ -1564,81 +1757,173 @@ final class AppState: ObservableObject {
     }
 
     var canPasteSpectrumPoint: Bool {
-        if case .point = spectrumClipboard { return true }
-        return false
+        switch spectrumClipboard {
+        case .point:
+            return true
+        case .selections(let clipboard):
+            return !clipboard.points.isEmpty
+        default:
+            return false
+        }
     }
     
     var canPasteSpectrumROI: Bool {
-        if case .roi = spectrumClipboard { return true }
+        switch spectrumClipboard {
+        case .roi:
+            return true
+        case .selections(let clipboard):
+            return !clipboard.rois.isEmpty
+        default:
+            return false
+        }
+    }
+
+    var canPasteSpectrumSelections: Bool {
+        if case .selections(let clipboard) = spectrumClipboard {
+            return clipboard.hasAny
+        }
         return false
+    }
+
+    func canCopySpectrumSelections(from entry: CubeLibraryEntry) -> Bool {
+        guard let snapshot = snapshot(for: entry) else { return false }
+        return !snapshot.spectrumSamples.isEmpty || !snapshot.roiSamples.isEmpty
     }
 
     func copySpectrumSample(_ sample: SpectrumSample) {
         let fallbackSize = cube.flatMap { cubeSpatialSize(for: $0) }
-        let baseSize = spectrumSpatialBaseSize ?? spatialBaseSize() ?? fallbackSize
+        guard let baseSize = spectrumSpatialBaseSize ?? spatialBaseSize() ?? fallbackSize else { return }
         let ops = spatialOperations(from: pipelineOperations)
-        let originalPoint: SpatialPoint
-        if let baseSize,
-           let mapped = applySpatialOpsToPoint(
-            SpatialPoint(x: sample.pixelX, y: sample.pixelY),
-            base: SpatialSize(width: baseSize.width, height: baseSize.height),
-            ops: ops,
-            direction: .inverse
-           ) {
-            originalPoint = mapped
-        } else {
-            originalPoint = SpatialPoint(x: sample.pixelX, y: sample.pixelY)
-        }
-        
-        let normalizedX = normalizeCoordinate(originalPoint.x, size: baseSize?.width)
-        let normalizedY = normalizeCoordinate(originalPoint.y, size: baseSize?.height)
-        
-        spectrumClipboard = .point(
-            SpectrumSampleClipboard(
-                normalizedX: normalizedX,
-                normalizedY: normalizedY,
-                displayName: sample.displayName
-            )
+        let clipboard = makeSpectrumSampleClipboard(
+            pixelX: sample.pixelX,
+            pixelY: sample.pixelY,
+            displayName: sample.displayName,
+            baseSize: baseSize,
+            ops: ops
         )
+        spectrumClipboard = .point(clipboard)
     }
     
     func copyROISample(_ sample: SpectrumROISample) {
         let fallbackSize = cube.flatMap { cubeSpatialSize(for: $0) }
-        let baseSize = spectrumSpatialBaseSize ?? spatialBaseSize() ?? fallbackSize
+        guard let baseSize = spectrumSpatialBaseSize ?? spatialBaseSize() ?? fallbackSize else { return }
         let ops = spatialOperations(from: pipelineOperations)
-        let originalRect: SpectrumROIRect
-        if let baseSize,
-           let mapped = applySpatialOpsToRect(
-            sample.rect,
-            base: SpatialSize(width: baseSize.width, height: baseSize.height),
-            ops: ops,
-            direction: .inverse
-           ) {
-            originalRect = mapped
-        } else {
-            originalRect = sample.rect
-        }
-        
-        let normalized = normalizeRect(originalRect, size: baseSize)
-        spectrumClipboard = .roi(
-            SpectrumROISampleClipboard(
-                normalizedMinX: normalized.minX,
-                normalizedMinY: normalized.minY,
-                normalizedMaxX: normalized.maxX,
-                normalizedMaxY: normalized.maxY,
-                displayName: sample.displayName
-            )
+        let clipboard = makeSpectrumROISampleClipboard(
+            rect: sample.rect,
+            displayName: sample.displayName,
+            baseSize: baseSize,
+            ops: ops
         )
+        spectrumClipboard = .roi(clipboard)
+    }
+
+    func copySpectrumSelections(from entry: CubeLibraryEntry) {
+        let canonical = canonicalURL(entry.url)
+        let isCurrent = cubeURL?.standardizedFileURL == canonical
+
+        if isCurrent {
+            let fallbackSize = cube.flatMap { cubeSpatialSize(for: $0) }
+            guard let baseSize = spectrumSpatialBaseSize ?? spatialBaseSize() ?? fallbackSize else { return }
+            let ops = spatialOperations(from: pipelineOperations)
+            let points = spectrumSamples.map {
+                makeSpectrumSampleClipboard(
+                    pixelX: $0.pixelX,
+                    pixelY: $0.pixelY,
+                    displayName: $0.displayName,
+                    baseSize: baseSize,
+                    ops: ops
+                )
+            }
+            let rois = roiSamples.map {
+                makeSpectrumROISampleClipboard(
+                    rect: $0.rect,
+                    displayName: $0.displayName,
+                    baseSize: baseSize,
+                    ops: ops
+                )
+            }
+            let clipboard = SpectrumSelectionsClipboard(points: points, rois: rois)
+            guard clipboard.hasAny else { return }
+            spectrumClipboard = .selections(clipboard)
+            loadError = nil
+            return
+        }
+
+        guard let sourceSnapshot = sessionSnapshots[canonical] else { return }
+        guard !sourceSnapshot.spectrumSamples.isEmpty || !sourceSnapshot.roiSamples.isEmpty else { return }
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let loadResult = ImageLoaderFactory.load(from: canonical)
+            guard case .success(let rawCube) = loadResult,
+                  let baseSize = self.cubeSpatialSize(for: rawCube, layout: sourceSnapshot.layout) else {
+                DispatchQueue.main.async {
+                    self.loadError = LF("app.spectrum.copy_failed_for_entry", entry.displayName)
+                }
+                return
+            }
+
+            let ops = self.spatialOperations(from: sourceSnapshot.pipelineOperations)
+            let points = sourceSnapshot.spectrumSamples.map {
+                self.makeSpectrumSampleClipboard(
+                    pixelX: $0.pixelX,
+                    pixelY: $0.pixelY,
+                    displayName: $0.displayName,
+                    baseSize: baseSize,
+                    ops: ops
+                )
+            }
+            let rois = sourceSnapshot.roiSamples.map {
+                self.makeSpectrumROISampleClipboard(
+                    rect: $0.rect,
+                    displayName: $0.displayName,
+                    baseSize: baseSize,
+                    ops: ops
+                )
+            }
+            let clipboard = SpectrumSelectionsClipboard(points: points, rois: rois)
+            guard clipboard.hasAny else { return }
+
+            DispatchQueue.main.async {
+                self.spectrumClipboard = .selections(clipboard)
+                self.loadError = nil
+            }
+        }
     }
     
     func pasteSpectrumPoint(to entry: CubeLibraryEntry) {
-        guard case .point(let clipboard) = spectrumClipboard else { return }
-        pasteSpectrumPoint(clipboard, to: entry)
+        switch spectrumClipboard {
+        case .point(let clipboard):
+            pasteSpectrumPoint(clipboard, to: entry)
+        case .selections(let clipboard):
+            guard !clipboard.points.isEmpty else { return }
+            pasteSpectrumSelections(
+                SpectrumSelectionsClipboard(points: clipboard.points, rois: []),
+                to: entry
+            )
+        default:
+            return
+        }
     }
     
     func pasteSpectrumROI(to entry: CubeLibraryEntry) {
-        guard case .roi(let clipboard) = spectrumClipboard else { return }
-        pasteSpectrumROI(clipboard, to: entry)
+        switch spectrumClipboard {
+        case .roi(let clipboard):
+            pasteSpectrumROI(clipboard, to: entry)
+        case .selections(let clipboard):
+            guard !clipboard.rois.isEmpty else { return }
+            pasteSpectrumSelections(
+                SpectrumSelectionsClipboard(points: [], rois: clipboard.rois),
+                to: entry
+            )
+        default:
+            return
+        }
+    }
+
+    func pasteSpectrumSelections(to entry: CubeLibraryEntry) {
+        guard case .selections(let clipboard) = spectrumClipboard else { return }
+        pasteSpectrumSelections(clipboard, to: entry)
     }
     
     func moveOperation(from source: Int, to destination: Int) {
