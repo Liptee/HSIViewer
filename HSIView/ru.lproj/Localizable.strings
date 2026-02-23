@@ -633,3 +633,10 @@
 "pipeline.calibration.auto_white.factor.area" = "Размер области";
 "pipeline.calibration.auto_white.factor.shape" = "Форма области";
 "pipeline.calibration.auto_white.factor.glare_penalty" = "Штраф засветки";
+"mask.layers.context.merge_selected" = "Объединить выбранные слои…";
+"mask.layers.merge.sheet.title" = "Объединение слоёв";
+"mask.layers.merge.sheet.selected_count" = "Выбрано слоёв: %d";
+"mask.layers.merge.sheet.name" = "Имя нового класса";
+"mask.layers.merge.sheet.color" = "Цвет нового класса";
+"mask.layers.merge.sheet.keep_originals" = "Оставить исходные слои после объединения";
+"mask.layers.merge.sheet.merge" = "Объединить";

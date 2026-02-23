@@ -200,19 +200,102 @@ final class MaskEditorState: ObservableObject {
     
     func addMaskLayer(name: String? = nil) {
         guard let firstMask = maskLayers.first else { return }
-        let nextClassValue = Int(maskLayers.map { $0.classValue }.max() ?? 0) + 1
+        guard let suggestedClassValue = suggestedNextClassValue() else { return }
+        let nextClassValue = Int(suggestedClassValue)
         let colorIndex = (nextClassValue - 1) % MaskClassColor.palette.count
         let layer = MaskLayer(
             id: UUID(),
             name: name ?? LF("mask.class_name_numbered", nextClassValue),
             width: firstMask.width,
             height: firstMask.height,
-            classValue: UInt8(nextClassValue),
+            classValue: suggestedClassValue,
             color: MaskClassColor.palette[colorIndex]
         )
         layers.append(layer)
         undoStacks[layer.id] = []
         activeLayerID = layer.id
+    }
+
+    func suggestedNextClassValue() -> UInt8? {
+        let maxValue = Int(maskLayers.map { $0.classValue }.max() ?? 0)
+        if maxValue < 255 {
+            return UInt8(maxValue + 1)
+        }
+
+        let used = Set(maskLayers.map { Int($0.classValue) })
+        for value in 1...255 where !used.contains(value) {
+            return UInt8(value)
+        }
+        return nil
+    }
+
+    @discardableResult
+    func mergeMaskLayers(
+        layerIDs: Set<UUID>,
+        newLayerName: String,
+        newLayerColor: NSColor,
+        keepOriginalLayers: Bool
+    ) -> Bool {
+        let selected = layers.enumerated().compactMap { index, item -> (index: Int, layer: MaskLayer)? in
+            guard let mask = item as? MaskLayer, layerIDs.contains(mask.id) else { return nil }
+            return (index, mask)
+        }
+
+        guard selected.count >= 2 else { return false }
+        guard let classValue = suggestedNextClassValue() else { return false }
+        guard let first = selected.first else { return false }
+
+        let width = first.layer.width
+        let height = first.layer.height
+        let pixelCount = width * height
+        guard pixelCount > 0 else { return false }
+
+        for entry in selected {
+            guard entry.layer.width == width, entry.layer.height == height else { return false }
+            guard entry.layer.data.count >= pixelCount else { return false }
+        }
+
+        var mergedData = [UInt8](repeating: 0, count: pixelCount)
+        for entry in selected {
+            for i in 0..<pixelCount where entry.layer.data[i] != 0 {
+                mergedData[i] = classValue
+            }
+        }
+
+        var mergedLayer = MaskLayer(
+            id: UUID(),
+            name: newLayerName,
+            width: width,
+            height: height,
+            classValue: classValue,
+            color: newLayerColor
+        )
+        mergedLayer.data = mergedData
+        mergedLayer.visible = selected.contains { $0.layer.visible }
+        mergedLayer.locked = false
+        mergedLayer.activeForDrawing = selected.contains { $0.layer.activeForDrawing }
+        mergedLayer.opacity = selected.map { $0.layer.opacity }.reduce(0, +) / Double(selected.count)
+        mergedLayer.renderVersion = 1
+
+        if keepOriginalLayers {
+            let insertIndex = (selected.map { $0.index }.max() ?? (layers.count - 1)) + 1
+            layers.insert(mergedLayer, at: min(insertIndex, layers.count))
+            undoStacks[mergedLayer.id] = []
+        } else {
+            let sortedIndices = selected.map { $0.index }.sorted()
+            let insertIndex = sortedIndices.first ?? layers.count
+            for index in sortedIndices.reversed() {
+                if let mask = layers[index] as? MaskLayer {
+                    undoStacks.removeValue(forKey: mask.id)
+                }
+                layers.remove(at: index)
+            }
+            layers.insert(mergedLayer, at: min(insertIndex, layers.count))
+            undoStacks[mergedLayer.id] = []
+        }
+
+        activeLayerID = mergedLayer.id
+        return true
     }
     
     func removeMaskLayer(id: UUID) {

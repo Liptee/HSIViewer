@@ -535,6 +535,12 @@ struct MaskLayersPanelView: View {
     @State private var editingName: String = ""
     @State private var draggedLayerID: UUID?
     @State private var isDropTargeted: Bool = false
+    @State private var selectedMaskLayerIDs: Set<UUID> = []
+    @State private var showMergeSheet: Bool = false
+    @State private var mergeTargetLayerIDs: Set<UUID> = []
+    @State private var mergeLayerName: String = ""
+    @State private var mergeLayerColor: NSColor = MaskClassColor.palette.first ?? .systemRed
+    @State private var mergeKeepOriginalLayers: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -560,12 +566,12 @@ struct MaskLayersPanelView: View {
                         LayerRowView(
                             layer: layer,
                             isActive: layer.id == maskState.activeLayerID,
+                            isSelected: selectedMaskLayerIDs.contains(layer.id),
+                            selectedMaskCount: selectedMaskLayerIDs.count,
                             isEditing: editingLayerID == layer.id,
                             editingName: $editingName,
-                            onSelect: {
-                                if let _ = layer as? MaskLayer {
-                                    maskState.setActiveLayer(id: layer.id)
-                                }
+                            onSelect: { isAdditiveSelection in
+                                handleLayerSelection(layer: layer, isAdditiveSelection: isAdditiveSelection)
                             },
                             onToggleVisibility: {
                                 maskState.toggleLayerVisibility(id: layer.id)
@@ -602,7 +608,10 @@ struct MaskLayersPanelView: View {
                             } : nil,
                             onMoveDown: index < maskState.layers.count - 1 ? {
                                 maskState.moveLayer(from: index, to: index + 1)
-                            } : nil
+                            } : nil,
+                            onMergeSelected: {
+                                presentMergeSheet(triggeredBy: layer.id)
+                            }
                         )
                     }
                 }
@@ -622,6 +631,25 @@ struct MaskLayersPanelView: View {
                 .stroke(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
         }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleMetadataDrop(providers:))
+        .onReceive(maskState.$layers) { _ in
+            let validIDs = Set(maskState.maskLayers.map { $0.id })
+            selectedMaskLayerIDs = selectedMaskLayerIDs.intersection(validIDs)
+            if selectedMaskLayerIDs.isEmpty, let activeID = maskState.activeLayerID, validIDs.contains(activeID) {
+                selectedMaskLayerIDs = [activeID]
+            }
+        }
+        .sheet(isPresented: $showMergeSheet) {
+            MergeMaskLayersSheet(
+                layerName: $mergeLayerName,
+                layerColor: $mergeLayerColor,
+                keepOriginalLayers: $mergeKeepOriginalLayers,
+                selectedCount: mergeTargetLayerIDs.count,
+                onCancel: {
+                    showMergeSheet = false
+                },
+                onMerge: performMerge
+            )
+        }
     }
 
     private func handleMetadataDrop(providers: [NSItemProvider]) -> Bool {
@@ -637,14 +665,73 @@ struct MaskLayersPanelView: View {
         }
         return handled
     }
+
+    private func handleLayerSelection(layer: any MaskLayerProtocol, isAdditiveSelection: Bool) {
+        guard layer is MaskLayer else {
+            selectedMaskLayerIDs.removeAll()
+            return
+        }
+
+        if isAdditiveSelection {
+            if selectedMaskLayerIDs.contains(layer.id) {
+                selectedMaskLayerIDs.remove(layer.id)
+            } else {
+                selectedMaskLayerIDs.insert(layer.id)
+            }
+        } else {
+            selectedMaskLayerIDs = [layer.id]
+        }
+
+        maskState.setActiveLayer(id: layer.id)
+    }
+
+    private func presentMergeSheet(triggeredBy layerID: UUID) {
+        var targetIDs = selectedMaskLayerIDs
+        if !targetIDs.contains(layerID) {
+            targetIDs = [layerID]
+            selectedMaskLayerIDs = targetIDs
+        }
+
+        guard targetIDs.count >= 2 else { return }
+        guard let nextClassValue = maskState.suggestedNextClassValue() else { return }
+
+        let nextClassInt = Int(nextClassValue)
+        mergeTargetLayerIDs = targetIDs
+        mergeLayerName = LF("mask.class_name_numbered", nextClassInt)
+        mergeLayerColor = MaskClassColor.palette[(nextClassInt - 1) % MaskClassColor.palette.count]
+        mergeKeepOriginalLayers = false
+        showMergeSheet = true
+    }
+
+    private func performMerge() {
+        let trimmed = mergeLayerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let merged = maskState.mergeMaskLayers(
+            layerIDs: mergeTargetLayerIDs,
+            newLayerName: trimmed,
+            newLayerColor: mergeLayerColor,
+            keepOriginalLayers: mergeKeepOriginalLayers
+        )
+
+        guard merged else { return }
+        if let activeID = maskState.activeLayerID {
+            selectedMaskLayerIDs = [activeID]
+        } else {
+            selectedMaskLayerIDs.removeAll()
+        }
+        showMergeSheet = false
+    }
 }
 
 struct LayerRowView: View {
     let layer: any MaskLayerProtocol
     let isActive: Bool
+    let isSelected: Bool
+    let selectedMaskCount: Int
     let isEditing: Bool
     @Binding var editingName: String
-    let onSelect: () -> Void
+    let onSelect: (Bool) -> Void
     let onToggleVisibility: () -> Void
     let onToggleLock: () -> Void
     let onToggleDrawing: () -> Void
@@ -655,6 +742,7 @@ struct LayerRowView: View {
     let onOpacityChange: (Double) -> Void
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
+    var onMergeSelected: (() -> Void)?
     
     @State private var isHovered: Bool = false
     
@@ -768,22 +856,39 @@ struct LayerRowView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
+                .fill(
+                    isActive
+                    ? Color.accentColor.opacity(0.15)
+                    : (isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isActive ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
+                .stroke(
+                    isActive
+                    ? Color.accentColor.opacity(0.4)
+                    : (isSelected ? Color.accentColor.opacity(0.22) : Color.clear),
+                    lineWidth: 1
+                )
         )
         .scaleEffect(isHovered ? 1.012 : 1.0)
         .shadow(color: hoverAccent.opacity(isHovered ? 0.28 : 0.0), radius: isHovered ? 8 : 0, x: 0, y: 4)
         .animation(.easeInOut(duration: 0.12), value: isHovered)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
+        .onTapGesture {
+            onSelect(hasAdditiveSelectionModifier())
+        }
         .onHover { hovering in
             isHovered = hovering
         }
         .contextMenu {
             if !isReference {
+                if isSelected, selectedMaskCount >= 2, onMergeSelected != nil {
+                    Button(L("mask.layers.context.merge_selected")) {
+                        onMergeSelected?()
+                    }
+                    Divider()
+                }
                 Button("Переименовать", action: onStartEditing)
                 if onMoveUp != nil {
                     Button("Переместить вверх", action: { onMoveUp?() })
@@ -795,6 +900,71 @@ struct LayerRowView: View {
                 Button("Удалить", role: .destructive, action: onDelete)
             }
         }
+    }
+
+    private func hasAdditiveSelectionModifier() -> Bool {
+        let eventFlags = NSApp.currentEvent?.modifierFlags ?? []
+        return eventFlags.contains(.command) || eventFlags.contains(.shift)
+    }
+}
+
+private struct MergeMaskLayersSheet: View {
+    @Binding var layerName: String
+    @Binding var layerColor: NSColor
+    @Binding var keepOriginalLayers: Bool
+
+    let selectedCount: Int
+    let onCancel: () -> Void
+    let onMerge: () -> Void
+
+    private var canMerge: Bool {
+        !layerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedCount >= 2
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(L("mask.layers.merge.sheet.title"))
+                .font(.system(size: 14, weight: .semibold))
+
+            Text(LF("mask.layers.merge.sheet.selected_count", selectedCount))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("mask.layers.merge.sheet.name"))
+                    .font(.system(size: 11, weight: .medium))
+                TextField("", text: $layerName)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("mask.layers.merge.sheet.color"))
+                    .font(.system(size: 11, weight: .medium))
+                ColorPicker(
+                    "",
+                    selection: Binding(
+                        get: { Color(layerColor) },
+                        set: { layerColor = NSColor($0) }
+                    ),
+                    supportsOpacity: false
+                )
+                .labelsHidden()
+            }
+
+            Toggle(L("mask.layers.merge.sheet.keep_originals"), isOn: $keepOriginalLayers)
+                .toggleStyle(.checkbox)
+
+            HStack {
+                Spacer()
+                Button(L("common.cancel"), action: onCancel)
+                    .keyboardShortcut(.escape, modifiers: [])
+                Button(L("mask.layers.merge.sheet.merge"), action: onMerge)
+                    .keyboardShortcut(.return, modifiers: [])
+                    .disabled(!canMerge)
+            }
+        }
+        .padding(16)
+        .frame(width: 360)
     }
 }
 
