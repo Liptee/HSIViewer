@@ -609,6 +609,9 @@ struct MaskLayersPanelView: View {
                             onMoveDown: index < maskState.layers.count - 1 ? {
                                 maskState.moveLayer(from: index, to: index + 1)
                             } : nil,
+                            onExtractLayerSpectrum: {
+                                _ = state.extractMaskLayerSpectrum(for: layer.id)
+                            },
                             onMergeSelected: {
                                 presentMergeSheet(triggeredBy: layer.id)
                             }
@@ -742,6 +745,7 @@ struct LayerRowView: View {
     let onOpacityChange: (Double) -> Void
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
+    var onExtractLayerSpectrum: (() -> Void)?
     var onMergeSelected: (() -> Void)?
     
     @State private var isHovered: Bool = false
@@ -883,6 +887,12 @@ struct LayerRowView: View {
         }
         .contextMenu {
             if !isReference {
+                if onExtractLayerSpectrum != nil {
+                    Button(L("mask.layers.context.show_spectrum")) {
+                        onExtractLayerSpectrum?()
+                    }
+                    Divider()
+                }
                 if isSelected, selectedMaskCount >= 2, onMergeSelected != nil {
                     Button(L("mask.layers.context.merge_selected")) {
                         onMergeSelected?()

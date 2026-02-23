@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 private enum GraphWindowDataset: String, CaseIterable, Identifiable {
     case points
     case roi
+    case mask
     
     var id: String { rawValue }
     
@@ -12,6 +13,7 @@ private enum GraphWindowDataset: String, CaseIterable, Identifiable {
         switch self {
         case .points: return L("graph.window.dataset.points")
         case .roi: return L("graph.window.dataset.roi")
+        case .mask: return L("graph.window.dataset.mask")
         }
     }
 }
@@ -88,6 +90,7 @@ private enum GraphExportFormat {
 private enum GraphSeriesKind: String, Equatable {
     case point
     case roi
+    case maskLayer
 }
 
 private struct GraphSeries: Identifiable, Equatable {
@@ -691,7 +694,7 @@ struct GraphWindowView: View {
     
     private func libraryEntryRow(entry: CubeLibraryEntry) -> some View {
         let counts = sampleCounts(for: entry)
-        let hasSamples = counts.spectrum > 0 || counts.roi > 0
+        let hasSamples = counts.spectrum > 0 || counts.roi > 0 || counts.mask > 0
         let isVisible = spectrumCache.visibleEntries.contains(entry.id)
         let isCurrentImage = entry.canonicalPath == state.cubeURL?.standardizedFileURL.path
         
@@ -728,6 +731,11 @@ struct GraphWindowView: View {
                     }
                     if counts.roi > 0 {
                         Label("\(counts.roi)", systemImage: "rectangle.dashed")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                    if counts.mask > 0 {
+                        Label("\(counts.mask)", systemImage: "square.3.layers.3d")
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
                     }
@@ -1442,34 +1450,63 @@ struct GraphWindowView: View {
                         )
                     }
                 }
+            case .mask:
+                if isCurrent {
+                    result += state.maskLayerSamples.map {
+                        GraphSeries(
+                            id: $0.id,
+                            title: $0.displayName ?? LF("mask.class_name_numbered", Int($0.classValue)),
+                            values: $0.values,
+                            wavelengths: $0.wavelengths,
+                            defaultColor: Color($0.nsColor),
+                            sourceName: entry.displayName,
+                            kind: .maskLayer,
+                            isCurrentCubeSource: true
+                        )
+                    }
+                } else if let cached = spectrumCache.entries[entry.id]?.maskLayerSamples {
+                    result += cached.map { sample in
+                        GraphSeries(
+                            id: sample.id,
+                            title: sample.effectiveName,
+                            values: sample.values,
+                            wavelengths: sample.wavelengths,
+                            defaultColor: SpectrumColorPalette.colors[safe: sample.colorIndex % SpectrumColorPalette.colors.count].map { Color($0) } ?? .blue,
+                            sourceName: entry.displayName,
+                            kind: .maskLayer,
+                            isCurrentCubeSource: false
+                        )
+                    }
+                }
             }
         }
         
         return result
     }
 
-    private func sampleCounts(for entry: CubeLibraryEntry) -> (spectrum: Int, roi: Int) {
+    private func sampleCounts(for entry: CubeLibraryEntry) -> (spectrum: Int, roi: Int, mask: Int) {
         let isCurrent = entry.canonicalPath == state.cubeURL?.standardizedFileURL.path
         if isCurrent {
-            return (state.spectrumSamples.count, state.roiSamples.count)
+            return (state.spectrumSamples.count, state.roiSamples.count, state.maskLayerSamples.count)
         }
         if let cached = spectrumCache.entries[entry.id] {
-            return (cached.spectrumSamples.count, cached.roiSamples.count)
+            return (cached.spectrumSamples.count, cached.roiSamples.count, cached.maskLayerSamples.count)
         }
-        return (0, 0)
+        return (0, 0, 0)
     }
     
     private var visibleSourceCount: Int {
         let visible = spectrumCache.visibleEntries
         return state.libraryEntries.filter { entry in
-            visible.contains(entry.id) && (sampleCounts(for: entry).spectrum > 0 || sampleCounts(for: entry).roi > 0)
+            let counts = sampleCounts(for: entry)
+            return visible.contains(entry.id) && (counts.spectrum > 0 || counts.roi > 0 || counts.mask > 0)
         }.count
     }
     
     private func showAllSources() {
         let ids = state.libraryEntries.compactMap { entry -> String? in
             let counts = sampleCounts(for: entry)
-            return (counts.spectrum > 0 || counts.roi > 0) ? entry.id : nil
+            return (counts.spectrum > 0 || counts.roi > 0 || counts.mask > 0) ? entry.id : nil
         }
         spectrumCache.visibleEntries = Set(ids)
     }
@@ -1573,9 +1610,11 @@ struct GraphWindowView: View {
         var ids = Set<UUID>()
         ids.formUnion(state.spectrumSamples.map(\.id))
         ids.formUnion(state.roiSamples.map(\.id))
+        ids.formUnion(state.maskLayerSamples.map(\.id))
         for entry in spectrumCache.entries.values {
             ids.formUnion(entry.spectrumSamples.map(\.id))
             ids.formUnion(entry.roiSamples.map(\.id))
+            ids.formUnion(entry.maskLayerSamples.map(\.id))
         }
         return ids
     }

@@ -76,6 +76,7 @@ final class AppState: ObservableObject {
             if oldValue == nil && wavelengths == nil { return }
             refreshSpectrumSamples()
             refreshROISamples()
+            refreshMaskLayerSamples()
             refreshColorSynthesisDefaultsIfNeeded()
         }
     }
@@ -165,6 +166,7 @@ final class AppState: ObservableObject {
     @Published var pendingSpectrumSample: SpectrumSample?
     @Published var roiSamples: [SpectrumROISample] = []
     @Published var pendingROISample: SpectrumROISample?
+    @Published var maskLayerSamples: [SpectrumMaskLayerSample] = []
     @Published var rulerPoints: [RulerPoint] = []
     @Published var rulerMode: RulerMode = .measure
     @Published var selectedRulerPointID: UUID?
@@ -172,6 +174,7 @@ final class AppState: ObservableObject {
         didSet {
             guard oldValue != roiAggregationMode else { return }
             refreshROISamples()
+            refreshMaskLayerSamples()
         }
     }
     
@@ -193,6 +196,7 @@ final class AppState: ObservableObject {
     private var libraryExportDismissWorkItem: DispatchWorkItem?
     private var spectrumColorCounter: Int = 0
     private var roiColorCounter: Int = 0
+    private var maskLayerColorCounter: Int = 0
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
@@ -242,6 +246,7 @@ final class AppState: ObservableObject {
     private var pipelineProcessingMessagesByCubeID: [UUID: String] = [:]
     private var pendingRestoreSpectrumDescriptors: [SpectrumSampleDescriptor]?
     private var pendingRestoreROISampleDescriptors: [SpectrumROISampleDescriptor]?
+    private var pendingRestoreMaskLayerSampleDescriptors: [SpectrumMaskLayerSampleDescriptor]?
     private var pendingRestoreRulerPointDescriptors: [RulerPointDescriptor]?
     private var maskEditorCubePath: String?
     private var maskSpatialOps: [PipelineOperation] = []
@@ -433,6 +438,20 @@ final class AppState: ObservableObject {
         let upper = max(lower, min(Int(trimEnd), maxIndex))
         let range = lower...upper
         return samples.compactMap { $0.trimmed(to: range) }
+    }
+
+    var displayedMaskLayerSamples: [SpectrumMaskLayerSample] {
+        let samples = maskLayerSamples
+        guard isTrimMode else { return samples }
+        let maxIndex = max(channelCount - 1, 0)
+        let lower = max(0, min(Int(trimStart), maxIndex))
+        let upper = max(lower, min(Int(trimEnd), maxIndex))
+        let range = lower...upper
+        return samples.compactMap { $0.trimmed(to: range) }
+    }
+
+    var hasMaskLayerSpectra: Bool {
+        !maskLayerSamples.isEmpty
     }
 
     var currentCubeDisplayName: String {
@@ -1009,7 +1028,7 @@ final class AppState: ObservableObject {
             activeAnalysisTool = .none
         } else {
             activeAnalysisTool = tool
-            if tool == .spectrumGraph || tool == .spectrumGraphROI {
+            if tool == .spectrumGraph || tool == .spectrumGraphROI || tool == .spectrumGraphLayer {
                 isGraphPanelExpanded = true
             }
         }
@@ -1110,6 +1129,42 @@ final class AppState: ObservableObject {
         var sample = roiSamples[idx]
         sample.displayName = name?.isEmpty == true ? nil : name
         roiSamples[idx] = sample
+    }
+
+    @discardableResult
+    func extractMaskLayerSpectrum(for layerID: UUID) -> Bool {
+        guard cube != nil else { return false }
+        guard let layer = maskEditorState.maskLayers.first(where: { $0.id == layerID }) else { return false }
+        guard let sample = makeMaskLayerSample(
+            layerID: layer.id,
+            classValue: layer.classValue,
+            colorIndex: maskLayerColorCounter
+        ) else { return false }
+
+        if let existingIndex = maskLayerSamples.firstIndex(where: { $0.layerID == layer.id }) {
+            maskLayerSamples[existingIndex] = sample
+        } else {
+            maskLayerSamples.append(sample)
+            maskLayerColorCounter = max(maskLayerColorCounter, sample.colorIndex + 1)
+        }
+
+        activeAnalysisTool = .spectrumGraphLayer
+        isGraphPanelExpanded = true
+        return true
+    }
+
+    func removeMaskLayerSample(with id: UUID) {
+        maskLayerSamples.removeAll { $0.id == id }
+        if maskLayerSamples.isEmpty && activeAnalysisTool == .spectrumGraphLayer {
+            activeAnalysisTool = .none
+        }
+    }
+
+    func renameMaskLayerSample(id: UUID, to name: String?) {
+        guard let idx = maskLayerSamples.firstIndex(where: { $0.id == id }) else { return }
+        var sample = maskLayerSamples[idx]
+        sample.displayName = name?.isEmpty == true ? nil : name
+        maskLayerSamples[idx] = sample
     }
 
     func updateROISampleRect(id: UUID, rect: SpectrumROIRect) -> Bool {
@@ -1283,6 +1338,7 @@ final class AppState: ObservableObject {
             maskEditorState.syncWithImageSize(width: size.width, height: size.height)
         }
         trackMaskSpatialContextForCurrentPipeline()
+        refreshMaskLayerSamples()
         return true
     }
 
@@ -1317,6 +1373,7 @@ final class AppState: ObservableObject {
                     )
                     self.maskEditorCubePath = self.cubeURL?.standardizedFileURL.path
                     self.trackMaskSpatialContextForCurrentPipeline()
+                    self.refreshMaskLayerSamples()
                     if self.viewMode != .mask {
                         self.viewMode = .mask
                     }
@@ -1360,6 +1417,7 @@ final class AppState: ObservableObject {
                     )
                     self.maskEditorCubePath = self.cubeURL?.standardizedFileURL.path
                     self.trackMaskSpatialContextForCurrentPipeline()
+                    self.refreshMaskLayerSamples()
                     if self.viewMode != .mask {
                         self.viewMode = .mask
                     }
@@ -2219,14 +2277,17 @@ final class AppState: ObservableObject {
     private func restorePendingSpatialSelectionsIfNeeded() {
         guard let descriptors = pendingRestoreSpectrumDescriptors,
               let roiDescriptors = pendingRestoreROISampleDescriptors,
+              let maskLayerDescriptors = pendingRestoreMaskLayerSampleDescriptors,
               let rulerDescriptors = pendingRestoreRulerPointDescriptors else {
             return
         }
         restoreSpectrumSamples(from: descriptors)
         restoreROISamples(from: roiDescriptors)
+        restoreMaskLayerSamples(from: maskLayerDescriptors)
         restoreRulerPoints(from: rulerDescriptors)
         pendingRestoreSpectrumDescriptors = nil
         pendingRestoreROISampleDescriptors = nil
+        pendingRestoreMaskLayerSampleDescriptors = nil
         pendingRestoreRulerPointDescriptors = nil
     }
 
@@ -3040,7 +3101,8 @@ final class AppState: ObservableObject {
                         libraryID: canonical.path,
                         displayName: displayName,
                         spectrumSamples: snapshot.spectrumSamples,
-                        roiSamples: snapshot.roiSamples
+                        roiSamples: snapshot.roiSamples,
+                        maskLayerSamples: snapshot.maskLayerSamples
                     )
                 case .failure(let error):
                     self.loadError = error.localizedDescription
@@ -3503,6 +3565,7 @@ final class AppState: ObservableObject {
             spectrumSpatialSize = nil
             pendingRestoreSpectrumDescriptors = snapshot.spectrumSamples
             pendingRestoreROISampleDescriptors = snapshot.roiSamples
+            pendingRestoreMaskLayerSampleDescriptors = snapshot.maskLayerSamples
             pendingRestoreRulerPointDescriptors = snapshot.rulerPoints
             spectrumSpatialOps = spatialOperations(from: pipelineOperations)
             spectrumSpatialBaseSize = spatialBaseSize()
@@ -3514,9 +3577,11 @@ final class AppState: ObservableObject {
             }
             restoreSpectrumSamples(from: snapshot.spectrumSamples)
             restoreROISamples(from: snapshot.roiSamples)
+            restoreMaskLayerSamples(from: snapshot.maskLayerSamples)
             restoreRulerPoints(from: snapshot.rulerPoints)
             pendingRestoreSpectrumDescriptors = nil
             pendingRestoreROISampleDescriptors = nil
+            pendingRestoreMaskLayerSampleDescriptors = nil
             pendingRestoreRulerPointDescriptors = nil
         }
     }
@@ -3539,7 +3604,8 @@ final class AppState: ObservableObject {
             libraryID: libraryID,
             displayName: displayName,
             spectrumSamples: snapshot.spectrumSamples,
-            roiSamples: snapshot.roiSamples
+            roiSamples: snapshot.roiSamples,
+            maskLayerSamples: snapshot.maskLayerSamples
         )
     }
     
@@ -3590,6 +3656,9 @@ final class AppState: ObservableObject {
         spectrumRotationTurns = pipelineRotationTurns()
         spectrumSpatialOps = []
         spectrumSpatialBaseSize = nil
+        pendingRestoreSpectrumDescriptors = nil
+        pendingRestoreROISampleDescriptors = nil
+        pendingRestoreMaskLayerSampleDescriptors = nil
         pendingRestoreRulerPointDescriptors = nil
         maskEditorState.clear()
         maskEditorCubePath = nil
@@ -3630,6 +3699,17 @@ final class AppState: ObservableObject {
                 minY: $0.rect.minY,
                 width: $0.rect.width,
                 height: $0.rect.height,
+                colorIndex: $0.colorIndex,
+                displayName: $0.displayName,
+                values: $0.values,
+                wavelengths: $0.wavelengths
+            )
+        }
+        let maskLayerDescriptors = maskLayerSamples.map {
+            SpectrumMaskLayerSampleDescriptor(
+                id: $0.id,
+                layerID: $0.layerID,
+                classValue: $0.classValue,
                 colorIndex: $0.colorIndex,
                 displayName: $0.displayName,
                 values: $0.values,
@@ -3679,6 +3759,7 @@ final class AppState: ObservableObject {
             imageOffset: imageOffset,
             spectrumSamples: descriptors,
             roiSamples: roiDescriptors,
+            maskLayerSamples: maskLayerDescriptors,
             rulerPoints: rulerDescriptors,
             roiAggregationMode: roiAggregationMode,
             colorSynthesisConfig: clampedConfig,
@@ -3944,6 +4025,26 @@ final class AppState: ObservableObject {
             displayName: displayName
         )
     }
+
+    private func makeMaskLayerSample(
+        layerID: UUID,
+        classValue: UInt8,
+        colorIndex: Int,
+        id: UUID = UUID(),
+        displayName: String? = nil
+    ) -> SpectrumMaskLayerSample? {
+        guard let layer = maskEditorState.maskLayers.first(where: { $0.id == layerID }) else { return nil }
+        guard let spectrumValues = buildMaskLayerSpectrumValues(layer: layer) else { return nil }
+        return SpectrumMaskLayerSample(
+            id: id,
+            layerID: layer.id,
+            classValue: classValue,
+            values: spectrumValues,
+            wavelengths: wavelengths,
+            colorIndex: colorIndex,
+            displayName: displayName ?? layer.name
+        )
+    }
     
     private func normalizedROIRect(_ rect: SpectrumROIRect) -> SpectrumROIRect? {
         guard let cube = cube else { return nil }
@@ -4007,12 +4108,75 @@ final class AppState: ObservableObject {
         return aggregated
     }
 
+    private func buildMaskLayerSpectrumValues(layer: MaskLayer) -> [Double]? {
+        guard let cube = cube else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        guard let axes = cube.axes(for: activeLayout) else { return nil }
+
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard width > 0, height > 0, channels > 0 else { return nil }
+        guard layer.width == width, layer.height == height else { return nil }
+        guard layer.data.count >= width * height else { return nil }
+
+        let activeIndices = layer.data.enumerated().compactMap { index, value -> Int? in
+            value == 0 ? nil : index
+        }
+        guard !activeIndices.isEmpty else { return nil }
+
+        var aggregated = [Double](repeating: 0, count: channels)
+        for ch in 0..<channels {
+            switch roiAggregationMode {
+            case .mean:
+                var sum = 0.0
+                for linearIndex in activeIndices {
+                    let y = linearIndex / width
+                    let x = linearIndex - y * width
+                    var indices = [0, 0, 0]
+                    indices[axes.channel] = ch
+                    indices[axes.height] = y
+                    indices[axes.width] = x
+                    sum += cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+                }
+                aggregated[ch] = sum / Double(activeIndices.count)
+            case .median:
+                var buffer: [Double] = []
+                buffer.reserveCapacity(activeIndices.count)
+                for linearIndex in activeIndices {
+                    let y = linearIndex / width
+                    let x = linearIndex - y * width
+                    var indices = [0, 0, 0]
+                    indices[axes.channel] = ch
+                    indices[axes.height] = y
+                    indices[axes.width] = x
+                    buffer.append(cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2]))
+                }
+                let sorted = buffer.sorted()
+                let mid = sorted.count / 2
+                if sorted.count % 2 == 0 {
+                    aggregated[ch] = (sorted[mid - 1] + sorted[mid]) / 2.0
+                } else {
+                    aggregated[ch] = sorted[mid]
+                }
+            }
+        }
+
+        return aggregated
+    }
+
     private func nextSpectrumColorIndex(in descriptors: [SpectrumSampleDescriptor]) -> Int {
         let maxIndex = descriptors.map(\.colorIndex).max() ?? -1
         return maxIndex + 1
     }
     
     private func nextSpectrumColorIndex(in descriptors: [SpectrumROISampleDescriptor]) -> Int {
+        let maxIndex = descriptors.map(\.colorIndex).max() ?? -1
+        return maxIndex + 1
+    }
+
+    private func nextSpectrumColorIndex(in descriptors: [SpectrumMaskLayerSampleDescriptor]) -> Int {
         let maxIndex = descriptors.map(\.colorIndex).max() ?? -1
         return maxIndex + 1
     }
@@ -4083,6 +4247,36 @@ final class AppState: ObservableObject {
                 id: pending.id,
                 displayName: pending.displayName
             )
+        }
+    }
+
+    private func refreshMaskLayerSamples() {
+        guard cube != nil else {
+            maskLayerSamples.removeAll()
+            maskLayerColorCounter = 0
+            return
+        }
+        if maskLayerSamples.isEmpty {
+            return
+        }
+
+        var updated: [SpectrumMaskLayerSample] = []
+        for sample in maskLayerSamples {
+            if let refreshed = makeMaskLayerSample(
+                layerID: sample.layerID,
+                classValue: sample.classValue,
+                colorIndex: sample.colorIndex,
+                id: sample.id,
+                displayName: sample.displayName
+            ) {
+                updated.append(refreshed)
+            }
+        }
+        maskLayerSamples = updated
+        let maxIndex = updated.map(\.colorIndex).max() ?? -1
+        maskLayerColorCounter = max(maxIndex + 1, updated.count)
+        if maskLayerSamples.isEmpty && activeAnalysisTool == .spectrumGraphLayer {
+            activeAnalysisTool = .none
         }
     }
 
@@ -4164,6 +4358,7 @@ final class AppState: ObservableObject {
         guard !maskEditorState.maskLayers.isEmpty else {
             maskSpatialOps = currentOps
             maskSpatialBaseSize = currentBaseTuple
+            refreshMaskLayerSamples()
             return
         }
 
@@ -4194,6 +4389,7 @@ final class AppState: ObservableObject {
 
         maskSpatialOps = currentOps
         maskSpatialBaseSize = currentBaseTuple
+        refreshMaskLayerSamples()
     }
 
     private func spatialOperations(from operations: [PipelineOperation]) -> [PipelineOperation] {
@@ -4900,6 +5096,33 @@ final class AppState: ObservableObject {
         roiColorCounter = max(nextColorIndex, restored.count)
     }
 
+    private func restoreMaskLayerSamples(from descriptors: [SpectrumMaskLayerSampleDescriptor]) {
+        guard cube != nil else {
+            maskLayerSamples.removeAll()
+            maskLayerColorCounter = 0
+            return
+        }
+
+        var restored: [SpectrumMaskLayerSample] = []
+        var nextColorIndex = 0
+
+        for descriptor in descriptors {
+            if let sample = makeMaskLayerSample(
+                layerID: descriptor.layerID,
+                classValue: descriptor.classValue,
+                colorIndex: descriptor.colorIndex,
+                id: descriptor.id,
+                displayName: descriptor.displayName
+            ) {
+                restored.append(sample)
+                nextColorIndex = max(nextColorIndex, descriptor.colorIndex + 1)
+            }
+        }
+
+        maskLayerSamples = restored
+        maskLayerColorCounter = max(nextColorIndex, restored.count)
+    }
+
     private func restoreRulerPoints(from descriptors: [RulerPointDescriptor]) {
         guard cube != nil else {
             rulerPoints.removeAll()
@@ -4934,6 +5157,8 @@ final class AppState: ObservableObject {
         roiSamples.removeAll()
         pendingROISample = nil
         roiColorCounter = 0
+        maskLayerSamples.removeAll()
+        maskLayerColorCounter = 0
         rulerPoints.removeAll()
         selectedRulerPointID = nil
     }
@@ -4966,6 +5191,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
     case none
     case spectrumGraph
     case spectrumGraphROI
+    case spectrumGraphLayer
     case ruler
     
     var id: String { rawValue }
@@ -4975,6 +5201,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .none: return ""
         case .spectrumGraph: return L("График спектра")
         case .spectrumGraphROI: return L("График спектра ROI")
+        case .spectrumGraphLayer: return L("График спектра слоя")
         case .ruler: return L("Линейка")
         }
     }
@@ -4984,6 +5211,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .none: return ""
         case .spectrumGraph: return "chart.xyaxis.line"
         case .spectrumGraphROI: return "square.dashed.inset.filled"
+        case .spectrumGraphLayer: return "square.3.layers.3d"
         case .ruler: return "ruler"
         }
     }
@@ -5137,6 +5365,40 @@ struct SpectrumROISample: Identifiable, Equatable {
             wavelengths: trimmedWavelengths,
             colorIndex: colorIndex
         )
+    }
+}
+
+struct SpectrumMaskLayerSample: Identifiable, Equatable {
+    let id: UUID
+    let layerID: UUID
+    let classValue: UInt8
+    let values: [Double]
+    let wavelengths: [Double]?
+    let colorIndex: Int
+    var displayName: String?
+
+    init(
+        id: UUID = UUID(),
+        layerID: UUID,
+        classValue: UInt8,
+        values: [Double],
+        wavelengths: [Double]?,
+        colorIndex: Int,
+        displayName: String? = nil
+    ) {
+        self.id = id
+        self.layerID = layerID
+        self.classValue = classValue
+        self.values = values
+        self.wavelengths = wavelengths
+        self.colorIndex = colorIndex
+        self.displayName = displayName
+    }
+
+    var nsColor: NSColor {
+        let palette = SpectrumColorPalette.colors
+        guard !palette.isEmpty else { return .systemPink }
+        return palette[colorIndex % palette.count]
     }
 }
 

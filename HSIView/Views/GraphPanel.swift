@@ -14,6 +14,7 @@ struct GraphPanel: View {
         case inactive
         case points
         case roi
+        case maskLayer
     }
     
     private var graphMode: GraphMode {
@@ -22,6 +23,8 @@ struct GraphPanel: View {
             return .points
         case .spectrumGraphROI:
             return .roi
+        case .spectrumGraphLayer:
+            return .maskLayer
         default:
             return .inactive
         }
@@ -33,6 +36,8 @@ struct GraphPanel: View {
             return L("graph.panel.title.spectrum")
         case .roi:
             return L("graph.panel.title.roi")
+        case .maskLayer:
+            return L("graph.panel.title.mask_layer")
         case .inactive:
             return L("graph.panel.title.spectrum")
         }
@@ -44,6 +49,8 @@ struct GraphPanel: View {
             return "chart.xyaxis.line"
         case .roi:
             return "square.dashed.inset.filled"
+        case .maskLayer:
+            return "square.3.layers.3d"
         case .inactive:
             return "chart.xyaxis.line"
         }
@@ -55,6 +62,8 @@ struct GraphPanel: View {
             return state.spectrumSamples.isEmpty ? L("graph.panel.status.no_points") : LF("graph.panel.status.saved_points", state.spectrumSamples.count)
         case .roi:
             return state.roiSamples.isEmpty ? L("graph.panel.status.no_roi") : LF("graph.panel.status.roi_count", state.roiSamples.count)
+        case .maskLayer:
+            return state.maskLayerSamples.isEmpty ? L("graph.panel.status.no_mask_layer") : LF("graph.panel.status.mask_layer_count", state.maskLayerSamples.count)
         case .inactive:
             return L("graph.panel.status.no_tool")
         }
@@ -109,6 +118,16 @@ struct GraphPanel: View {
                 } else {
                     roiChartSection(state.displayedROISamples)
                 }
+            case .maskLayer:
+                if state.displayedMaskLayerSamples.isEmpty {
+                    emptyState(
+                        icon: "square.3.layers.3d",
+                        title: L("graph.panel.empty.select_mask_layer"),
+                        subtitle: L("graph.panel.empty.mask_layer_spectrum")
+                    )
+                } else {
+                    maskLayerChartSection(state.displayedMaskLayerSamples)
+                }
             }
         }
         .frame(width: panelWidth)
@@ -133,6 +152,13 @@ struct GraphPanel: View {
         .onChange(of: state.displayedROISamples) { samples in
             pruneHiddenIDs(validIDs: samples.map(\.id))
             guard selectedSampleID != nil, graphMode == .roi else { return }
+            if !samples.contains(where: { $0.id == selectedSampleID }) {
+                selectedSampleID = nil
+            }
+        }
+        .onChange(of: state.displayedMaskLayerSamples) { samples in
+            pruneHiddenIDs(validIDs: samples.map(\.id))
+            guard selectedSampleID != nil, graphMode == .maskLayer else { return }
             if !samples.contains(where: { $0.id == selectedSampleID }) {
                 selectedSampleID = nil
             }
@@ -237,6 +263,37 @@ struct GraphPanel: View {
             .padding(.top, 4)
         }
     }
+
+    private func maskLayerSamplesLegend(_ samples: [SpectrumMaskLayerSample], cubeName: String) -> some View {
+        let layerNamesByID = Dictionary(uniqueKeysWithValues: state.maskEditorState.maskLayers.map { ($0.id, $0.name) })
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Divider()
+
+            ForEach(samples) { sample in
+                let resolvedTitle = sample.displayName
+                    ?? layerNamesByID[sample.layerID]
+                    ?? LF("mask.class_name_numbered", Int(sample.classValue))
+                let title = "\(cubeName): \(resolvedTitle)"
+                MaskLayerSampleRow(
+                    sample: sample,
+                    isSelected: selectedSampleID == sample.id,
+                    isHidden: hiddenSampleIDs.contains(sample.id),
+                    title: title,
+                    onSelect: {
+                        selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
+                        hasFocus = true
+                    },
+                    onToggleHidden: { toggleHidden(id: sample.id) },
+                    onRename: { newName in
+                        state.renameMaskLayerSample(id: sample.id, to: newName)
+                    },
+                    editingSampleID: $editingSampleID
+                )
+            }
+            .padding(.top, 4)
+        }
+    }
     
     private var toggleButton: some View {
         Button(action: {
@@ -266,6 +323,8 @@ extension GraphPanel {
             deletePointSamples(samplesMatching(ids: [selectedID]))
         case .roi:
             deleteROISamples(roiSamplesMatching(ids: [selectedID]))
+        case .maskLayer:
+            deleteMaskLayerSamples(maskLayerSamplesMatching(ids: [selectedID]))
         case .inactive:
             break
         }
@@ -303,6 +362,19 @@ extension GraphPanel {
     
     private func roiSamplesMatching(ids: [UUID]) -> [SpectrumROISample] {
         state.displayedROISamples.filter { ids.contains($0.id) }
+    }
+
+    private func deleteMaskLayerSamples(_ samples: [SpectrumMaskLayerSample]) {
+        for sample in samples {
+            state.removeMaskLayerSample(with: sample.id)
+            if selectedSampleID == sample.id {
+                selectedSampleID = nil
+            }
+        }
+    }
+
+    private func maskLayerSamplesMatching(ids: [UUID]) -> [SpectrumMaskLayerSample] {
+        state.displayedMaskLayerSamples.filter { ids.contains($0.id) }
     }
 }
 
@@ -471,6 +543,83 @@ private struct ROISampleRow: View {
         isEditing = true
     }
     
+    private func commitName() {
+        isEditing = false
+        onRename(nameText.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+}
+
+private struct MaskLayerSampleRow: View {
+    @EnvironmentObject var state: AppState
+    let sample: SpectrumMaskLayerSample
+    let isSelected: Bool
+    let isHidden: Bool
+    let title: String
+    let onSelect: () -> Void
+    let onToggleHidden: () -> Void
+    let onRename: (String?) -> Void
+    @Binding var editingSampleID: UUID?
+
+    @State private var isEditing: Bool = false
+    @State private var nameText: String = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(sample.displayColor)
+                .frame(width: 10, height: 10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 2)
+                        .stroke(Color.white.opacity(0.7), lineWidth: 0.5)
+                )
+            if isEditing {
+                TextField(state.localized("Имя"), text: $nameText, onCommit: commitName)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                    .frame(maxWidth: 180)
+            } else {
+                Text(title)
+                    .font(.system(size: 10))
+            }
+            Spacer()
+            Button(action: onToggleHidden) {
+                Image(systemName: isHidden ? "eye.slash" : "eye")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(isHidden ? .secondary : .primary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect()
+        }
+        .onLongPressGesture {
+            startEditing()
+        }
+        .onAppear {
+            nameText = sample.displayName ?? ""
+        }
+        .onChange(of: editingSampleID) { newValue in
+            guard newValue == sample.id else { return }
+            startEditing()
+            editingSampleID = nil
+        }
+    }
+
+    private func startEditing() {
+        nameText = sample.displayName ?? ""
+        isEditing = true
+    }
+
     private func commitName() {
         isEditing = false
         onRename(nameText.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -790,6 +939,64 @@ extension GraphPanel {
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                     }
+                }
+            }
+        }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private func maskLayerChartSection(_ samples: [SpectrumMaskLayerSample]) -> some View {
+        let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
+        let usesWavelengths = samples.contains { $0.wavelengths != nil }
+        let axisLabel = usesWavelengths ? L("graph.axis.wavelength_nm") : L("graph.axis.channel")
+        let cubeName = state.currentCubeDisplayName
+        let series = visibleSamples.map {
+            SpectrumChartSeries(
+                id: $0.id,
+                values: $0.values,
+                wavelengths: $0.wavelengths,
+                color: $0.displayColor
+            )
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
+            chartView(series: series, axisLabel: axisLabel)
+
+            maskLayerSamplesLegend(samples, cubeName: cubeName)
+
+            Picker(L("graph.roi.method"), selection: $state.roiAggregationMode) {
+                ForEach(SpectrumROIAggregationMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            if let selectedID = selectedSampleID,
+               let sample = samples.first(where: { $0.id == selectedID }) {
+                HStack(spacing: 8) {
+                    Button {
+                        editingSampleID = sample.id
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "pencil")
+                            Text(L("graph.action.rename"))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(role: .destructive) {
+                        deleteMaskLayerSamples([sample])
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "trash")
+                            Text(L("graph.action.delete_mask_layer"))
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
         }
