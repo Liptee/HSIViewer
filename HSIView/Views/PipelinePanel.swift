@@ -759,6 +759,7 @@ struct OperationEditorView: View {
             if spectralInterpolationTargetMode == .manual {
                 localSpectralInterpolationParams.targetWavelengths = nil
             }
+            localSpectralInterpolationParams.isConfiguredByUser = true
             state.pipelineOperations[index].spectralInterpolationParams = localSpectralInterpolationParams
         case .spectralAlignment:
             state.pipelineOperations[index].spectralAlignmentParams = localSpectralAlignmentParams
