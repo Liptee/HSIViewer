@@ -67,6 +67,9 @@
 "grid.context.delete_column" = "Удалить столбец";
 "grid.context.delete_row" = "Удалить ряд";
 "grid.context.return_to_library" = "Вернуть в библиотеку";
+"grid.context.group.items_count" = "Элементов в группе: %d";
+"grid.context.group.empty" = "Группа пуста";
+"grid.context.group.return_to_library" = "Вернуть группу в библиотеку";
 "grid.cell.empty" = "Пусто";
 "grid.rename_row.title" = "Переименовать ряд";
 "grid.rename_row.field_name" = "Название ряда";
