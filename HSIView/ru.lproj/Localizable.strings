@@ -41,6 +41,8 @@
 "library.context.paste_wavelengths" = "Вставить длины волн";
 "library.context.paste_point" = "Вставить точку";
 "library.context.paste_area" = "Вставить область";
+"library.context.copy_points_areas" = "Копировать точки и области";
+"library.context.paste_points_areas" = "Вставить точки и области";
 "library.context.rename" = "Переименовать…";
 "library.context.remove_from_library" = "Удалить из библиотеки";
 "library.wavelength.unset" = "λ: диапазон не задан";
@@ -474,6 +476,7 @@
 "app.time.minutes_seconds" = "%d мин %d сек";
 "app.time.hours_minutes" = "%d ч %d мин";
 "app.wdvi.estimation_result" = "Оценка WDVI: a=%1$@, b=%2$@ по %3$d пикселям";
+"app.spectrum.copy_failed_for_entry" = "Не удалось скопировать точки/области из %@";
 "app.wavelength.read_error" = "Ошибка чтения длин волн: %@";
 "app.wavelength.paste_count_mismatch_for_entry" = "Не удалось вставить длины волн в %@: не совпадает количество каналов";
 "app.wavelength.not_applied_entries" = "Длины волн не применены: %@";

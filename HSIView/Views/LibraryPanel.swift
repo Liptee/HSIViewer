@@ -115,8 +115,10 @@ struct LibraryPanel: View {
         let contextTargets = contextMenuTargets(for: entry)
         let canCopyFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyProcessing(from: $0) } == true
         let canCopyWavelengthsFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopyWavelengths(from: $0) } == true
+        let canCopySelectionsFromSingle = contextTargets.count == 1 && contextTargets.first.map { state.canCopySpectrumSelections(from: $0) } == true
         let canPastePoint = state.canPasteSpectrumPoint
         let canPasteROI = state.canPasteSpectrumROI
+        let canPasteSelections = state.canPasteSpectrumSelections
         let canRename = contextTargets.count == 1
         
         return VStack(alignment: .leading, spacing: 4) {
@@ -200,6 +202,20 @@ struct LibraryPanel: View {
                 }
             }
             .disabled(!canPasteROI)
+
+            Button(state.localized("library.context.copy_points_areas")) {
+                if let target = contextTargets.first {
+                    state.copySpectrumSelections(from: target)
+                }
+            }
+            .disabled(!canCopySelectionsFromSingle)
+
+            Button(state.localized("library.context.paste_points_areas")) {
+                for target in contextTargets {
+                    state.pasteSpectrumSelections(to: target)
+                }
+            }
+            .disabled(!canPasteSelections)
             
             Divider()
 

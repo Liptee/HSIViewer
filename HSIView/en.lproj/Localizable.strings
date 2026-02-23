@@ -41,6 +41,8 @@
 "library.context.paste_wavelengths" = "Paste Wavelengths";
 "library.context.paste_point" = "Paste Point";
 "library.context.paste_area" = "Paste Area";
+"library.context.copy_points_areas" = "Copy Points and Areas";
+"library.context.paste_points_areas" = "Paste Points and Areas";
 "library.context.rename" = "Rename…";
 "library.context.remove_from_library" = "Remove from Library";
 "library.wavelength.unset" = "lambda: range not set";
@@ -908,6 +910,7 @@
 "app.time.minutes_seconds" = "%d min %d sec";
 "app.time.hours_minutes" = "%d h %d min";
 "app.wdvi.estimation_result" = "WDVI estimation: a=%1$@, b=%2$@ from %3$d pixels";
+"app.spectrum.copy_failed_for_entry" = "Failed to copy points/areas from %@";
 "app.wavelength.read_error" = "Wavelength read error: %@";
 "app.wavelength.paste_count_mismatch_for_entry" = "Failed to paste wavelengths into %@: channel count mismatch";
 "app.wavelength.not_applied_entries" = "Wavelengths not applied: %@";

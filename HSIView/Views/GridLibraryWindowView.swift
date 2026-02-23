@@ -536,8 +536,10 @@ struct GridLibraryWindowView: View {
     private func entryContextMenu(for targets: [CubeLibraryEntry]) -> some View {
         let canCopyFromSingle = targets.count == 1 && targets.first.map { state.canCopyProcessing(from: $0) } == true
         let canCopyWavelengths = targets.count == 1 && targets.first.map { state.canCopyWavelengths(from: $0) } == true
+        let canCopySelections = targets.count == 1 && targets.first.map { state.canCopySpectrumSelections(from: $0) } == true
         let canPastePoint = state.canPasteSpectrumPoint
         let canPasteROI = state.canPasteSpectrumROI
+        let canPasteSelections = state.canPasteSpectrumSelections
         let canRename = targets.count == 1
 
         Button(state.localized("library.context.copy_processing")) {
@@ -575,6 +577,16 @@ struct GridLibraryWindowView: View {
             for target in targets { state.pasteSpectrumROI(to: target) }
         }
         .disabled(!canPasteROI)
+
+        Button(state.localized("library.context.copy_points_areas")) {
+            if let target = targets.first { state.copySpectrumSelections(from: target) }
+        }
+        .disabled(!canCopySelections)
+
+        Button(state.localized("library.context.paste_points_areas")) {
+            for target in targets { state.pasteSpectrumSelections(to: target) }
+        }
+        .disabled(!canPasteSelections)
 
         Divider()
 
@@ -689,6 +701,7 @@ struct GridLibraryWindowView: View {
         let hasTargets = !targets.isEmpty
         let canPastePoint = state.canPasteSpectrumPoint && hasTargets
         let canPasteROI = state.canPasteSpectrumROI && hasTargets
+        let canPasteSelections = state.canPasteSpectrumSelections && hasTargets
 
         if hasTargets {
             Text(state.localizedFormat("grid.context.group.items_count", targets.count))
@@ -715,6 +728,11 @@ struct GridLibraryWindowView: View {
             for target in targets { state.pasteSpectrumROI(to: target) }
         }
         .disabled(!canPasteROI)
+
+        Button(state.localized("library.context.paste_points_areas")) {
+            for target in targets { state.pasteSpectrumSelections(to: target) }
+        }
+        .disabled(!canPasteSelections)
 
         Divider()
 
