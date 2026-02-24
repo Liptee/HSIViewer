@@ -4,6 +4,16 @@ import AppKit
 final class AppState: ObservableObject {
     private static let processingQueueKey = DispatchSpecificKey<String>()
     private static let processingQueueValue = "com.hsiview.processing"
+    private static let defaultWavelengthStartDefaultsKey = "settings.default_wavelength.start"
+    private static let defaultWavelengthEndDefaultsKey = "settings.default_wavelength.end"
+    private static let pythonInterpreterPathDefaultsKey = "settings.python.interpreter_path"
+    private static let fallbackWavelengthStart = "400"
+    private static let fallbackWavelengthEnd = "1000"
+    private static let pythonInterpreterCandidates = [
+        "/usr/bin/python3",
+        "/opt/homebrew/bin/python3",
+        "/usr/local/bin/python3"
+    ]
 
     enum HSIAssemblyError: LocalizedError {
         case noMaterials
@@ -84,6 +94,16 @@ final class AppState: ObservableObject {
     @Published var lambdaStart: String = "400"
     @Published var lambdaEnd: String = "1000"
     @Published var lambdaStep: String = ""
+    @Published var defaultWavelengthStart: String {
+        didSet {
+            UserDefaults.standard.set(defaultWavelengthStart, forKey: Self.defaultWavelengthStartDefaultsKey)
+        }
+    }
+    @Published var defaultWavelengthEnd: String {
+        didSet {
+            UserDefaults.standard.set(defaultWavelengthEnd, forKey: Self.defaultWavelengthEndDefaultsKey)
+        }
+    }
     
     @Published var zoomScale: CGFloat = 1.0
     @Published var imageOffset: CGSize = .zero
@@ -225,7 +245,11 @@ final class AppState: ObservableObject {
     @Published var graphWindowXMax: Double = 1000
     @Published var graphWindowYMin: Double = 0
     @Published var graphWindowYMax: Double = 1
-    @Published var showAccessManager: Bool = false
+    @Published var pythonInterpreterPath: String {
+        didSet {
+            UserDefaults.standard.set(pythonInterpreterPath, forKey: Self.pythonInterpreterPathDefaultsKey)
+        }
+    }
     @Published var preferredLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(preferredLanguage.rawValue, forKey: AppLocalizer.preferredLanguageDefaultsKey)
@@ -300,10 +324,35 @@ final class AppState: ObservableObject {
     init() {
         let storedLanguage = UserDefaults.standard.string(forKey: AppLocalizer.preferredLanguageDefaultsKey)
         preferredLanguage = AppLanguage(rawValue: storedLanguage ?? "") ?? .english
+        defaultWavelengthStart = UserDefaults.standard.string(forKey: Self.defaultWavelengthStartDefaultsKey) ?? Self.fallbackWavelengthStart
+        defaultWavelengthEnd = UserDefaults.standard.string(forKey: Self.defaultWavelengthEndDefaultsKey) ?? Self.fallbackWavelengthEnd
+        pythonInterpreterPath = UserDefaults.standard.string(forKey: Self.pythonInterpreterPathDefaultsKey) ?? ""
+        let defaultRange = resolvedDefaultWavelengthRange()
+        lambdaStart = defaultRange.start
+        lambdaEnd = defaultRange.end
     }
 
     var appLocale: Locale {
         preferredLanguage.locale
+    }
+
+    var supportedAppLanguages: [AppLanguage] {
+        [.english, .russian]
+    }
+
+    var resolvedPythonInterpreterPath: String {
+        let trimmedPath = pythonInterpreterPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPath.isEmpty {
+            return trimmedPath
+        }
+        for candidate in Self.pythonInterpreterCandidates where FileManager.default.isExecutableFile(atPath: candidate) {
+            return candidate
+        }
+        return Self.pythonInterpreterCandidates.first ?? "/usr/bin/python3"
+    }
+
+    var isPythonInterpreterAvailable: Bool {
+        FileManager.default.isExecutableFile(atPath: resolvedPythonInterpreterPath)
     }
 
     var isCurrentCubeAlignmentInProgress: Bool {
@@ -342,6 +391,18 @@ final class AppState: ObservableObject {
 
     func localizedFormat(_ key: String, _ args: CVarArg...) -> String {
         AppLocalizer.localizedFormat(key, args: args)
+    }
+
+    func resolvedDefaultWavelengthRange() -> (start: String, end: String) {
+        guard let parsedStart = Double(defaultWavelengthStart.replacingOccurrences(of: ",", with: ".")),
+              let parsedEnd = Double(defaultWavelengthEnd.replacingOccurrences(of: ",", with: ".")),
+              parsedEnd > parsedStart else {
+            return (Self.fallbackWavelengthStart, Self.fallbackWavelengthEnd)
+        }
+        return (
+            String(format: "%.1f", parsedStart),
+            String(format: "%.1f", parsedEnd)
+        )
     }
 
     var activeLayout: CubeLayout {
@@ -1103,7 +1164,7 @@ final class AppState: ObservableObject {
         }
     }
     
-    func generateWavelengthsFromParams() {
+    func generateWavelengthsFromParams(startOverride: String? = nil, endOverride: String? = nil) {
         guard cube != nil else {
             loadError = L("Сначала открой гиперкуб")
             return
@@ -1117,8 +1178,11 @@ final class AppState: ObservableObject {
             return
         }
         
-        guard let start = Double(lambdaStart.replacingOccurrences(of: ",", with: ".")),
-              let end = Double(lambdaEnd.replacingOccurrences(of: ",", with: ".")) else {
+        let startText = startOverride ?? lambdaStart
+        let endText = endOverride ?? lambdaEnd
+
+        guard let start = Double(startText.replacingOccurrences(of: ",", with: ".")),
+              let end = Double(endText.replacingOccurrences(of: ",", with: ".")) else {
             loadError = L("Некорректные параметры λ (от/до)")
             return
         }
@@ -1129,11 +1193,18 @@ final class AppState: ObservableObject {
         }
         
         let step = WavelengthManager.calculateStep(start: start, end: end, channels: channels)
+        lambdaStart = String(format: "%.1f", start)
+        lambdaEnd = String(format: "%.1f", end)
         lambdaStep = String(format: "%.4g", step)
         
         wavelengths = WavelengthManager.generateFromRange(start: start, end: end, channels: channels)
         baseWavelengths = wavelengths
         loadError = nil
+    }
+
+    func generateDefaultWavelengthsForCurrentCube() {
+        let range = resolvedDefaultWavelengthRange()
+        generateWavelengthsFromParams(startOverride: range.start, endOverride: range.end)
     }
     
     func resetZoom() {
@@ -2851,7 +2922,7 @@ final class AppState: ObservableObject {
                     }
                 }
             } else if wavelengths == nil {
-                generateWavelengthsFromParams()
+                generateDefaultWavelengthsForCurrentCube()
             }
             
             ensureLibraryContains(url: url)
@@ -3541,7 +3612,8 @@ final class AppState: ObservableObject {
 
     private func lambdaFields(for values: [Double]) -> (start: String, end: String, step: String) {
         guard let first = values.first, let last = values.last else {
-            return ("400", "1000", "")
+            let range = resolvedDefaultWavelengthRange()
+            return (range.start, range.end, "")
         }
         let start = String(format: "%.1f", first)
         let end = String(format: "%.1f", last)
@@ -3776,8 +3848,9 @@ final class AppState: ObservableObject {
         showAlignmentVisualization = false
         alignmentPointsEditable = false
         wavelengths = nil
-        lambdaStart = "400"
-        lambdaEnd = "1000"
+        let defaultRange = resolvedDefaultWavelengthRange()
+        lambdaStart = defaultRange.start
+        lambdaEnd = defaultRange.end
         lambdaStep = ""
         baseWavelengths = nil
         normalizationType = .none

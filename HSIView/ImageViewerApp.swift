@@ -177,32 +177,13 @@ struct HSIViewApp: App {
                     GridLibraryWindowManager.shared.show(appState: appState)
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
-
-                Divider()
-                Button(appState.localized("menu.access_manager")) {
-                    appState.showAccessManager = true
-                }
-
-                Divider()
-                Menu(appState.localized("menu.language")) {
-                    languageMenuButton(.english, titleKey: "menu.language.english")
-                    languageMenuButton(.russian, titleKey: "menu.language.russian")
-                    languageMenuButton(.system, titleKey: "menu.language.system")
-                }
             }
         }
-    }
-
-    @ViewBuilder
-    private func languageMenuButton(_ language: AppLanguage, titleKey: String) -> some View {
-        Button {
-            appState.preferredLanguage = language
-        } label: {
-            if appState.preferredLanguage == language {
-                Label(appState.localized(titleKey), systemImage: "checkmark")
-            } else {
-                Text(appState.localized(titleKey))
-            }
+        
+        Settings {
+            SettingsView()
+                .environmentObject(appState)
+                .environment(\.locale, appState.appLocale)
         }
     }
     

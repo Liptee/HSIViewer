@@ -64,9 +64,6 @@ struct ContentView: View {
         .sheet(isPresented: $showWDVIAutoSheet) {
             wdviAutoSheet
         }
-        .sheet(isPresented: $state.showAccessManager) {
-            AccessManagerView()
-        }
     }
     
     private var mainContent: some View {

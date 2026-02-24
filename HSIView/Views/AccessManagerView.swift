@@ -2,25 +2,37 @@ import SwiftUI
 import AppKit
 
 struct AccessManagerView: View {
+    enum Mode {
+        case modal
+        case embedded
+    }
+
+    let mode: Mode
     @ObservedObject private var store = SecurityScopedBookmarkStore.shared
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showAddError = false
+
+    init(mode: Mode = .modal) {
+        self.mode = mode
+    }
     
     var body: some View {
         VStack(spacing: 12) {
-            HStack {
-                Text(state.localized("access.title"))
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Button(state.localized("common.done")) {
-                    dismiss()
+            if mode == .modal {
+                HStack {
+                    Text(state.localized("access.title"))
+                        .font(.system(size: 14, weight: .semibold))
+                    Spacer()
+                    Button(state.localized("common.done")) {
+                        dismiss()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                
+                Divider()
             }
-            
-            Divider()
             
             if store.entries.isEmpty {
                 VStack(spacing: 8) {
@@ -72,8 +84,8 @@ struct AccessManagerView: View {
                 Spacer()
             }
         }
-        .padding(16)
-        .frame(minWidth: 520, minHeight: 320)
+        .padding(mode == .modal ? 16 : 0)
+        .frame(minWidth: mode == .modal ? 520 : nil, minHeight: mode == .modal ? 320 : nil)
         .alert(state.localized("access.alert.save_failed.title"), isPresented: $showAddError) {
             Button(state.localized("common.ok"), role: .cancel) {}
         } message: {
