@@ -13,6 +13,7 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
     case calibration = "Калибровка"
     case spectralInterpolation = "Спектральная интерполяция"
     case spectralAlignment = "Спектральное выравнивание"
+    case customPython = "Кастомная обработка"
     
     var id: String { rawValue }
 
@@ -46,6 +47,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return "waveform.path.ecg"
         case .spectralAlignment:
             return "camera.metering.center.weighted"
+        case .customPython:
+            return "terminal"
         }
     }
     
@@ -75,6 +78,8 @@ enum PipelineOperationType: String, CaseIterable, Identifiable {
             return L("Изменить спектральное разрешение по длинам волн")
         case .spectralAlignment:
             return L("Выровнять каналы по эталонному каналу")
+        case .customPython:
+            return L("Запустить пользовательский Python-код для обработки ГСИ")
         }
     }
 }
@@ -707,6 +712,7 @@ struct PipelineOperation: Identifiable, Equatable {
     var spectralTrimParams: SpectralTrimParameters?
     var spectralInterpolationParams: SpectralInterpolationParameters?
     var spectralAlignmentParams: SpectralAlignmentParameters?
+    var customPythonConfig: CustomPythonOperationConfig?
     
     init(id: UUID = UUID(), type: PipelineOperationType) {
         self.id = id
@@ -737,6 +743,8 @@ struct PipelineOperation: Identifiable, Equatable {
             self.spectralInterpolationParams = .default
         case .spectralAlignment:
             self.spectralAlignmentParams = .default
+        case .customPython:
+            self.customPythonConfig = .empty
         }
     }
     
@@ -820,6 +828,22 @@ struct PipelineOperation: Identifiable, Equatable {
                 enableSubpixel: true,
                 enableMultiscale: true
             )
+        case .customPython:
+            if var config = customPythonConfig {
+                if config.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    config.script = CustomPythonOperationTemplate.defaultScript(layout: layout)
+                }
+                if config.templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    config.templateName = L("custom.python.operation.default_name")
+                }
+                customPythonConfig = config
+            } else {
+                customPythonConfig = CustomPythonOperationConfig(
+                    templateID: nil,
+                    templateName: L("custom.python.operation.default_name"),
+                    script: CustomPythonOperationTemplate.defaultScript(layout: layout)
+                )
+            }
         default:
             break
         }
@@ -855,6 +879,10 @@ struct PipelineOperation: Identifiable, Equatable {
             return L("Интерполяция спектра")
         case .spectralAlignment:
             return L("Спектральное выравнивание")
+        case .customPython:
+            return customPythonConfig?.templateName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? (customPythonConfig?.templateName ?? L("custom.python.operation.default_name"))
+                : L("custom.python.operation.default_name")
         }
     }
     
@@ -951,6 +979,9 @@ struct PipelineOperation: Identifiable, Equatable {
                 return LF("pipeline.operation.details.spectral_alignment_status", status, params.referenceChannel, L(params.metric.rawValue))
             }
             return L("Настройте параметры")
+        case .customPython:
+            let layoutLabel = layout == .auto ? "Auto" : layout.rawValue
+            return LF("custom.python.operation.details", layoutLabel)
         }
     }
     
@@ -1008,6 +1039,8 @@ struct PipelineOperation: Identifiable, Equatable {
             var mutableParams = params
             let result = CubeSpectralAligner.align(cube: cube, parameters: &mutableParams, layout: layout, progressCallback: nil)
             return result
+        case .customPython:
+            return cube
         }
     }
     
@@ -1057,6 +1090,7 @@ extension PipelineOperation {
         copy.resizeParameters = resizeParameters
         copy.spectralTrimParams = spectralTrimParams
         copy.spectralInterpolationParams = spectralInterpolationParams
+        copy.customPythonConfig = customPythonConfig
         if var alignment = spectralAlignmentParams {
             alignment.cachedHomographies = nil
             alignment.alignmentResult = nil
@@ -1100,6 +1134,8 @@ extension PipelineOperation {
         case .dataTypeConversion:
             guard let targetType = targetDataType else { return true }
             return targetType == cube.originalDataType
+        case .customPython:
+            return false
         default:
             return false
         }
