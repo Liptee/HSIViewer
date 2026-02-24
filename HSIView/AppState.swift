@@ -118,6 +118,7 @@ final class AppState: ObservableObject {
     
     @Published var isBusy: Bool = false
     @Published var busyMessage: String?
+    @Published var busyProgress: Double?
     @Published var alignmentProgress: Double = 0.0
     @Published var alignmentProgressMessage: String = ""
     @Published var alignmentCurrentChannel: Int = 0
@@ -683,6 +684,164 @@ final class AppState: ObservableObject {
             }
             return stored
         }
+    }
+
+    @discardableResult
+    func addCurrentNDBinaryAsMaskLayer() -> Bool {
+        guard let cube = cube else {
+            loadError = L("nd.mask.error.no_cube")
+            return false
+        }
+        guard let axes = cube.axes(for: activeLayout) else {
+            loadError = L("nd.mask.error.layout")
+            return false
+        }
+        guard let indices = ndChannelIndices() else {
+            loadError = L("nd.mask.error.indices")
+            return false
+        }
+
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard width > 0, height > 0, channels > max(indices.positive, indices.negative) else {
+            loadError = L("nd.mask.error.spatial_size")
+            return false
+        }
+        beginBusy(message: L("nd.mask.busy"))
+        let sourceCubeID = cube.id
+        let pixelCount = width * height
+        let preset = ndPreset
+        let threshold = ndThreshold
+        let wdviSlopeValue = Double(wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0
+        let wdviInterceptValue = Double(wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+
+            var ndValues = [Double](repeating: 0.0, count: pixelCount)
+            var minValue = Double.greatestFiniteMagnitude
+            var maxValue = -Double.greatestFiniteMagnitude
+            let epsilon = 1e-9
+            let progressStep = max(1, height / 100)
+
+            for y in 0..<height {
+                for x in 0..<width {
+                    var idx = [0, 0, 0]
+                    idx[axes.width] = x
+                    idx[axes.height] = y
+
+                    idx[axes.channel] = indices.positive
+                    let positive = cube.getValue(i0: idx[0], i1: idx[1], i2: idx[2])
+
+                    idx[axes.channel] = indices.negative
+                    let negative = cube.getValue(i0: idx[0], i1: idx[1], i2: idx[2])
+
+                    let value: Double
+                    switch preset {
+                    case .ndvi, .ndsi:
+                        let denom = positive + negative
+                        value = abs(denom) < epsilon ? 0.0 : (positive - negative) / denom
+                    case .wdvi:
+                        value = positive - (wdviSlopeValue * negative + wdviInterceptValue)
+                    }
+
+                    let linear = y * width + x
+                    ndValues[linear] = value
+                    minValue = min(minValue, value)
+                    maxValue = max(maxValue, value)
+                }
+
+                if y % progressStep == 0 || y == height - 1 {
+                    let progress = Double(y + 1) / Double(height)
+                    DispatchQueue.main.async {
+                        self.busyProgress = progress
+                    }
+                }
+            }
+
+            let span = maxValue - minValue
+            var classData = [UInt8](repeating: 0, count: pixelCount)
+            for i in 0..<pixelCount {
+                let normalized: Double
+                switch preset {
+                case .ndvi, .ndsi:
+                    normalized = ndValues[i]
+                case .wdvi:
+                    if span <= epsilon {
+                        normalized = 0.0
+                    } else {
+                        let t = (ndValues[i] - minValue) / span
+                        normalized = t * 2.0 - 1.0
+                    }
+                }
+                if normalized > threshold {
+                    classData[i] = 1
+                }
+            }
+
+            DispatchQueue.main.async {
+                defer { self.endBusy() }
+                guard self.cube?.id == sourceCubeID else { return }
+
+                self.prepareMaskEditorForCurrentCube()
+                if self.maskEditorState.maskLayers.isEmpty {
+                    self.initializeMaskEditor()
+                    guard !self.maskEditorState.maskLayers.isEmpty else {
+                        self.loadError = L("nd.mask.error.create_layer")
+                        return
+                    }
+                }
+
+                let layerName = self.nextNDBinaryMaskLayerName()
+                self.maskEditorState.addMaskLayer(name: layerName)
+                guard
+                    let layerID = self.maskEditorState.activeLayerID,
+                    let layerIndex = self.maskEditorState.layers.firstIndex(where: { $0.id == layerID }),
+                    var layer = self.maskEditorState.layers[layerIndex] as? MaskLayer
+                else {
+                    self.loadError = L("nd.mask.error.create_layer")
+                    return
+                }
+
+                for i in 0..<classData.count where classData[i] != 0 {
+                    classData[i] = layer.classValue
+                }
+                layer.width = width
+                layer.height = height
+                layer.data = classData
+                layer.renderVersion &+= 1
+                self.maskEditorState.layers[layerIndex] = layer
+
+                self.maskEditorCubePath = self.cubeURL?.standardizedFileURL.path
+                self.trackMaskSpatialContextForCurrentPipeline()
+                self.refreshMaskLayerSamples()
+                if self.viewMode != .mask {
+                    self.viewMode = .mask
+                }
+                self.persistCurrentSession()
+                self.loadError = nil
+            }
+        }
+        return true
+    }
+
+    private func nextNDBinaryMaskLayerName() -> String {
+        let prefix = ndPreset.rawValue
+        let existing = maskEditorState.maskLayers.map(\.name)
+        var maxIndex = 0
+        for name in existing {
+            guard name.hasPrefix(prefix) else { continue }
+            let suffix = name.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+            if let number = Int(suffix) {
+                maxIndex = max(maxIndex, number)
+            } else if suffix.isEmpty {
+                maxIndex = max(maxIndex, 1)
+            }
+        }
+        return "\(prefix) \(maxIndex + 1)"
     }
     
     func runWDVIAutoEstimation(config: WDVIAutoEstimationConfig) {
@@ -2641,6 +2800,7 @@ final class AppState: ObservableObject {
     private func beginBusy(message: String) {
         DispatchQueue.main.async {
             self.busyMessage = message
+            self.busyProgress = nil
             if !self.isBusy {
                 self.isBusy = true
             }
@@ -2650,6 +2810,7 @@ final class AppState: ObservableObject {
     private func endBusy() {
         DispatchQueue.main.async {
             self.busyMessage = nil
+            self.busyProgress = nil
             self.isBusy = false
         }
     }

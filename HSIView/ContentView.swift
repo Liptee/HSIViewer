@@ -37,7 +37,10 @@ struct ContentView: View {
                     ZStack {
                         Color.black.opacity(0.25)
                             .ignoresSafeArea()
-                        BusyOverlayView(message: state.localized(state.busyMessage ?? "Выполнение…"))
+                        BusyOverlayView(
+                            message: state.localized(state.busyMessage ?? "Выполнение…"),
+                            progress: state.busyProgress
+                        )
                     }
                     .transition(.opacity)
                     }
@@ -1414,6 +1417,18 @@ struct ContentView: View {
                                 .font(.system(size: 10, design: .monospaced))
                                 .frame(width: 50, alignment: .leading)
                         }
+                        Button {
+                            _ = state.addCurrentNDBinaryAsMaskLayer()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.stack.3d.up.fill")
+                                Text(state.localized("Добавить как слой маски"))
+                            }
+                            .font(.system(size: 10, weight: .medium))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(state.cube == nil || state.channelCount < 2)
                     }
                 }
             }
@@ -2642,12 +2657,22 @@ struct TrimActionButton: View {
 
 struct BusyOverlayView: View {
     let message: String
+    let progress: Double?
     
     var body: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .progressViewStyle(CircularProgressViewStyle())
-                .scaleEffect(1.1)
+        VStack(spacing: 10) {
+            if let progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .frame(width: 240)
+                Text("\(Int((max(0, min(1, progress)) * 100).rounded()))%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+            } else {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .scaleEffect(1.1)
+            }
             Text(message)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)

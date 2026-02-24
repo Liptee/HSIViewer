@@ -169,6 +169,8 @@
 "Пресет" = "Preset";
 "Палитра" = "Palette";
 "Порог ND" = "ND threshold";
+"Добавить как слой маски" = "Add as mask layer";
+"nd.mask.busy" = "Adding ND mask layer…";
 "Red (нм)" = "Red (nm)";
 "NIR (нм)" = "NIR (nm)";
 "Green (нм)" = "Green (nm)";
@@ -198,6 +200,11 @@
 "Не удалось построить изображение" = "Failed to render image";
 "Не удалось построить RGB изображение" = "Failed to render RGB image";
 "Не удалось построить ND" = "Failed to render ND";
+"nd.mask.error.no_cube" = "Open HSI before adding an ND mask layer.";
+"nd.mask.error.layout" = "Failed to determine layout for ND mask.";
+"nd.mask.error.indices" = "Failed to determine ND channels.";
+"nd.mask.error.spatial_size" = "Invalid spatial size for ND mask.";
+"nd.mask.error.create_layer" = "Failed to create mask layer from ND.";
 "Файл не выбран" = "No file selected";
 "Центрировать" = "Center";
 "Режим: 2D изображение" = "Mode: 2D image";
