@@ -7,6 +7,7 @@ struct PipelinePanel: View {
     @EnvironmentObject var state: AppState
     @State private var selectedOperation: UUID?
     @State private var showingAddMenu: Bool = false
+    @State private var showingCustomPythonManager: Bool = false
     @State private var editingOperation: PipelineOperation?
     @FocusState private var hasListFocus: Bool
     
@@ -35,6 +36,12 @@ struct PipelinePanel: View {
         .sheet(item: $editingOperation) { operation in
             OperationEditorView(operation: $editingOperation)
                 .environmentObject(state)
+        }
+        .sheet(isPresented: $showingCustomPythonManager) {
+            CustomPythonOperationsManagerView(layout: state.activeLayout) { template in
+                state.addCustomPythonOperation(template: template)
+                showingCustomPythonManager = false
+            }
         }
     }
     
@@ -242,6 +249,16 @@ struct PipelinePanel: View {
                     .spectralAlignment,
                     .calibration
                 ]
+            ),
+            OperationGroup(
+                id: "custom",
+                title: state.localized("Кастомные"),
+                subtitle: state.localized("Пользовательские Python-обработки"),
+                iconName: "terminal",
+                accent: Color(NSColor.systemBlue),
+                types: [
+                    .customPython
+                ]
             )
         ]
     }
@@ -299,6 +316,8 @@ struct PipelinePanel: View {
             return Color(NSColor.systemOrange)
         case .spectralTrim, .spectralInterpolation, .spectralAlignment, .calibration:
             return Color(NSColor.systemGreen)
+        case .customPython:
+            return Color(NSColor.systemIndigo)
         }
     }
     
@@ -308,8 +327,15 @@ struct PipelinePanel: View {
             accent: accent,
             lineLimit: chipLineLimit(for: type)
         ) {
-            state.addOperation(type: type)
-            showingAddMenu = false
+            if type == .customPython {
+                showingAddMenu = false
+                DispatchQueue.main.async {
+                    showingCustomPythonManager = true
+                }
+            } else {
+                state.addOperation(type: type)
+                showingAddMenu = false
+            }
         }
     }
 
@@ -578,6 +604,7 @@ struct OperationEditorView: View {
     @State private var localSpectralTrimParams: SpectralTrimParameters = SpectralTrimParameters(startChannel: 0, endChannel: 0)
     @State private var localSpectralInterpolationParams: SpectralInterpolationParameters = .default
     @State private var localSpectralAlignmentParams: SpectralAlignmentParameters = .default
+    @State private var localCustomPythonConfig: CustomPythonOperationConfig = .empty
     @State private var spectralTrimInputMode: SpectralTrimInputMode = .channels
     @State private var spectralInterpolationTargetMode: SpectralInterpolationTargetMode = .manual
     @State private var spectralInterpolationImportError: String?
@@ -647,6 +674,8 @@ struct OperationEditorView: View {
             return CGSize(width: 560, height: 590)
         case .spectralAlignment:
             return CGSize(width: 520, height: 720)
+        case .customPython:
+            return CGSize(width: 700, height: 620)
         default:
             return CGSize(width: 420, height: 540)
         }
@@ -707,6 +736,16 @@ struct OperationEditorView: View {
             localSpectralAlignmentParams = op.spectralAlignmentParams ?? .default
             spectralAlignmentIOError = nil
             spectralAlignmentIOInfo = nil
+        case .customPython:
+            if let config = op.customPythonConfig {
+                localCustomPythonConfig = config
+            } else {
+                localCustomPythonConfig = CustomPythonOperationConfig(
+                    templateID: nil,
+                    templateName: L("custom.python.operation.default_name"),
+                    script: CustomPythonOperationTemplate.defaultScript(layout: op.layout)
+                )
+            }
         }
     }
     
@@ -763,6 +802,15 @@ struct OperationEditorView: View {
             state.pipelineOperations[index].spectralInterpolationParams = localSpectralInterpolationParams
         case .spectralAlignment:
             state.pipelineOperations[index].spectralAlignmentParams = localSpectralAlignmentParams
+        case .customPython:
+            var normalized = localCustomPythonConfig
+            let trimmedName = normalized.templateName.trimmingCharacters(in: .whitespacesAndNewlines)
+            normalized.templateName = trimmedName.isEmpty ? L("custom.python.operation.default_name") : trimmedName
+            if normalized.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                normalized.script = CustomPythonOperationTemplate.defaultScript(layout: op.layout)
+            }
+            localCustomPythonConfig = normalized
+            state.pipelineOperations[index].customPythonConfig = normalized
         }
     }
     
@@ -803,6 +851,8 @@ struct OperationEditorView: View {
             spectralInterpolationEditor(for: op)
         case .spectralAlignment:
             spectralAlignmentEditor(for: op)
+        case .customPython:
+            customPythonEditor(for: op)
         }
     }
     
@@ -1703,6 +1753,76 @@ struct OperationEditorView: View {
                 result: currentResult,
                 wavelengths: wavelengths
             )
+        }
+    }
+
+    private func customPythonEditor(for op: PipelineOperation) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(state.localized("custom.python.editor.title"))
+                .font(.system(size: 11, weight: .medium))
+
+            Text(
+                state.localizedFormat(
+                    "custom.python.editor.layout",
+                    op.layout == .auto ? state.activeLayout.rawValue : op.layout.rawValue
+                )
+            )
+            .font(.system(size: 10))
+            .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(state.localized("custom.python.editor.name"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextField(
+                    state.localized("custom.python.operation.default_name"),
+                    text: $localCustomPythonConfig.templateName
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(state.localized("custom.python.editor.code"))
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                TextEditor(text: $localCustomPythonConfig.script)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 320)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.35), lineWidth: 1)
+                    )
+            }
+
+            HStack(spacing: 10) {
+                Button(state.localized("custom.python.editor.save_template")) {
+                    let trimmedName = localCustomPythonConfig.templateName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let finalName = trimmedName.isEmpty
+                        ? state.localized("custom.python.operation.default_name")
+                        : trimmedName
+
+                    if let existingID = localCustomPythonConfig.templateID,
+                       var template = CustomPythonOperationStore.shared.template(for: existingID) {
+                        template.name = finalName
+                        template.script = localCustomPythonConfig.script
+                        CustomPythonOperationStore.shared.updateTemplate(template)
+                    } else {
+                        let created = CustomPythonOperationStore.shared.createTemplate(
+                            name: finalName,
+                            script: localCustomPythonConfig.script
+                        )
+                        localCustomPythonConfig.templateID = created.id
+                    }
+
+                    localCustomPythonConfig.templateName = finalName
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Text(state.localized("custom.python.editor.hint"))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
     

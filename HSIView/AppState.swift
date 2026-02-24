@@ -2015,6 +2015,21 @@ final class AppState: ObservableObject {
             }
         }
     }
+
+    func addCustomPythonOperation(template: CustomPythonOperationTemplate) {
+        var operation = PipelineOperation(type: .customPython)
+        operation.layout = activeLayout
+        operation.customPythonConfig = CustomPythonOperationConfig(
+            templateID: template.id,
+            templateName: template.name,
+            script: template.script
+        )
+        operation.configureDefaults(with: cube, layout: activeLayout)
+        pipelineOperations.append(operation)
+        if pipelineAutoApply {
+            applyPipeline()
+        }
+    }
     
     func removeOperation(at index: Int) {
         guard index >= 0 && index < pipelineOperations.count else { return }
@@ -2325,6 +2340,7 @@ final class AppState: ObservableObject {
             )
             var currentCube = baseCube
             var mutableOperations = operations
+            var pipelineErrorMessage: String?
             
             for i in 0..<mutableOperations.count {
                 if mutableOperations[i].type == .spectralAlignment && mutableOperations[i].id == targetOperationId {
@@ -2353,8 +2369,16 @@ final class AppState: ObservableObject {
                         layout: layout,
                         baseWavelengths: sourceBaseWavelengths
                     )
-                    let result = mutableOperations[i].apply(to: opCube)
-                    currentCube = result ?? opCube
+                    let result = self.applyPipelineOperationForAlignmentProgress(
+                        mutableOperations[i],
+                        to: opCube,
+                        errorMessage: &pipelineErrorMessage
+                    )
+                    currentCube = result
+                }
+
+                if pipelineErrorMessage != nil {
+                    break
                 }
             }
             
@@ -2376,6 +2400,11 @@ final class AppState: ObservableObject {
                     self.updateSpectralTrimRangeFromPipeline()
                     self.updateChannelCount()
                     self.persistCurrentSession()
+                    if let pipelineErrorMessage {
+                        self.loadError = pipelineErrorMessage
+                    } else {
+                        self.loadError = nil
+                    }
                 } else if let sourceCubeURL {
                     self.updatePipelineSnapshot(for: sourceCubeURL, operations: mutableOperations)
                 }
@@ -2392,6 +2421,7 @@ final class AppState: ObservableObject {
             lastPipelineAppliedOperations = []
             lastPipelineResult = original
             lastPipelineBaseCubeID = original.id
+            loadError = nil
             updateWavelengthsFromPipelineResult()
             updateSpectralTrimRangeFromPipeline()
             updateChannelCount()
@@ -2417,14 +2447,19 @@ final class AppState: ObservableObject {
             processingQueue.async { [weak self] in
                 guard let self else { return }
                 let baseCube = self.cubeWithWavelengthsIfNeeded(cachedResult, layout: newOp.layout)
-                let result = newOp.applyWithUpdate(to: baseCube)
+                var operationErrorMessage: String?
+                let result = self.applyPipelineOperationWithUpdate(
+                    &newOp,
+                    to: baseCube,
+                    errorMessage: &operationErrorMessage
+                )
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     var updatedOperations = operations
                     updatedOperations[updatedOperations.count - 1] = newOp
                     
                     if self.isCurrentAlignmentTarget(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCubeID) {
-                        self.cube = result ?? baseCube
+                        self.cube = result
                         self.lastPipelineResult = self.cube
                         self.lastPipelineAppliedOperations = updatedOperations
                         self.pipelineOperations = updatedOperations
@@ -2435,6 +2470,11 @@ final class AppState: ObservableObject {
                         self.updateChannelCount()
                         self.restorePendingSpatialSelectionsIfNeeded()
                         self.persistCurrentSession()
+                        if let operationErrorMessage {
+                            self.loadError = operationErrorMessage
+                        } else {
+                            self.loadError = nil
+                        }
                     } else if let sourceCubeURL {
                         self.updatePipelineSnapshot(for: sourceCubeURL, operations: updatedOperations)
                     }
@@ -2460,7 +2500,12 @@ final class AppState: ObservableObject {
                     baseWavelengths: sourceBaseWavelengths
                 )
                 var mutableOperations = operations
-                let result = self.processPipeline(original: baseCube, operations: &mutableOperations)
+                var pipelineErrorMessage: String?
+                let result = self.processPipeline(
+                    original: baseCube,
+                    operations: &mutableOperations,
+                    errorMessage: &pipelineErrorMessage
+                )
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if self.isCurrentAlignmentTarget(sourceCubeURL: sourceCubeURL, sourceCubeID: sourceCubeID) {
@@ -2475,6 +2520,11 @@ final class AppState: ObservableObject {
                         self.updateChannelCount()
                         self.restorePendingSpatialSelectionsIfNeeded()
                         self.persistCurrentSession()
+                        if let pipelineErrorMessage {
+                            self.loadError = pipelineErrorMessage
+                        } else {
+                            self.loadError = nil
+                        }
                     } else if let sourceCubeURL {
                         self.updatePipelineSnapshot(for: sourceCubeURL, operations: mutableOperations)
                     }
@@ -2785,30 +2835,103 @@ final class AppState: ObservableObject {
         }
     }
     
-    private func processPipeline(original: HyperCube, operations: inout [PipelineOperation]) -> HyperCube? {
+    private func processPipeline(
+        original: HyperCube,
+        operations: inout [PipelineOperation],
+        errorMessage: inout String?
+    ) -> HyperCube? {
         if DispatchQueue.getSpecific(key: Self.processingQueueKey) == Self.processingQueueValue {
-            return processPipelineOnCurrentThread(original: original, operations: &operations)
+            return processPipelineOnCurrentThread(
+                original: original,
+                operations: &operations,
+                errorMessage: &errorMessage
+            )
         }
 
         var mutableOperations = operations
+        var localErrorMessage: String?
         let result = processingQueue.sync {
-            processPipelineOnCurrentThread(original: original, operations: &mutableOperations)
+            processPipelineOnCurrentThread(
+                original: original,
+                operations: &mutableOperations,
+                errorMessage: &localErrorMessage
+            )
         }
         operations = mutableOperations
+        errorMessage = localErrorMessage
         return result
     }
 
-    private func processPipelineOnCurrentThread(original: HyperCube, operations: inout [PipelineOperation]) -> HyperCube? {
+    private func processPipelineOnCurrentThread(
+        original: HyperCube,
+        operations: inout [PipelineOperation],
+        errorMessage: inout String?
+    ) -> HyperCube? {
         guard !operations.isEmpty else { return original }
-        
-        var result: HyperCube? = original
-        
+
+        var result: HyperCube = original
+
         for i in 0..<operations.count {
-            guard let current = result else { break }
-            result = operations[i].applyWithUpdate(to: current)
+            result = applyPipelineOperationWithUpdate(
+                &operations[i],
+                to: result,
+                errorMessage: &errorMessage
+            )
+            if errorMessage != nil {
+                break
+            }
         }
-        
-        return result ?? original
+
+        return result
+    }
+
+    private func applyPipelineOperationWithUpdate(
+        _ operation: inout PipelineOperation,
+        to cube: HyperCube,
+        errorMessage: inout String?
+    ) -> HyperCube {
+        if operation.type == .customPython {
+            return applyCustomPythonOperation(operation, to: cube, errorMessage: &errorMessage)
+        }
+        return operation.applyWithUpdate(to: cube) ?? cube
+    }
+
+    private func applyPipelineOperationForAlignmentProgress(
+        _ operation: PipelineOperation,
+        to cube: HyperCube,
+        errorMessage: inout String?
+    ) -> HyperCube {
+        if operation.type == .customPython {
+            return applyCustomPythonOperation(operation, to: cube, errorMessage: &errorMessage)
+        }
+        return operation.apply(to: cube) ?? cube
+    }
+
+    private func applyCustomPythonOperation(
+        _ operation: PipelineOperation,
+        to cube: HyperCube,
+        errorMessage: inout String?
+    ) -> HyperCube {
+        let layout = operation.layout
+        let fallbackName = L("custom.python.operation.default_name")
+        let config = operation.customPythonConfig ?? CustomPythonOperationConfig(
+            templateID: nil,
+            templateName: fallbackName,
+            script: CustomPythonOperationTemplate.defaultScript(layout: layout)
+        )
+
+        switch CustomPythonPipelineService.apply(
+            cube: cube,
+            layout: layout,
+            config: config,
+            interpreterPath: resolvedPythonInterpreterPath
+        ) {
+        case .success(let processedCube):
+            return processedCube
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+            return cube
+        }
     }
 
     private func isCurrentAlignmentTarget(sourceCubeURL: URL?, sourceCubeID: UUID) -> Bool {
@@ -4049,7 +4172,12 @@ final class AppState: ObservableObject {
             let baseWavelengths = snapshot.baseWavelengths ?? wavelengths
             let baseCube = cubeWithWavelengthsIfNeeded(workingCube, layout: layout, baseWavelengths: baseWavelengths)
             var ops = snapshot.pipelineOperations
-            workingCube = processPipeline(original: baseCube, operations: &ops) ?? baseCube
+            var pipelineErrorMessage: String?
+            workingCube = processPipeline(
+                original: baseCube,
+                operations: &ops,
+                errorMessage: &pipelineErrorMessage
+            ) ?? baseCube
         }
         
         let resolvedLayout = resolveLayout(for: workingCube, preferred: layout)

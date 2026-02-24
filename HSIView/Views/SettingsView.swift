@@ -85,7 +85,7 @@ struct SettingsView: View {
                         Image(systemName: section.iconName)
                             .frame(width: 18)
                         Text(state.localized(section.titleKey))
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
