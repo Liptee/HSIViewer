@@ -152,6 +152,15 @@
 
 "content_view.open_cube" = "Открой гиперспектральный куб";
 "content_view.empty_hint" = "Здесь могла бы быть ваша реклама";
+"ND индексы" = "ND индексы";
+"Порог ND" = "Порог ND";
+"Добавить как слой маски" = "Добавить как слой маски";
+"nd.mask.busy" = "Добавление ND слоя маски…";
+"nd.mask.error.no_cube" = "Откройте ГСИ перед добавлением ND слоя маски.";
+"nd.mask.error.layout" = "Не удалось определить layout для ND слоя.";
+"nd.mask.error.indices" = "Не удалось определить ND каналы.";
+"nd.mask.error.spatial_size" = "Некорректные пространственные размеры для ND слоя.";
+"nd.mask.error.create_layer" = "Не удалось создать слой маски из ND.";
 
 "export.format.npy" = "NumPy (.npy)";
 "export.format.mat" = "MATLAB (.mat)";
