@@ -770,11 +770,13 @@ struct GraphWindowView: View {
                     }
                     
                     settingsSection(L("graph.window.section.data")) {
-                        Picker(L("graph.window.source"), selection: $dataset) {
+                        Picker("", selection: $dataset) {
                             ForEach(GraphWindowDataset.allCases) { item in
                                 Text(item.title).tag(item)
                             }
                         }
+                        .labelsHidden()
+                        .accessibilityLabel(L("graph.window.source"))
                         .pickerStyle(.segmented)
                     }
                     
