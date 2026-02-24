@@ -29,6 +29,32 @@
 "menu.show_left_panel" = "Show Left Panel";
 "menu.show_right_panel" = "Show Right Panel";
 
+"settings.group.general" = "General";
+"settings.group.wavelengths" = "Wavelengths";
+"settings.group.python" = "Python Integrate";
+"settings.general.title" = "General Settings";
+"settings.general.language" = "Program language";
+"settings.general.language.hint" = "HSIView currently supports Russian and English language packs.";
+"settings.general.access_manager" = "Access Manager";
+"settings.general.access_manager.hint" = "Saved folders are reused for file operations without repeated permission prompts.";
+"settings.wavelengths.title" = "Default Wavelength Range";
+"settings.wavelengths.description" = "This range is used automatically when loaded HSI data does not include wavelength metadata.";
+"settings.wavelengths.start" = "Start (nm)";
+"settings.wavelengths.end" = "End (nm)";
+"settings.wavelengths.save" = "Save Range";
+"settings.wavelengths.saved_range" = "Saved default range: %@ - %@ nm";
+"settings.wavelengths.invalid" = "Enter valid numeric values where End is greater than Start.";
+"settings.python.title" = "Python Integration";
+"settings.python.description" = "Set Python interpreter access for upcoming custom Python processing in the HSI pipeline.";
+"settings.python.path" = "Interpreter path";
+"settings.python.browse" = "Browse…";
+"settings.python.use_auto" = "Use Auto Path";
+"settings.python.resolved_path" = "Resolved interpreter: %@";
+"settings.python.status.ready" = "Interpreter is available";
+"settings.python.status.missing" = "Interpreter is not accessible";
+"settings.python.status.symlink_hint" = "Interpreter path is a symlink. It resolves to %@. Add access to that folder in Access Manager or use a non-symlink Python binary.";
+"settings.python.status.note" = "This path will be used by Python-based pipeline stages.";
+
 "library.title" = "Library";
 "library.drop_release_to_add" = "Drop to add";
 "library.empty_hint" = "Drag .mat, .tiff, .npy, or .dat files here to add them to the library. Double-click an item to open the cube.";

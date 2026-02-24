@@ -29,6 +29,32 @@
 "menu.show_left_panel" = "Показать левую панель";
 "menu.show_right_panel" = "Показать правую панель";
 
+"settings.group.general" = "General";
+"settings.group.wavelengths" = "Wavelengths";
+"settings.group.python" = "Python Integrate";
+"settings.general.title" = "Общие настройки";
+"settings.general.language" = "Язык программы";
+"settings.general.language.hint" = "Сейчас в HSIView доступны два языковых пакета: русский и английский.";
+"settings.general.access_manager" = "Управление доступами";
+"settings.general.access_manager.hint" = "Сохранённые папки используются повторно, чтобы не запрашивать доступ каждый раз.";
+"settings.wavelengths.title" = "Диапазон длин волн по умолчанию";
+"settings.wavelengths.description" = "Этот диапазон автоматически применяется, когда в загруженном ГСИ нет метаданных по длинам волн.";
+"settings.wavelengths.start" = "Начало (нм)";
+"settings.wavelengths.end" = "Конец (нм)";
+"settings.wavelengths.save" = "Сохранить диапазон";
+"settings.wavelengths.saved_range" = "Сохранённый диапазон по умолчанию: %@ - %@ нм";
+"settings.wavelengths.invalid" = "Введите корректные числовые значения: конец диапазона должен быть больше начала.";
+"settings.python.title" = "Python Integrate";
+"settings.python.description" = "Укажите доступ к интерпретатору Python для будущих пользовательских Python-обработок в пайплайне ГСИ.";
+"settings.python.path" = "Путь к интерпретатору";
+"settings.python.browse" = "Выбрать…";
+"settings.python.use_auto" = "Использовать авто-путь";
+"settings.python.resolved_path" = "Используемый интерпретатор: %@";
+"settings.python.status.ready" = "Интерпретатор доступен";
+"settings.python.status.missing" = "Интерпретатор недоступен";
+"settings.python.status.symlink_hint" = "Путь к интерпретатору является симлинком. Он резолвится в %@. Добавьте доступ к этой папке в Access Manager или используйте Python-бинарник без симлинка.";
+"settings.python.status.note" = "Этот путь будет использоваться в Python-этапах пайплайна.";
+
 "library.title" = "Библиотека";
 "library.drop_release_to_add" = "Отпустите, чтобы добавить";
 "library.empty_hint" = "Перетащи файлы .mat, .tiff, .npy или .dat сюда, чтобы добавить их в библиотеку. Двойной клик по элементу — открыть куб.";

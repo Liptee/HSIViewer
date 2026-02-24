@@ -62,8 +62,19 @@ final class SecurityScopedBookmarkStore: ObservableObject {
     }
     
     func startAccessingIfPossible(url: URL) -> Bool {
-        let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
-        let targetPath = canonical.path
+        let standardized = url.standardizedFileURL
+        if startAccessingIfPossible(path: standardized.path) {
+            return true
+        }
+
+        let resolved = standardized.resolvingSymlinksInPath()
+        if resolved.path != standardized.path {
+            return startAccessingIfPossible(path: resolved.path)
+        }
+        return false
+    }
+
+    private func startAccessingIfPossible(path targetPath: String) -> Bool {
         for entry in entries {
             guard let scopedURL = resolvedURL(for: entry) else { continue }
             let basePath = scopedURL.standardizedFileURL.path
