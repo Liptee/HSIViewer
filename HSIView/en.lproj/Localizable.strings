@@ -220,6 +220,13 @@
 "Длины волн" = "Wavelengths";
 "Каналы цветосинтеза" = "Color synthesis channels";
 "ND индексы" = "ND indices";
+"Адаптивный индекс" = "Adaptive index";
+"Подобрать по ROI…" = "Find from ROI…";
+"Канал +" = "Channel +";
+"Канал -" = "Channel -";
+"ROI для группы A" = "ROI for group A";
+"ROI для группы B" = "ROI for group B";
+"Выберите две группы ROI. Алгоритм автоматически найдёт пару каналов с максимальным разделением групп." = "Select two ROI groups. The algorithm will automatically find a channel pair with maximum group separation.";
 "Пресет" = "Preset";
 "Палитра" = "Palette";
 "Порог ND" = "ND threshold";
@@ -258,6 +265,14 @@
 "nd.mask.error.layout" = "Failed to determine layout for ND mask.";
 "nd.mask.error.indices" = "Failed to determine ND channels.";
 "nd.mask.error.spatial_size" = "Invalid spatial size for ND mask.";
+"Выберите ГСИ перед расчётом адаптивного индекса" = "Open HSI before adaptive index estimation";
+"Недостаточно каналов для адаптивного индекса" = "Not enough channels for adaptive index";
+"Выберите хотя бы один ROI для каждой группы" = "Select at least one ROI for each group";
+"Расчёт адаптивного индекса…" = "Estimating adaptive index…";
+"Недостаточно данных ROI для расчёта адаптивного индекса" = "Not enough ROI data for adaptive index estimation";
+"Не удалось определить каналы адаптивного индекса" = "Failed to determine adaptive index channels";
+"adaptive.nd.current_pair" = "Current pair: +ch %1$d, -ch %2$d";
+"app.nd.adaptive.estimation_result" = "Adaptive index: +ch %1$d, -ch %2$d, separation=%3$@";
 "nd.mask.error.create_layer" = "Failed to create mask layer from ND.";
 "Файл не выбран" = "No file selected";
 "Центрировать" = "Center";

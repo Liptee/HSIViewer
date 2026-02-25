@@ -282,7 +282,7 @@ class ImageRenderer {
             let negative = negativeSlice[i]
             let value: Double
             switch preset {
-            case .ndvi, .ndsi:
+            case .ndvi, .ndsi, .adaptive:
                 let denom = positive + negative
                 value = abs(denom) < epsilon ? 0.0 : (positive - negative) / denom
             case .wdvi:
@@ -299,7 +299,7 @@ class ImageRenderer {
             let raw = values[i]
             let normalized: Double
             switch preset {
-            case .ndvi, .ndsi:
+            case .ndvi, .ndsi, .adaptive:
                 normalized = raw
             case .wdvi:
                 if span <= epsilon {
