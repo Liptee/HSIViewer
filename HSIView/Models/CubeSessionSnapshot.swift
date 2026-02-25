@@ -33,6 +33,10 @@ struct CubeSessionSnapshot {
     var ndsiSWIRTarget: String
     var wdviSlope: String
     var wdviIntercept: String
+    var adaptiveNDPositiveChannel: Int
+    var adaptiveNDNegativeChannel: Int
+    var adaptiveNDPositiveROIIDs: Set<UUID>
+    var adaptiveNDNegativeROIIDs: Set<UUID>
     var ndPaletteRaw: String
     var ndThreshold: Double
     var maskEditorSnapshot: MaskEditorSnapshotDescriptor?
@@ -69,6 +73,10 @@ struct CubeSessionSnapshot {
         ndsiSWIRTarget: "1610",
         wdviSlope: "1.0",
         wdviIntercept: "0.0",
+        adaptiveNDPositiveChannel: 1,
+        adaptiveNDNegativeChannel: 0,
+        adaptiveNDPositiveROIIDs: [],
+        adaptiveNDNegativeROIIDs: [],
         ndPaletteRaw: NDPalette.classic.rawValue,
         ndThreshold: 0.3,
         maskEditorSnapshot: nil

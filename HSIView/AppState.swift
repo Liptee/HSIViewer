@@ -77,6 +77,10 @@ final class AppState: ObservableObject {
     @Published var ndsiSWIRTarget: String = "1610"
     @Published var wdviSlope: String = "1.0"
     @Published var wdviIntercept: String = "0.0"
+    @Published var adaptiveNDPositiveChannel: Int = 1
+    @Published var adaptiveNDNegativeChannel: Int = 0
+    @Published var adaptiveNDPositiveROIIDs: Set<UUID> = []
+    @Published var adaptiveNDNegativeROIIDs: Set<UUID> = []
     @Published var ndPalette: NDPalette = .classic
     @Published var ndThreshold: Double = 0.3
     
@@ -258,11 +262,6 @@ final class AppState: ObservableObject {
     @Published private(set) var pipelineOperationClipboard: PipelineOperation?
     @Published private(set) var spectrumClipboard: SpectrumClipboardContent?
     private var hasCustomColorSynthesisMapping: Bool = false
-    private var ndFallbackIndices: [NDIndexPreset: (positive: Int, negative: Int)] = [
-        .ndvi: (0, 0),
-        .ndsi: (0, 0),
-        .wdvi: (0, 0)
-    ]
     private var lastPipelineAppliedOperations: [PipelineOperation] = []
     private var lastPipelineResult: HyperCube?
     private var lastPipelineBaseCubeID: UUID?
@@ -573,6 +572,7 @@ final class AppState: ObservableObject {
         guard let cube = cube else {
             channelCount = 0
             currentChannel = 0
+            clampAdaptiveNDChannels()
             clampColorSynthesisMapping()
             return
         }
@@ -585,8 +585,29 @@ final class AppState: ObservableObject {
             currentChannel = Double(channelCount - 1)
         }
         
+        clampAdaptiveNDChannels()
         clampColorSynthesisMapping()
         refreshColorSynthesisDefaultsIfNeeded()
+    }
+
+    private func clampAdaptiveNDChannels() {
+        guard channelCount > 1 else {
+            adaptiveNDPositiveChannel = 0
+            adaptiveNDNegativeChannel = 0
+            return
+        }
+        let maxIndex = channelCount - 1
+        var positive = max(0, min(adaptiveNDPositiveChannel, maxIndex))
+        var negative = max(0, min(adaptiveNDNegativeChannel, maxIndex))
+        if positive == negative {
+            if positive < maxIndex {
+                positive += 1
+            } else {
+                negative = max(0, negative - 1)
+            }
+        }
+        adaptiveNDPositiveChannel = positive
+        adaptiveNDNegativeChannel = negative
     }
     
     func setColorSynthesisMode(_ mode: ColorSynthesisMode) {
@@ -702,49 +723,78 @@ final class AppState: ObservableObject {
         guard channelCount > 1 else { return nil }
         let count = channelCount
         
-        let targets: (positive: Double, negative: Double)
         let fallback: (positive: Int, negative: Int)
         
         switch ndPreset {
         case .ndvi:
-            targets = (
+            let targets = (
                 positive: Double(ndviNIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 840,
                 negative: Double(ndviRedTarget.replacingOccurrences(of: ",", with: ".")) ?? 660
             )
             let fallbackNeg = min(max(0, count / 3), count - 1)
             let fallbackPos = max(fallbackNeg + 1, count - 1)
             fallback = (positive: fallbackPos, negative: fallbackNeg)
+            if let wl = wavelengths, wl.count >= count {
+                let posIndex = closestIndex(in: wl, to: targets.positive, limit: count) ?? fallback.positive
+                let negIndex = closestIndex(in: wl, to: targets.negative, limit: count) ?? fallback.negative
+                return sanitizeNDPair(positive: posIndex, negative: negIndex, channelCount: count)
+            }
+            return sanitizeNDPair(positive: fallback.positive, negative: fallback.negative, channelCount: count)
         case .ndsi:
-            targets = (
+            let targets = (
                 positive: Double(ndsiGreenTarget.replacingOccurrences(of: ",", with: ".")) ?? 555,
                 negative: Double(ndsiSWIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 1610
             )
             let fallbackPos = min(max(0, count / 3), count - 1)
             let fallbackNeg = max(fallbackPos + 1, count - 1)
             fallback = (positive: fallbackPos, negative: fallbackNeg)
+            if let wl = wavelengths, wl.count >= count {
+                let posIndex = closestIndex(in: wl, to: targets.positive, limit: count) ?? fallback.positive
+                let negIndex = closestIndex(in: wl, to: targets.negative, limit: count) ?? fallback.negative
+                return sanitizeNDPair(positive: posIndex, negative: negIndex, channelCount: count)
+            }
+            return sanitizeNDPair(positive: fallback.positive, negative: fallback.negative, channelCount: count)
         case .wdvi:
-            targets = (
+            let targets = (
                 positive: Double(ndviNIRTarget.replacingOccurrences(of: ",", with: ".")) ?? 840,
                 negative: Double(ndviRedTarget.replacingOccurrences(of: ",", with: ".")) ?? 660
             )
             let fallbackNeg = min(max(0, count / 3), count - 1)
             let fallbackPos = max(fallbackNeg + 1, count - 1)
             fallback = (positive: fallbackPos, negative: fallbackNeg)
-        }
-        
-        if let wl = wavelengths, wl.count >= count {
-            let posIndex = closestIndex(in: wl, to: targets.positive, limit: count) ?? fallback.positive
-            let negIndex = closestIndex(in: wl, to: targets.negative, limit: count) ?? fallback.negative
-            ndFallbackIndices[ndPreset] = (positive: posIndex, negative: negIndex)
-            return (posIndex, negIndex)
-        } else {
-            var stored = ndFallbackIndices[ndPreset] ?? (0, 0)
-            if stored == (0, 0) {
-                stored = fallback
-                ndFallbackIndices[ndPreset] = stored
+            if let wl = wavelengths, wl.count >= count {
+                let posIndex = closestIndex(in: wl, to: targets.positive, limit: count) ?? fallback.positive
+                let negIndex = closestIndex(in: wl, to: targets.negative, limit: count) ?? fallback.negative
+                return sanitizeNDPair(positive: posIndex, negative: negIndex, channelCount: count)
             }
-            return stored
+            return sanitizeNDPair(positive: fallback.positive, negative: fallback.negative, channelCount: count)
+        case .adaptive:
+            var fallbackPos = max(0, min(adaptiveNDPositiveChannel, count - 1))
+            var fallbackNeg = max(0, min(adaptiveNDNegativeChannel, count - 1))
+            if fallbackPos == fallbackNeg {
+                if fallbackPos < count - 1 {
+                    fallbackPos += 1
+                } else {
+                    fallbackNeg = max(0, fallbackNeg - 1)
+                }
+            }
+            fallback = (positive: fallbackPos, negative: fallbackNeg)
+            return sanitizeNDPair(positive: fallback.positive, negative: fallback.negative, channelCount: count)
         }
+    }
+
+    private func sanitizeNDPair(positive: Int, negative: Int, channelCount: Int) -> (positive: Int, negative: Int) {
+        guard channelCount > 1 else { return (0, 0) }
+        var pos = max(0, min(positive, channelCount - 1))
+        var neg = max(0, min(negative, channelCount - 1))
+        if pos == neg {
+            if pos < channelCount - 1 {
+                pos += 1
+            } else {
+                neg = max(0, neg - 1)
+            }
+        }
+        return (pos, neg)
     }
 
     @discardableResult
@@ -802,7 +852,7 @@ final class AppState: ObservableObject {
 
                     let value: Double
                     switch preset {
-                    case .ndvi, .ndsi:
+                    case .ndvi, .ndsi, .adaptive:
                         let denom = positive + negative
                         value = abs(denom) < epsilon ? 0.0 : (positive - negative) / denom
                     case .wdvi:
@@ -828,7 +878,7 @@ final class AppState: ObservableObject {
             for i in 0..<pixelCount {
                 let normalized: Double
                 switch preset {
-                case .ndvi, .ndsi:
+                case .ndvi, .ndsi, .adaptive:
                     normalized = ndValues[i]
                 case .wdvi:
                     if span <= epsilon {
@@ -950,6 +1000,140 @@ final class AppState: ObservableObject {
                 }
             }
         }
+    }
+
+    func runAdaptiveNDEstimation(config: AdaptiveNDEstimationConfig) {
+        guard ndPreset == .adaptive else { return }
+        guard cube != nil else {
+            loadError = L("Выберите ГСИ перед расчётом адаптивного индекса")
+            return
+        }
+        guard channelCount > 1 else {
+            loadError = L("Недостаточно каналов для адаптивного индекса")
+            return
+        }
+
+        let availableROIIDs = Set(roiSamples.map(\.id))
+        let positiveIDs = config.positiveROIIDs.intersection(availableROIIDs)
+        let negativeIDs = config.negativeROIIDs.intersection(availableROIIDs)
+        let overlap = positiveIDs.intersection(negativeIDs)
+
+        let selectedPositive = roiSamples.filter { positiveIDs.contains($0.id) && !overlap.contains($0.id) }
+        let selectedNegative = roiSamples.filter { negativeIDs.contains($0.id) && !overlap.contains($0.id) }
+        guard !selectedPositive.isEmpty, !selectedNegative.isEmpty else {
+            loadError = L("Выберите хотя бы один ROI для каждой группы")
+            return
+        }
+
+        beginBusy(message: L("Расчёт адаптивного индекса…"))
+        let channels = channelCount
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let result = self.computeAdaptiveNDChannels(
+                positiveGroup: selectedPositive,
+                negativeGroup: selectedNegative,
+                channelCount: channels
+            )
+            DispatchQueue.main.async {
+                self.endBusy()
+                switch result {
+                case .success(let estimate):
+                    self.adaptiveNDPositiveChannel = estimate.positive
+                    self.adaptiveNDNegativeChannel = estimate.negative
+                    self.adaptiveNDPositiveROIIDs = positiveIDs
+                    self.adaptiveNDNegativeROIIDs = negativeIDs
+                    let scoreText = String(format: "%.4f", estimate.score)
+                    self.loadError = LF(
+                        "app.nd.adaptive.estimation_result",
+                        estimate.positive,
+                        estimate.negative,
+                        scoreText
+                    )
+                case .failure(let error):
+                    self.loadError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func computeAdaptiveNDChannels(
+        positiveGroup: [SpectrumROISample],
+        negativeGroup: [SpectrumROISample],
+        channelCount: Int
+    ) -> Result<(positive: Int, negative: Int, score: Double), AdaptiveNDEstimationError> {
+        guard channelCount > 1 else {
+            return .failure(.message(L("Недостаточно каналов для адаптивного индекса")))
+        }
+
+        guard let positiveSpectrum = aggregateSpectrum(for: positiveGroup, channelCount: channelCount),
+              let negativeSpectrum = aggregateSpectrum(for: negativeGroup, channelCount: channelCount) else {
+            return .failure(.message(L("Недостаточно данных ROI для расчёта адаптивного индекса")))
+        }
+
+        var bestPositive = 1
+        var bestNegative = 0
+        var bestScore = -Double.greatestFiniteMagnitude
+        let epsilon = 1e-9
+
+        for positive in 0..<channelCount {
+            for negative in 0..<channelCount where positive != negative {
+                let ndiPositive = normalizedDifference(
+                    positiveSpectrum[positive],
+                    positiveSpectrum[negative],
+                    epsilon: epsilon
+                )
+                let ndiNegative = normalizedDifference(
+                    negativeSpectrum[positive],
+                    negativeSpectrum[negative],
+                    epsilon: epsilon
+                )
+                var separation = ndiPositive - ndiNegative
+                var candidatePositive = positive
+                var candidateNegative = negative
+                if separation < 0 {
+                    separation = -separation
+                    candidatePositive = negative
+                    candidateNegative = positive
+                }
+                if separation > bestScore {
+                    bestScore = separation
+                    bestPositive = candidatePositive
+                    bestNegative = candidateNegative
+                }
+            }
+        }
+
+        guard bestScore.isFinite, bestScore >= 0 else {
+            return .failure(.message(L("Не удалось определить каналы адаптивного индекса")))
+        }
+
+        return .success((bestPositive, bestNegative, bestScore))
+    }
+
+    private func aggregateSpectrum(for rois: [SpectrumROISample], channelCount: Int) -> [Double]? {
+        var sums = [Double](repeating: 0.0, count: channelCount)
+        var totalWeight = 0.0
+
+        for roi in rois {
+            guard roi.values.count == channelCount else { continue }
+            guard roi.values.allSatisfy({ $0.isFinite }) else { continue }
+            let weight = Double(max(roi.rect.area, 1))
+            totalWeight += weight
+            for channel in 0..<channelCount {
+                sums[channel] += roi.values[channel] * weight
+            }
+        }
+
+        guard totalWeight > 0 else { return nil }
+        return sums.map { $0 / totalWeight }
+    }
+
+    private func normalizedDifference(_ positive: Double, _ negative: Double, epsilon: Double) -> Double {
+        let denom = positive + negative
+        if abs(denom) < epsilon {
+            return 0.0
+        }
+        return (positive - negative) / denom
     }
     
     private func closestIndex(in wavelengths: [Double], to target: Double, limit: Int) -> Int? {
@@ -3884,6 +4068,10 @@ final class AppState: ObservableObject {
         ndsiSWIRTarget = snapshot.ndsiSWIRTarget
         wdviSlope = snapshot.wdviSlope
         wdviIntercept = snapshot.wdviIntercept
+        adaptiveNDPositiveChannel = snapshot.adaptiveNDPositiveChannel
+        adaptiveNDNegativeChannel = snapshot.adaptiveNDNegativeChannel
+        adaptiveNDPositiveROIIDs = snapshot.adaptiveNDPositiveROIIDs
+        adaptiveNDNegativeROIIDs = snapshot.adaptiveNDNegativeROIIDs
         ndPalette = NDPalette(rawValue: snapshot.ndPaletteRaw) ?? .classic
         ndThreshold = snapshot.ndThreshold
         pcaPendingConfig = nil
@@ -3995,9 +4183,12 @@ final class AppState: ObservableObject {
         ndsiSWIRTarget = "1610"
         wdviSlope = "1.0"
         wdviIntercept = "0.0"
+        adaptiveNDPositiveChannel = 1
+        adaptiveNDNegativeChannel = 0
+        adaptiveNDPositiveROIIDs = []
+        adaptiveNDNegativeROIIDs = []
         ndPalette = .classic
         ndThreshold = 0.3
-        ndFallbackIndices = [.ndvi: (0, 0), .ndsi: (0, 0), .wdvi: (0, 0)]
         pcaPendingConfig = nil
         pcaRenderedImage = nil
         isPCAApplying = false
@@ -4127,6 +4318,10 @@ final class AppState: ObservableObject {
             ndsiSWIRTarget: ndsiSWIRTarget,
             wdviSlope: wdviSlope,
             wdviIntercept: wdviIntercept,
+            adaptiveNDPositiveChannel: adaptiveNDPositiveChannel,
+            adaptiveNDNegativeChannel: adaptiveNDNegativeChannel,
+            adaptiveNDPositiveROIIDs: adaptiveNDPositiveROIIDs,
+            adaptiveNDNegativeROIIDs: adaptiveNDNegativeROIIDs,
             ndPaletteRaw: ndPalette.rawValue,
             ndThreshold: ndThreshold,
             maskEditorSnapshot: maskSnapshot
@@ -5783,9 +5978,24 @@ struct WDVIAutoEstimationConfig {
     var method: WDVIAutoRegressionMethod
 }
 
+struct AdaptiveNDEstimationConfig {
+    var positiveROIIDs: Set<UUID>
+    var negativeROIIDs: Set<UUID>
+}
+
 enum WDVIEstimationError: Error {
     case message(String)
     
+    var localizedDescription: String {
+        switch self {
+        case .message(let text): return text
+        }
+    }
+}
+
+enum AdaptiveNDEstimationError: Error {
+    case message(String)
+
     var localizedDescription: String {
         switch self {
         case .message(let text): return text

@@ -4,6 +4,7 @@ enum NDIndexPreset: String, CaseIterable, Identifiable {
     case ndvi = "NDVI"
     case ndsi = "NDSI"
     case wdvi = "WDVI"
+    case adaptive = "Адаптивный индекс"
     
     var id: String { rawValue }
     
@@ -12,6 +13,7 @@ enum NDIndexPreset: String, CaseIterable, Identifiable {
         case .ndvi: return L("NDVI (растительность)")
         case .ndsi: return L("NDSI (снег)")
         case .wdvi: return L("WDVI (почвенная линия)")
+        case .adaptive: return L("Адаптивный индекс")
         }
     }
 

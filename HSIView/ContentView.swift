@@ -13,12 +13,17 @@ struct ContentView: View {
     @State private var roiPreviewRect: SpectrumROIRect?
     @State private var rulerHoverPixel: PixelCoordinate?
     @State private var showWDVIAutoSheet: Bool = false
+    @State private var showAdaptiveNDSheet: Bool = false
     @State private var wdviAutoConfig = WDVIAutoEstimationConfig(
         selectedROIIDs: [],
         lowerPercentile: 0.02,
         upperPercentile: 0.98,
         zScoreThreshold: 3.0,
         method: .ols
+    )
+    @State private var adaptiveNDConfig = AdaptiveNDEstimationConfig(
+        positiveROIIDs: [],
+        negativeROIIDs: []
     )
     @State private var leftPanelDragStartWidth: CGFloat?
     @State private var rightPanelDragStartWidth: CGFloat?
@@ -63,6 +68,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showWDVIAutoSheet) {
             wdviAutoSheet
+        }
+        .sheet(isPresented: $showAdaptiveNDSheet) {
+            adaptiveNDSheet
         }
     }
     
@@ -1113,12 +1121,6 @@ struct ContentView: View {
                 }
             }
         }
-        .onAppear {
-            state.updateChannelCount()
-        }
-        .onChange(of: state.cube?.dims.0) { _ in
-            state.updateChannelCount()
-        }
     }
     
     private func maskModeBottomControls(cube: HyperCube) -> some View {
@@ -1327,6 +1329,53 @@ struct ContentView: View {
                         TextField("1610", text: $state.ndsiSWIRTarget)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
+                    }
+                case .adaptive:
+                    let maxChannel = max(state.channelCount - 1, 0)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(state.localized("Канал +"))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Stepper(value: $state.adaptiveNDPositiveChannel, in: 0...maxChannel) {
+                            Text("ch \(state.adaptiveNDPositiveChannel)")
+                                .font(.system(size: 11, design: .monospaced))
+                        }
+                        .frame(width: 120, alignment: .leading)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(state.localized("Канал -"))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Stepper(value: $state.adaptiveNDNegativeChannel, in: 0...maxChannel) {
+                            Text("ch \(state.adaptiveNDNegativeChannel)")
+                                .font(.system(size: 11, design: .monospaced))
+                        }
+                        .frame(width: 120, alignment: .leading)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(" ")
+                            .font(.system(size: 10))
+                        Button {
+                            let roiIDs = Set(state.roiSamples.map(\.id))
+                            adaptiveNDConfig = AdaptiveNDEstimationConfig(
+                                positiveROIIDs: state.adaptiveNDPositiveROIIDs.intersection(roiIDs),
+                                negativeROIIDs: state.adaptiveNDNegativeROIIDs.intersection(roiIDs)
+                            )
+                            if adaptiveNDConfig.positiveROIIDs.isEmpty,
+                               adaptiveNDConfig.negativeROIIDs.isEmpty,
+                               state.roiSamples.count >= 2 {
+                                adaptiveNDConfig.positiveROIIDs = [state.roiSamples[0].id]
+                                adaptiveNDConfig.negativeROIIDs = [state.roiSamples[1].id]
+                            }
+                            showAdaptiveNDSheet = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                Text(state.localized("Подобрать по ROI…"))
+                            }
+                        }
                     }
                 case .wdvi:
                     VStack(alignment: .leading, spacing: 4) {
@@ -1568,6 +1617,145 @@ struct ContentView: View {
         }
         .padding(20)
         .frame(minWidth: 560, minHeight: 420)
+    }
+
+    private var adaptiveNDSheet: some View {
+        let rois = state.roiSamples
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(state.localized("Адаптивный индекс"))
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+            }
+
+            Text(state.localized("Выберите две группы ROI. Алгоритм автоматически найдёт пару каналов с максимальным разделением групп."))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            if rois.isEmpty {
+                Text(state.localized("Сохранённых ROI нет — добавьте области на изображении и повторите."))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            } else {
+                HStack(spacing: 12) {
+                    adaptiveROISelectionColumn(
+                        title: state.localized("ROI для группы A"),
+                        selected: Binding(
+                            get: { adaptiveNDConfig.positiveROIIDs },
+                            set: { adaptiveNDConfig.positiveROIIDs = $0 }
+                        ),
+                        opposite: Binding(
+                            get: { adaptiveNDConfig.negativeROIIDs },
+                            set: { adaptiveNDConfig.negativeROIIDs = $0 }
+                        ),
+                        rois: rois
+                    )
+
+                    adaptiveROISelectionColumn(
+                        title: state.localized("ROI для группы B"),
+                        selected: Binding(
+                            get: { adaptiveNDConfig.negativeROIIDs },
+                            set: { adaptiveNDConfig.negativeROIIDs = $0 }
+                        ),
+                        opposite: Binding(
+                            get: { adaptiveNDConfig.positiveROIIDs },
+                            set: { adaptiveNDConfig.positiveROIIDs = $0 }
+                        ),
+                        rois: rois
+                    )
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Text(
+                    state.localizedFormat(
+                        "adaptive.nd.current_pair",
+                        state.adaptiveNDPositiveChannel,
+                        state.adaptiveNDNegativeChannel
+                    )
+                )
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                Spacer()
+            }
+
+            HStack {
+                Spacer()
+                Button(state.localized("Отмена")) {
+                    showAdaptiveNDSheet = false
+                }
+                Button(state.localized("Рассчитать")) {
+                    let positive = adaptiveNDConfig.positiveROIIDs.subtracting(adaptiveNDConfig.negativeROIIDs)
+                    let negative = adaptiveNDConfig.negativeROIIDs.subtracting(adaptiveNDConfig.positiveROIIDs)
+                    state.runAdaptiveNDEstimation(
+                        config: AdaptiveNDEstimationConfig(
+                            positiveROIIDs: positive,
+                            negativeROIIDs: negative
+                        )
+                    )
+                    showAdaptiveNDSheet = false
+                }
+                .disabled(
+                    rois.isEmpty
+                    || adaptiveNDConfig.positiveROIIDs.isEmpty
+                    || adaptiveNDConfig.negativeROIIDs.isEmpty
+                )
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 680, minHeight: 430)
+    }
+
+    private func adaptiveROISelectionColumn(
+        title: String,
+        selected: Binding<Set<UUID>>,
+        opposite: Binding<Set<UUID>>,
+        rois: [SpectrumROISample]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                Spacer()
+                Button(state.localized("Выбрать все")) {
+                    selected.wrappedValue = Set(rois.map(\.id))
+                    opposite.wrappedValue.subtract(selected.wrappedValue)
+                }
+                .buttonStyle(.borderless)
+                Button(state.localized("Очистить")) {
+                    selected.wrappedValue.removeAll()
+                }
+                .buttonStyle(.borderless)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rois) { roi in
+                        Toggle(isOn: Binding(
+                            get: { selected.wrappedValue.contains(roi.id) },
+                            set: { isOn in
+                                if isOn {
+                                    selected.wrappedValue.insert(roi.id)
+                                    opposite.wrappedValue.remove(roi.id)
+                                } else {
+                                    selected.wrappedValue.remove(roi.id)
+                                }
+                            }
+                        )) {
+                            Text(roi.displayName ?? "ROI \(roi.id.uuidString.prefix(4))")
+                                .font(.system(size: 11))
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+                .cornerRadius(8)
+            }
+            .frame(maxHeight: 250)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
     
     @ViewBuilder
