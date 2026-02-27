@@ -1,6 +1,35 @@
 import Foundation
 import AppKit
 
+enum FastImportDevice: String, CaseIterable, Identifiable {
+    case specimIQ
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .specimIQ:
+            return L("fast_import.device.specim_iq")
+        }
+    }
+}
+
+enum FastImportDataMode: String, CaseIterable, Identifiable {
+    case radiance
+    case reflectance
+
+    var id: String { rawValue }
+
+    var localizedTitle: String {
+        switch self {
+        case .radiance:
+            return L("fast_import.mode.rad")
+        case .reflectance:
+            return L("fast_import.mode.ref")
+        }
+    }
+}
+
 final class AppState: ObservableObject {
     private static let processingQueueKey = DispatchSpecificKey<String>()
     private static let processingQueueValue = "com.hsiview.processing"
@@ -135,6 +164,7 @@ final class AppState: ObservableObject {
     @Published var showExportView: Bool = false
     @Published var pendingExport: PendingExportInfo? = nil
     @Published var exportEntireLibrary: Bool = false
+    @Published var showFastImportSheet: Bool = false
     
     @Published var isTrimMode: Bool = false
     @Published var trimStart: Double = 0
@@ -567,7 +597,88 @@ final class AppState: ObservableObject {
             }
         }
     }
-    
+
+    func startFastImport(device: FastImportDevice, dataMode: FastImportDataMode) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = L("fast_import.root_panel.message")
+        panel.prompt = L("fast_import.import_button")
+
+        guard panel.runModal() == .OK, let rootURL = panel.url else {
+            return
+        }
+
+        _ = SecurityScopedBookmarkStore.shared.addFolder(url: rootURL)
+        runFastImport(device: device, dataMode: dataMode, rootURL: rootURL, allowPromptForAccess: false)
+    }
+
+    func runFastImport(
+        device: FastImportDevice,
+        dataMode: FastImportDataMode,
+        rootURL: URL,
+        allowPromptForAccess: Bool = true
+    ) {
+        guard let importRoot = resolveFastImportRootURL(
+            rootURL: rootURL,
+            allowPromptForAccess: allowPromptForAccess
+        ) else {
+            loadError = L("fast_import.error.access_denied")
+            return
+        }
+
+        _ = SecurityScopedBookmarkStore.shared.addFolder(url: importRoot)
+        beginBusy(message: L("fast_import.busy"))
+
+        processingQueue.async { [weak self] in
+            guard let self else { return }
+            let startedScope = importRoot.startAccessingSecurityScopedResource()
+            defer {
+                if startedScope {
+                    importRoot.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let candidates: [URL]
+            switch device {
+            case .specimIQ:
+                candidates = self.specimIQImportCandidates(rootURL: importRoot, dataMode: dataMode)
+            }
+
+            let uniqueCandidates = self.uniqueCanonicalURLs(candidates)
+
+            DispatchQueue.main.async {
+                defer { self.endBusy() }
+
+                guard !uniqueCandidates.isEmpty else {
+                    self.loadError = self.localizedFormat("fast_import.result.none", dataMode.localizedTitle)
+                    return
+                }
+
+                let existingPaths = Set(self.libraryEntries.map { $0.canonicalPath })
+                var importedCount = 0
+                var skippedExistingCount = 0
+
+                for candidate in uniqueCandidates {
+                    if existingPaths.contains(candidate.path) || self.libraryEntries.contains(where: { $0.canonicalPath == candidate.path }) {
+                        skippedExistingCount += 1
+                        continue
+                    }
+                    if self.addLibraryEntryIfPossible(from: candidate) != nil {
+                        importedCount += 1
+                    }
+                }
+
+                if importedCount == 0 {
+                    self.loadError = self.localizedFormat("fast_import.result.all_existing", uniqueCandidates.count)
+                } else {
+                    self.loadError = self.localizedFormat("fast_import.result.imported", importedCount, skippedExistingCount)
+                }
+            }
+        }
+    }
+
     func updateChannelCount() {
         guard let cube = cube else {
             channelCount = 0
@@ -4220,6 +4331,245 @@ final class AppState: ObservableObject {
         if !libraryEntries.contains(where: { $0.url.standardizedFileURL == canonical }) {
             libraryEntries.append(CubeLibraryEntry(url: canonical))
         }
+    }
+
+    private func uniqueCanonicalURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        var unique: [URL] = []
+        unique.reserveCapacity(urls.count)
+
+        for url in urls {
+            let canonical = canonicalURL(url)
+            if seen.insert(canonical.path).inserted {
+                unique.append(canonical)
+            }
+        }
+
+        return unique
+    }
+
+    private func resolveFastImportRootURL(rootURL: URL, allowPromptForAccess: Bool) -> URL? {
+        let canonicalRoot = canonicalURL(rootURL)
+
+        if hasStoredAccess(for: canonicalRoot) {
+            return canonicalRoot
+        }
+
+        if !allowPromptForAccess, hasReadableDirectory(at: canonicalRoot) {
+            return canonicalRoot
+        }
+
+        guard allowPromptForAccess else { return nil }
+        guard let selectedRoot = requestFastImportAccess(initialURL: canonicalRoot) else { return nil }
+        return canonicalURL(selectedRoot)
+    }
+
+    private func hasStoredAccess(for url: URL) -> Bool {
+        let canonicalPath = canonicalURL(url).path
+        for entry in SecurityScopedBookmarkStore.shared.entries {
+            let basePath = canonicalURL(URL(fileURLWithPath: entry.path)).path
+            if canonicalPath == basePath || canonicalPath.hasPrefix(basePath + "/") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func hasReadableDirectory(at url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return false
+        }
+
+        do {
+            _ = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func requestFastImportAccess(initialURL: URL) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = initialURL
+        panel.message = L("fast_import.access_panel.message")
+        panel.prompt = L("fast_import.access_panel.prompt")
+
+        guard panel.runModal() == .OK, let selected = panel.url else {
+            return nil
+        }
+
+        _ = SecurityScopedBookmarkStore.shared.addFolder(url: selected)
+        return selected
+    }
+
+    private func specimIQImportCandidates(rootURL: URL, dataMode: FastImportDataMode) -> [URL] {
+        let scenes = specimIQSceneDirectories(at: rootURL)
+        guard !scenes.isEmpty else { return [] }
+
+        var urls: [URL] = []
+        urls.reserveCapacity(scenes.count)
+
+        for scene in scenes {
+            switch dataMode {
+            case .radiance:
+                guard let captureDir = firstExistingSubdirectory(in: scene.url, names: ["capture", ".capture"]) else {
+                    continue
+                }
+
+                if let candidate = firstExistingFile(
+                    in: captureDir,
+                    preferredNames: [
+                        "\(scene.index).hdr",
+                        "\(scene.index).raw"
+                    ]
+                ),
+                   let resolvedCandidate = preferredImportURL(for: candidate) {
+                    urls.append(resolvedCandidate)
+                }
+            case .reflectance:
+                guard let resultsDir = firstExistingSubdirectory(in: scene.url, names: ["results", ".results"]) else {
+                    continue
+                }
+
+                if let candidate = firstExistingFile(
+                    in: resultsDir,
+                    preferredNames: [
+                        "REFLECTANCE_\(scene.index).hdr",
+                        "REFLECTANCE_\(scene.index).dat"
+                    ]
+                ),
+                   let resolvedCandidate = preferredImportURL(for: candidate) {
+                    urls.append(resolvedCandidate)
+                }
+            }
+        }
+
+        return urls
+    }
+
+    private func specimIQSceneDirectories(at rootURL: URL) -> [(index: String, url: URL)] {
+        let keys: [URLResourceKey] = [.isDirectoryKey]
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: keys,
+            options: []
+        ) else {
+            return []
+        }
+
+        var scenes: [(index: String, url: URL)] = []
+        for entry in entries {
+            guard let values = try? entry.resourceValues(forKeys: Set(keys)),
+                  values.isDirectory == true else {
+                continue
+            }
+
+            let name = entry.lastPathComponent
+            guard name.count == 3, name.allSatisfy(\.isNumber) else { continue }
+            scenes.append((index: name, url: entry))
+        }
+
+        return scenes.sorted { $0.index < $1.index }
+    }
+
+    private func firstExistingSubdirectory(in parent: URL, names: [String]) -> URL? {
+        let lowercasedNames = Set(names.map { $0.lowercased() })
+
+        for name in names {
+            let directURL = parent.appendingPathComponent(name, isDirectory: true)
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: directURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                return directURL
+            }
+        }
+
+        let keys: [URLResourceKey] = [.isDirectoryKey]
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: parent,
+            includingPropertiesForKeys: keys,
+            options: []
+        ) else {
+            return nil
+        }
+
+        for entry in entries {
+            guard let values = try? entry.resourceValues(forKeys: Set(keys)),
+                  values.isDirectory == true else {
+                continue
+            }
+            if lowercasedNames.contains(entry.lastPathComponent.lowercased()) {
+                return entry
+            }
+        }
+
+        return nil
+    }
+
+    private func firstExistingFile(in directory: URL, preferredNames: [String]) -> URL? {
+        for name in preferredNames {
+            let directURL = directory.appendingPathComponent(name, isDirectory: false)
+            if FileManager.default.fileExists(atPath: directURL.path) {
+                return directURL
+            }
+        }
+
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: []
+        ) else {
+            return nil
+        }
+
+        var entryByName: [String: URL] = [:]
+        for entry in entries {
+            let key = entry.lastPathComponent.lowercased()
+            if entryByName[key] == nil {
+                entryByName[key] = entry
+            }
+        }
+        for preferred in preferredNames {
+            if let match = entryByName[preferred.lowercased()] {
+                return match
+            }
+        }
+
+        return nil
+    }
+
+    private func preferredImportURL(for candidate: URL) -> URL? {
+        let ext = candidate.pathExtension.lowercased()
+        switch ext {
+        case "hdr":
+            return hasEnviBinaryPair(forHeader: candidate) ? candidate : nil
+        case "dat", "img", "bsq", "bil", "bip", "raw":
+            let header = candidate.deletingPathExtension().appendingPathExtension("hdr")
+            return hasEnviBinaryPair(forHeader: header) ? header : nil
+        default:
+            return candidate
+        }
+    }
+
+    private func hasEnviBinaryPair(forHeader headerURL: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: headerURL.path) else { return false }
+        let base = headerURL.deletingPathExtension()
+        let dataExtensions = ["dat", "img", "bsq", "bil", "bip", "raw"]
+        for ext in dataExtensions {
+            let candidate = base.appendingPathExtension(ext)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return true
+            }
+        }
+        return false
     }
     
     private func canonicalURL(_ url: URL) -> URL {

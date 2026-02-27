@@ -23,6 +23,7 @@
 "menu.language.system" = "Системный";
 "menu.main_window" = "Основное окно";
 "menu.open" = "Открыть…";
+"menu.fast_import" = "Быстрый импорт…";
 "menu.import_mask" = "Импорт маски…";
 "menu.propagate_processing" = "Распространить обработку";
 "menu.propagate_wavelengths" = "Распространить длины волн";
@@ -54,6 +55,23 @@
 "settings.python.status.missing" = "Интерпретатор недоступен";
 "settings.python.status.symlink_hint" = "Путь к интерпретатору является симлинком. Он резолвится в %@. Добавьте доступ к этой папке в Access Manager или используйте Python-бинарник без симлинка.";
 "settings.python.status.note" = "Этот путь будет использоваться в Python-этапах пайплайна.";
+
+"fast_import.title" = "Быстрый импорт";
+"fast_import.description" = "Быстрый импорт отснятых данных Specim IQ в библиотеку.";
+"fast_import.device" = "Устройство";
+"fast_import.device.specim_iq" = "Specim IQ";
+"fast_import.mode" = "Тип импорта";
+"fast_import.mode.rad" = "RAD";
+"fast_import.mode.ref" = "REF";
+"fast_import.import_button" = "Импортировать";
+"fast_import.root_panel.message" = "Выберите корневую папку со сценами Specim IQ (001, 002, ...).";
+"fast_import.busy" = "Импорт данных Specim IQ…";
+"fast_import.error.access_denied" = "Нет доступа к выбранной папке. Предоставьте доступ и повторите импорт.";
+"fast_import.access_panel.message" = "Для импорта с этого носителя предоставьте доступ к папке с данными Specim IQ.";
+"fast_import.access_panel.prompt" = "Предоставить доступ";
+"fast_import.result.none" = "Для режима %@ не найдено подходящих файлов Specim IQ.";
+"fast_import.result.all_existing" = "Найдено %d файл(ов), но все уже есть в библиотеке.";
+"fast_import.result.imported" = "Импортировано %d файл(ов). Пропущено (уже в библиотеке): %d.";
 "Кастомная обработка" = "Кастомная обработка";
 "Запустить пользовательский Python-код для обработки ГСИ" = "Запустить пользовательский Python-код для обработки ГСИ";
 "custom.python.unnamed" = "Без названия";

@@ -72,6 +72,10 @@ struct ContentView: View {
         .sheet(isPresented: $showAdaptiveNDSheet) {
             adaptiveNDSheet
         }
+        .sheet(isPresented: $state.showFastImportSheet) {
+            FastImportSheetView()
+                .environmentObject(state)
+        }
     }
     
     private var mainContent: some View {
@@ -2837,6 +2841,67 @@ struct TrimActionButton: View {
         } else {
             return color.opacity(0.15)
         }
+    }
+}
+
+private struct FastImportSheetView: View {
+    @EnvironmentObject var state: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedDevice: FastImportDevice = .specimIQ
+    @State private var selectedMode: FastImportDataMode = .reflectance
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(state.localized("fast_import.title"))
+                .font(.title3.weight(.semibold))
+
+            Text(state.localized("fast_import.description"))
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(state.localized("fast_import.device"))
+                    .font(.system(size: 13, weight: .semibold))
+                Picker(state.localized("fast_import.device"), selection: $selectedDevice) {
+                    ForEach(FastImportDevice.allCases) { device in
+                        Text(device.localizedTitle).tag(device)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(state.localized("fast_import.mode"))
+                    .font(.system(size: 13, weight: .semibold))
+                Picker(state.localized("fast_import.mode"), selection: $selectedMode) {
+                    ForEach(FastImportDataMode.allCases) { mode in
+                        Text(mode.localizedTitle).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            HStack {
+                Spacer()
+                Button(state.localized("common.cancel")) {
+                    dismiss()
+                }
+                Button(state.localized("fast_import.import_button")) {
+                    let device = selectedDevice
+                    let mode = selectedMode
+                    dismiss()
+                    DispatchQueue.main.async {
+                        state.startFastImport(device: device, dataMode: mode)
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(width: 460)
     }
 }
 
