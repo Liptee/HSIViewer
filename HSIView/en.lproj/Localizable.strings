@@ -23,6 +23,7 @@
 "menu.language.system" = "System";
 "menu.main_window" = "Main Window";
 "menu.open" = "Open…";
+"menu.fast_import" = "Fast Import…";
 "menu.import_mask" = "Import Mask…";
 "menu.propagate_processing" = "Propagate Processing";
 "menu.propagate_wavelengths" = "Propagate Wavelengths";
@@ -54,6 +55,23 @@
 "settings.python.status.missing" = "Interpreter is not accessible";
 "settings.python.status.symlink_hint" = "Interpreter path is a symlink. It resolves to %@. Add access to that folder in Access Manager or use a non-symlink Python binary.";
 "settings.python.status.note" = "This path will be used by Python-based pipeline stages.";
+
+"fast_import.title" = "Fast Import";
+"fast_import.description" = "Quickly import Specim IQ captures into the library.";
+"fast_import.device" = "Device";
+"fast_import.device.specim_iq" = "Specim IQ";
+"fast_import.mode" = "Import type";
+"fast_import.mode.rad" = "RAD";
+"fast_import.mode.ref" = "REF";
+"fast_import.import_button" = "Import";
+"fast_import.root_panel.message" = "Select the root folder that contains Specim IQ scene folders (001, 002, ...).";
+"fast_import.busy" = "Importing Specim IQ data…";
+"fast_import.error.access_denied" = "No access to the selected folder. Grant access and try again.";
+"fast_import.access_panel.message" = "To import from this media, grant folder access for Specim IQ data.";
+"fast_import.access_panel.prompt" = "Grant Access";
+"fast_import.result.none" = "No Specim IQ files were found for %@ mode.";
+"fast_import.result.all_existing" = "Found %d file(s), but all are already in the library.";
+"fast_import.result.imported" = "Imported %d file(s). Skipped existing: %d.";
 "Кастомная обработка" = "Custom processing";
 "Запустить пользовательский Python-код для обработки ГСИ" = "Run custom Python code for HSI processing";
 "custom.python.unnamed" = "Untitled custom processing";

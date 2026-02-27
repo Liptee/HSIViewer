@@ -92,6 +92,11 @@ struct HSIViewApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Button(appState.localized("menu.fast_import")) {
+                    showFastImport()
+                }
+                .disabled(appState.isBusy)
+
                 Button(appState.localized("menu.import_mask")) {
                     importMask()
                 }
@@ -246,5 +251,9 @@ struct HSIViewApp: App {
         guard response == .OK, let url = panel.url else { return }
 
         appState.importMaskMetadata(url: url)
+    }
+
+    private func showFastImport() {
+        appState.showFastImportSheet = true
     }
 }
