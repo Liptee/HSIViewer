@@ -3,6 +3,10 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
+    private final class ROICursorHoverBuffer {
+        var pixel: PixelCoordinate?
+    }
+
     @EnvironmentObject var state: AppState
     @State private var tempZoomScale: CGFloat = 1.0
     @State private var dragOffset: CGSize = .zero
@@ -11,6 +15,11 @@ struct ContentView: View {
     @State private var currentGeoSize: CGSize = .zero
     @State private var roiDragStartPixel: PixelCoordinate?
     @State private var roiPreviewRect: SpectrumROIRect?
+    @State private var roiCursorHoverPixel: PixelCoordinate?
+    @State private var roiCursorPreviewRect: SpectrumROIRect?
+    @State private var roiCursorHoverBuffer = ROICursorHoverBuffer()
+    @State private var cachedROICursorSourceImageID: ObjectIdentifier?
+    @State private var lastCursorGeoPixel: PixelCoordinate?
     @State private var rulerHoverPixel: PixelCoordinate?
     @State private var showWDVIAutoSheet: Bool = false
     @State private var showAdaptiveNDSheet: Bool = false
@@ -87,6 +96,21 @@ struct ContentView: View {
             FastImportSheetView()
                 .environmentObject(state)
         }
+        .onAppear {
+            ROICursorPreviewWindowManager.shared.hide()
+        }
+        .onDisappear {
+            ROICursorPreviewWindowManager.shared.hide()
+        }
+        .onChange(of: state.cube?.id) { cubeID in
+            if cubeID == nil {
+                clearROICursorHoverState()
+            }
+            ROICursorPreviewWindowManager.shared.hide()
+        }
+        .task(id: roiCursorSchedulerID) {
+            await runROICursorSchedulerLoop()
+        }
     }
     
     private var mainContent: some View {
@@ -98,9 +122,15 @@ struct ContentView: View {
                 let canShowRightPanel = state.cube != nil && state.isRightPanelVisible
                 let graphToggleWidth: CGFloat = 20
                 let graphPanelWidth = max(220, state.rightPanelWidth - graphToggleWidth)
+                let showsROICursorPreviewInLeftPanel = state.activeAnalysisTool == .roiCursor && state.cube != nil
 
                 if canShowLeftPanel {
-                    if state.viewMode == .mask {
+                    if showsROICursorPreviewInLeftPanel {
+                        roiCursorPreviewPanel
+                            .frame(width: state.leftPanelWidth)
+                            .padding(.leading, 12)
+                            .allowsHitTesting(!state.isCubeMetricsSelectionMode)
+                    } else if state.viewMode == .mask {
                         MaskLayersPanelView(maskState: state.maskEditorState)
                             .frame(width: state.leftPanelWidth)
                             .padding(.leading, 12)
@@ -238,6 +268,8 @@ struct ContentView: View {
                     .onTapGesture { location in
                         if state.activeAnalysisTool == .spectrumGraph {
                             handleImageClick(at: location, geoSize: geo.size)
+                        } else if state.activeAnalysisTool == .roiCursor {
+                            handleROICursorClick(at: location, geoSize: geo.size)
                         } else if state.activeAnalysisTool == .ruler,
                                   state.rulerMode == .measure {
                             handleRulerClick(at: location, geoSize: geo.size)
@@ -302,6 +334,7 @@ struct ContentView: View {
                     .onHover { isHovering in
                         if (state.activeAnalysisTool == .spectrumGraph
                             || state.activeAnalysisTool == .spectrumGraphROI
+                            || state.activeAnalysisTool == .roiCursor
                             || state.activeAnalysisTool == .ruler),
                            state.cube != nil {
                             if isHovering {
@@ -316,41 +349,75 @@ struct ContentView: View {
                         case .active(let location):
                             guard let pixel = pixelCoordinate(for: location, geoSize: geo.size) else {
                                 rulerHoverPixel = nil
-                                state.clearCursorGeoCoordinate()
+                                clearROICursorHoverState()
+                                if lastCursorGeoPixel != nil {
+                                    lastCursorGeoPixel = nil
+                                    state.clearCursorGeoCoordinate()
+                                }
                                 return
                             }
-                            if state.activeAnalysisTool == .ruler,
+                            if state.activeAnalysisTool == .roiCursor {
+                                if rulerHoverPixel != nil {
+                                    rulerHoverPixel = nil
+                                }
+                                roiCursorHoverBuffer.pixel = pixel
+                            } else if state.activeAnalysisTool == .ruler,
                                state.rulerMode == .measure {
                                 rulerHoverPixel = pixel
                             } else {
                                 rulerHoverPixel = nil
+                                clearROICursorHoverState()
                             }
                             if state.cube?.geoReference != nil {
-                                state.updateCursorGeoCoordinate(pixelX: pixel.x, pixelY: pixel.y)
+                                if lastCursorGeoPixel != pixel {
+                                    lastCursorGeoPixel = pixel
+                                    state.updateCursorGeoCoordinate(pixelX: pixel.x, pixelY: pixel.y)
+                                }
                             } else {
-                                state.clearCursorGeoCoordinate()
+                                if lastCursorGeoPixel != nil {
+                                    lastCursorGeoPixel = nil
+                                    state.clearCursorGeoCoordinate()
+                                }
                             }
                         case .ended:
                             rulerHoverPixel = nil
-                            state.clearCursorGeoCoordinate()
+                            clearROICursorHoverState()
+                            if lastCursorGeoPixel != nil {
+                                lastCursorGeoPixel = nil
+                                state.clearCursorGeoCoordinate()
+                            }
                         }
                     }
                     .onChange(of: state.activeAnalysisTool) { _ in
                         NSCursor.pop()
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
+                        if state.activeAnalysisTool != .roiCursor {
+                            clearROICursorHoverState()
+                        }
                         rulerHoverPixel = nil
+                        ROICursorPreviewWindowManager.shared.hide()
                     }
                     .onChange(of: state.rulerMode) { mode in
                         if mode != .measure {
                             rulerHoverPixel = nil
                         }
                     }
+                    .onChange(of: state.roiCursorSize) { _ in
+                        guard state.activeAnalysisTool == .roiCursor,
+                              let pixel = roiCursorHoverBuffer.pixel else { return }
+                        updateROICursor(at: pixel)
+                    }
                     .onChange(of: state.cubeURL) { _ in
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
+                        clearROICursorHoverState()
                         rulerHoverPixel = nil
-                        state.clearCursorGeoCoordinate()
+                        if lastCursorGeoPixel != nil {
+                            lastCursorGeoPixel = nil
+                            state.clearCursorGeoCoordinate()
+                        }
+                        ROICursorPreviewWindowManager.shared.hide()
                     }
                     .background(
                         RulerDeleteKeyCatcher(
@@ -868,8 +935,10 @@ struct ContentView: View {
                     channelIndex: chIdx,
                     targetPixels: targetPixels
                 ) {
+                cacheROICursorSourceImage(nsImage)
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
                 } else {
+                cacheROICursorSourceImage(nil)
                 view = AnyView(
                     Text(state.localized("Не удалось построить изображение"))
                         .foregroundColor(.red)
@@ -901,8 +970,10 @@ struct ContentView: View {
             }
             
             if let nsImage = image {
+                cacheROICursorSourceImage(nsImage)
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
+                cacheROICursorSourceImage(nil)
                 view = AnyView(
                     Text(state.localized(config.mode == .pcaVisualization ? "Нажмите «Применить PCA»" : "Не удалось построить RGB изображение"))
                         .font(.system(size: 12))
@@ -924,8 +995,10 @@ struct ContentView: View {
                 wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0,
                 targetPixels: targetPixels
                ) {
+                cacheROICursorSourceImage(nsImage)
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
+                cacheROICursorSourceImage(nil)
                 view = AnyView(
                     Text(state.localized("Не удалось построить ND"))
                         .font(.system(size: 12))
@@ -934,6 +1007,7 @@ struct ContentView: View {
             }
             
         case .mask:
+            cacheROICursorSourceImage(nil)
             view = AnyView(EmptyView())
         }
         
@@ -958,10 +1032,13 @@ struct ContentView: View {
                     originalSize: nsImage.size,
                     displaySize: fittedSize
                 )
-            } else if state.activeAnalysisTool == .spectrumGraphROI {
+            } else if state.activeAnalysisTool == .spectrumGraphROI || state.activeAnalysisTool == .roiCursor {
                 SpectrumROIsOverlay(
-                    samples: state.activeROISamples,
-                    temporaryRect: roiPreviewRect,
+                    samples: state.activeAnalysisTool == .roiCursor ? state.roiSamples : state.activeROISamples,
+                    temporaryRect: state.activeAnalysisTool == .roiCursor ? roiCursorPreviewRect : roiPreviewRect,
+                    temporaryColor: state.activeAnalysisTool == .roiCursor
+                        ? (state.roiCursorSample?.displayColor ?? .accentColor)
+                        : .accentColor,
                     originalSize: nsImage.size,
                     displaySize: fittedSize
                 )
@@ -999,9 +1076,13 @@ struct ContentView: View {
         .onAppear {
             currentImageSize = nsImage.size
             currentGeoSize = geoSize
+            cacheROICursorSourceImage(nsImage)
         }
         .onChange(of: nsImage.size) { newSize in
             currentImageSize = newSize
+        }
+        .onChange(of: state.activeAnalysisTool) { _ in
+            cacheROICursorSourceImage(nsImage)
         }
     }
     
@@ -2203,6 +2284,17 @@ struct ContentView: View {
         guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
         state.addRulerPoint(pixelX: pixel.x, pixelY: pixel.y)
     }
+
+    private func handleROICursorClick(at location: CGPoint, geoSize: CGSize) {
+        guard state.activeAnalysisTool == .roiCursor else { return }
+        guard let pixel = pixelCoordinate(for: location, geoSize: geoSize) else { return }
+        let rect = roiCursorRect(around: pixel)
+        roiCursorHoverBuffer.pixel = pixel
+        roiCursorHoverPixel = pixel
+        roiCursorPreviewRect = rect
+        state.updateROICursorSpectrum(for: rect, force: true)
+        state.saveROICursorSample()
+    }
     
     private func pixelCoordinate(for location: CGPoint, geoSize: CGSize) -> PixelCoordinate? {
         guard currentImageSize.width > 0, currentImageSize.height > 0 else { return nil }
@@ -2276,6 +2368,117 @@ struct ContentView: View {
                 guard state.activeAnalysisTool == .spectrumGraphROI else { return }
                 handleROIDragEnd(value: value, geoSize: geoSize)
             }
+    }
+
+    private func roiCursorRect(around pixel: PixelCoordinate) -> SpectrumROIRect {
+        let width = max(Int(currentImageSize.width.rounded()), 1)
+        let height = max(Int(currentImageSize.height.rounded()), 1)
+        let requestedSize = max(1, state.roiCursorSize)
+        let rectWidth = min(requestedSize, width)
+        let rectHeight = min(requestedSize, height)
+        let halfWidth = rectWidth / 2
+        let halfHeight = rectHeight / 2
+
+        let maxMinX = max(0, width - rectWidth)
+        let maxMinY = max(0, height - rectHeight)
+        let minX = max(0, min(pixel.x - halfWidth, maxMinX))
+        let minY = max(0, min(pixel.y - halfHeight, maxMinY))
+
+        return SpectrumROIRect(
+            minX: minX,
+            minY: minY,
+            width: rectWidth,
+            height: rectHeight
+        )
+    }
+
+    private func updateROICursor(at pixel: PixelCoordinate) {
+        guard state.activeAnalysisTool == .roiCursor else { return }
+        roiCursorHoverPixel = pixel
+        let rect = roiCursorRect(around: pixel)
+        guard rect != roiCursorPreviewRect || state.roiCursorRect == nil else { return }
+        roiCursorPreviewRect = rect
+        state.updateROICursorSpectrum(for: rect)
+    }
+
+    private func clearROICursorHoverState() {
+        guard roiCursorHoverPixel != nil
+                || roiCursorPreviewRect != nil
+                || state.roiCursorSample != nil
+                || state.roiCursorRect != nil else {
+            return
+        }
+        roiCursorHoverBuffer.pixel = nil
+        roiCursorHoverPixel = nil
+        roiCursorPreviewRect = nil
+        state.clearROICursorState()
+    }
+
+    private var roiCursorSchedulerID: String {
+        let cubeID = state.cube?.id.uuidString ?? "none"
+        return "roi-cursor-\(state.activeAnalysisTool.rawValue)-\(cubeID)-\(state.roiCursorUpdateFPSLimit)"
+    }
+
+    @MainActor
+    private func runROICursorSchedulerLoop() async {
+        while !Task.isCancelled {
+            if state.activeAnalysisTool == .roiCursor,
+               state.cube != nil,
+               let pixel = roiCursorHoverBuffer.pixel {
+                updateROICursor(at: pixel)
+                let interval = max(state.roiCursorRefreshInterval ?? (1.0 / 120.0), 1.0 / 240.0)
+                let sleepNanoseconds = UInt64((interval * 1_000_000_000.0).rounded())
+                try? await Task.sleep(nanoseconds: sleepNanoseconds)
+            } else {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+        }
+    }
+
+    private func cacheROICursorSourceImage(_ image: NSImage?) {
+        let nextID = image.map(ObjectIdentifier.init)
+        guard cachedROICursorSourceImageID != nextID else { return }
+        DispatchQueue.main.async {
+            cachedROICursorSourceImageID = nextID
+            state.setROICursorSourceImage(image)
+        }
+    }
+
+    private var roiCursorPreviewPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(state.localized("window.roi_cursor.title"))
+                .font(.headline)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(NSColor.controlBackgroundColor))
+
+                if let roiImage = state.roiCursorPreviewImage {
+                    Image(nsImage: roiImage)
+                        .resizable()
+                        .interpolation(.none)
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                } else {
+                    Text(state.localized("roi.cursor.window.empty"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color(NSColor.separatorColor).opacity(0.8), lineWidth: 1)
+            )
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(NSColor.windowBackgroundColor).opacity(0.65))
+        )
     }
 
 
@@ -2444,6 +2647,7 @@ struct SpectrumPointsOverlay: View {
 struct SpectrumROIsOverlay: View {
     let samples: [SpectrumROISample]
     let temporaryRect: SpectrumROIRect?
+    let temporaryColor: Color
     let originalSize: CGSize
     let displaySize: CGSize
     
@@ -2460,10 +2664,10 @@ struct SpectrumROIsOverlay: View {
             
             if let temp = temporaryRect {
                 roiPath(for: temp)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .stroke(temporaryColor, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .background(
                         roiPath(for: temp)
-                            .fill(Color.accentColor.opacity(0.05))
+                            .fill(temporaryColor.opacity(0.05))
                     )
             }
         }

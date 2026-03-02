@@ -525,8 +525,10 @@ final class AppState: ObservableObject {
     private static let defaultWavelengthStartDefaultsKey = "settings.default_wavelength.start"
     private static let defaultWavelengthEndDefaultsKey = "settings.default_wavelength.end"
     private static let pythonInterpreterPathDefaultsKey = "settings.python.interpreter_path"
+    private static let roiCursorUpdateFPSDefaultsKey = "settings.tools.roi_cursor_update_fps"
     private static let fallbackWavelengthStart = "400"
     private static let fallbackWavelengthEnd = "1000"
+    private static let fallbackROICursorUpdateFPSLimit = 30
     private static let pythonInterpreterCandidates = [
         "/usr/bin/python3",
         "/opt/homebrew/bin/python3",
@@ -712,6 +714,28 @@ final class AppState: ObservableObject {
     @Published var pendingSpectrumSample: SpectrumSample?
     @Published var roiSamples: [SpectrumROISample] = []
     @Published var pendingROISample: SpectrumROISample?
+    @Published var roiCursorSample: SpectrumROISample?
+    @Published var roiCursorRect: SpectrumROIRect?
+    @Published var roiCursorSize: Int = 25 {
+        didSet {
+            let normalized = normalizedROICursorSize(roiCursorSize)
+            if normalized != roiCursorSize {
+                roiCursorSize = normalized
+            }
+        }
+    }
+    @Published var roiCursorUpdateFPSLimit: Int = 30 {
+        didSet {
+            let normalized = normalizedROICursorUpdateFPSLimit(roiCursorUpdateFPSLimit)
+            if normalized != roiCursorUpdateFPSLimit {
+                roiCursorUpdateFPSLimit = normalized
+                return
+            }
+            UserDefaults.standard.set(roiCursorUpdateFPSLimit, forKey: Self.roiCursorUpdateFPSDefaultsKey)
+        }
+    }
+    @Published var roiCursorSourceImage: NSImage?
+    @Published var roiCursorPreviewImage: NSImage?
     @Published var maskLayerSamples: [SpectrumMaskLayerSample] = []
     @Published var rulerPoints: [RulerPoint] = []
     @Published var rulerMode: RulerMode = .measure
@@ -743,6 +767,21 @@ final class AppState: ObservableObject {
     private var spectrumColorCounter: Int = 0
     private var roiColorCounter: Int = 0
     private var maskLayerColorCounter: Int = 0
+    private let roiCursorSpectrumQueue = DispatchQueue(
+        label: "com.hsiview.roi_cursor_spectrum",
+        qos: .userInitiated
+    )
+    private let roiCursorPreviewQueue = DispatchQueue(
+        label: "com.hsiview.roi_cursor_preview",
+        qos: .userInitiated
+    )
+    private var roiCursorSpectrumInFlight: Bool = false
+    private var roiCursorPreviewInFlight: Bool = false
+    private var roiCursorPendingSpectrumRequest: ROICursorSpectrumRequest?
+    private var roiCursorPendingPreviewRequest: ROICursorPreviewRequest?
+    private var roiCursorComputationEpoch: UInt64 = 0
+    private var roiCursorSourceCGImage: CGImage?
+    private var roiCursorSourceLogicalSize: CGSize = .zero
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
@@ -847,6 +886,13 @@ final class AppState: ObservableObject {
         defaultWavelengthStart = UserDefaults.standard.string(forKey: Self.defaultWavelengthStartDefaultsKey) ?? Self.fallbackWavelengthStart
         defaultWavelengthEnd = UserDefaults.standard.string(forKey: Self.defaultWavelengthEndDefaultsKey) ?? Self.fallbackWavelengthEnd
         pythonInterpreterPath = UserDefaults.standard.string(forKey: Self.pythonInterpreterPathDefaultsKey) ?? ""
+        if UserDefaults.standard.object(forKey: Self.roiCursorUpdateFPSDefaultsKey) != nil {
+            roiCursorUpdateFPSLimit = normalizedROICursorUpdateFPSLimit(
+                UserDefaults.standard.integer(forKey: Self.roiCursorUpdateFPSDefaultsKey)
+            )
+        } else {
+            roiCursorUpdateFPSLimit = Self.fallbackROICursorUpdateFPSLimit
+        }
         let defaultRange = resolvedDefaultWavelengthRange()
         lambdaStart = defaultRange.start
         lambdaEnd = defaultRange.end
@@ -858,6 +904,12 @@ final class AppState: ObservableObject {
 
     var supportedAppLanguages: [AppLanguage] {
         [.english, .russian]
+    }
+
+    var roiCursorRefreshInterval: TimeInterval? {
+        let fps = roiCursorUpdateFPSLimit
+        guard fps > 0 else { return nil }
+        return 1.0 / Double(fps)
     }
 
     var resolvedPythonInterpreterPath: String {
@@ -1019,7 +1071,11 @@ final class AppState: ObservableObject {
     
     var activeROISamples: [SpectrumROISample] {
         var items = roiSamples
-        if let pending = pendingROISample {
+        if activeAnalysisTool == .roiCursor {
+            if let cursorSample = roiCursorSample {
+                items.append(cursorSample)
+            }
+        } else if let pending = pendingROISample {
             items.append(pending)
         }
         return items
@@ -2024,6 +2080,14 @@ final class AppState: ObservableObject {
         rightPanelWidth = max(240, min(width, 760))
     }
 
+    private func normalizedROICursorSize(_ value: Int) -> Int {
+        max(1, min(value, 401))
+    }
+
+    private func normalizedROICursorUpdateFPSLimit(_ value: Int) -> Int {
+        max(0, min(value, 60))
+    }
+
     func updateCursorGeoCoordinate(pixelX: Int, pixelY: Int) {
         guard let georef = cube?.geoReference else {
             cursorGeoCoordinate = nil
@@ -2040,9 +2104,231 @@ final class AppState: ObservableObject {
     func clearCursorGeoCoordinate() {
         cursorGeoCoordinate = nil
     }
+
+    func setROICursorSourceImage(_ image: NSImage?) {
+        switch (roiCursorSourceImage, image) {
+        case (nil, nil):
+            return
+        case let (lhs?, rhs?) where lhs === rhs:
+            return
+        default:
+            roiCursorSourceImage = image
+            if let image,
+               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                roiCursorSourceCGImage = cgImage
+                roiCursorSourceLogicalSize = image.size
+            } else {
+                roiCursorSourceCGImage = nil
+                roiCursorSourceLogicalSize = .zero
+                roiCursorPreviewImage = nil
+            }
+        }
+
+        guard activeAnalysisTool == .roiCursor,
+              let rect = roiCursorRect else {
+            return
+        }
+        scheduleROICursorPreviewComputation(for: rect)
+    }
+
+    func updateROICursorSpectrum(for rect: SpectrumROIRect, force: Bool = false) {
+        guard let cube else {
+            clearROICursorState()
+            return
+        }
+        guard activeAnalysisTool == .roiCursor else { return }
+        guard rect.width > 0, rect.height > 0 else {
+            clearROICursorState()
+            return
+        }
+        let layout = activeLayout
+        guard let normalizedRect = normalizedROIRect(rect, cube: cube, layout: layout) else {
+            clearROICursorState()
+            return
+        }
+        let colorIndex = roiCursorSample?.colorIndex ?? max(roiColorCounter, roiSamples.count)
+        let sampleID = roiCursorSample?.id ?? UUID()
+        let sampleName = L("graph.roi_cursor.sample_name")
+        roiCursorRect = normalizedRect
+        if !isRightPanelVisible {
+            isRightPanelVisible = true
+        }
+        if !isGraphPanelExpanded {
+            isGraphPanelExpanded = true
+        }
+
+        if force {
+            if let immediate = makeROISampleForSnapshot(
+                rect: normalizedRect,
+                cube: cube,
+                layout: layout,
+                wavelengths: wavelengths,
+                aggregationMode: roiAggregationMode,
+                colorIndex: colorIndex,
+                id: sampleID,
+                displayName: sampleName
+            ) {
+                roiCursorSample = immediate
+                roiCursorRect = immediate.rect
+            }
+            scheduleROICursorPreviewComputation(for: normalizedRect)
+            return
+        }
+
+        let spectrumRequest = ROICursorSpectrumRequest(
+            rect: normalizedRect,
+            cube: cube,
+            layout: layout,
+            wavelengths: wavelengths,
+            aggregationMode: roiAggregationMode,
+            colorIndex: colorIndex,
+            sampleID: sampleID,
+            sampleName: sampleName,
+            epoch: roiCursorComputationEpoch
+        )
+        enqueueROICursorSpectrumComputation(spectrumRequest)
+
+        scheduleROICursorPreviewComputation(for: normalizedRect)
+    }
+
+    func clearROICursorState(clearSourceImage: Bool = false) {
+        roiCursorComputationEpoch &+= 1
+        roiCursorPendingSpectrumRequest = nil
+        roiCursorPendingPreviewRequest = nil
+        roiCursorSample = nil
+        roiCursorRect = nil
+        roiCursorPreviewImage = nil
+        if clearSourceImage {
+            roiCursorSourceImage = nil
+            roiCursorSourceCGImage = nil
+            roiCursorSourceLogicalSize = .zero
+        }
+    }
+
+    private func enqueueROICursorSpectrumComputation(_ request: ROICursorSpectrumRequest) {
+        roiCursorPendingSpectrumRequest = request
+        processNextROICursorSpectrumRequestIfNeeded()
+    }
+
+    private func processNextROICursorSpectrumRequestIfNeeded() {
+        guard !roiCursorSpectrumInFlight,
+              let request = roiCursorPendingSpectrumRequest else {
+            return
+        }
+        roiCursorPendingSpectrumRequest = nil
+        roiCursorSpectrumInFlight = true
+        roiCursorSpectrumQueue.async { [weak self] in
+            guard let self else { return }
+            let sample = self.makeROISampleForSnapshot(
+                rect: request.rect,
+                cube: request.cube,
+                layout: request.layout,
+                wavelengths: request.wavelengths,
+                aggregationMode: request.aggregationMode,
+                colorIndex: request.colorIndex,
+                id: request.sampleID,
+                displayName: request.sampleName
+            )
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.roiCursorSpectrumInFlight = false
+                defer { self.processNextROICursorSpectrumRequestIfNeeded() }
+                guard self.activeAnalysisTool == .roiCursor else { return }
+                guard self.roiCursorComputationEpoch == request.epoch else { return }
+                if let sample {
+                    self.roiCursorSample = sample
+                }
+            }
+        }
+    }
+
+    private func scheduleROICursorPreviewComputation(for rect: SpectrumROIRect) {
+        guard let sourceCGImage = roiCursorSourceCGImage else {
+            roiCursorPreviewImage = nil
+            return
+        }
+        let logicalSize = roiCursorSourceLogicalSize
+        let previewRequest = ROICursorPreviewRequest(
+            rect: rect,
+            sourceCGImage: sourceCGImage,
+            logicalSize: logicalSize,
+            epoch: roiCursorComputationEpoch
+        )
+        enqueueROICursorPreviewComputation(previewRequest)
+    }
+
+    private func enqueueROICursorPreviewComputation(_ request: ROICursorPreviewRequest) {
+        roiCursorPendingPreviewRequest = request
+        processNextROICursorPreviewRequestIfNeeded()
+    }
+
+    private func processNextROICursorPreviewRequestIfNeeded() {
+        guard !roiCursorPreviewInFlight,
+              let request = roiCursorPendingPreviewRequest else {
+            return
+        }
+        roiCursorPendingPreviewRequest = nil
+        roiCursorPreviewInFlight = true
+        roiCursorPreviewQueue.async { [weak self] in
+            guard let self else { return }
+            let preview = self.cropROIPreviewImage(
+                cgImage: request.sourceCGImage,
+                logicalSize: request.logicalSize,
+                rect: request.rect
+            )
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.roiCursorPreviewInFlight = false
+                defer { self.processNextROICursorPreviewRequestIfNeeded() }
+                guard self.activeAnalysisTool == .roiCursor else { return }
+                guard self.roiCursorComputationEpoch == request.epoch else { return }
+                self.roiCursorPreviewImage = preview
+            }
+        }
+    }
+
+    private func cropROIPreviewImage(
+        cgImage: CGImage,
+        logicalSize: CGSize,
+        rect: SpectrumROIRect
+    ) -> NSImage? {
+        let imageWidth = cgImage.width
+        let imageHeight = cgImage.height
+        guard imageWidth > 0, imageHeight > 0 else { return nil }
+
+        let logicalWidth = max(logicalSize.width, 1)
+        let logicalHeight = max(logicalSize.height, 1)
+        let scaleX = CGFloat(imageWidth) / logicalWidth
+        let scaleY = CGFloat(imageHeight) / logicalHeight
+
+        let cropWidth = max(1, min(imageWidth, Int((CGFloat(rect.width) * scaleX).rounded())))
+        let cropHeight = max(1, min(imageHeight, Int((CGFloat(rect.height) * scaleY).rounded())))
+        var cropX = Int(floor(CGFloat(rect.minX) * scaleX))
+        var cropY = Int(floor(CGFloat(rect.minY) * scaleY))
+        cropX = max(0, min(cropX, imageWidth - cropWidth))
+        cropY = max(0, min(cropY, imageHeight - cropHeight))
+
+        let cropRect = CGRect(
+            x: cropX,
+            y: cropY,
+            width: cropWidth,
+            height: cropHeight
+        )
+
+        guard let cropped = cgImage.cropping(to: cropRect) else {
+            return nil
+        }
+        return NSImage(
+            cgImage: cropped,
+            size: NSSize(width: cropWidth, height: cropHeight)
+        )
+    }
     
     func toggleAnalysisTool(_ tool: AnalysisTool) {
         if tool == .ruler {
+            if activeAnalysisTool == .roiCursor {
+                clearROICursorState()
+            }
             if activeAnalysisTool == .ruler {
                 rulerMode = (rulerMode == .measure) ? .edit : .measure
             } else {
@@ -2057,9 +2343,15 @@ final class AppState: ObservableObject {
             activeAnalysisTool = .none
         } else {
             activeAnalysisTool = tool
-            if tool == .spectrumGraph || tool == .spectrumGraphROI || tool == .spectrumGraphLayer {
+            if tool == .spectrumGraph || tool == .spectrumGraphROI || tool == .spectrumGraphLayer || tool == .roiCursor {
                 isGraphPanelExpanded = true
+                isRightPanelVisible = true
             }
+        }
+        if activeAnalysisTool != .roiCursor {
+            clearROICursorState()
+        } else {
+            pendingROISample = nil
         }
         selectedRulerPointID = nil
     }
@@ -2147,6 +2439,55 @@ final class AppState: ObservableObject {
         roiSamples.append(pending)
         pendingROISample = nil
         roiColorCounter = max(roiColorCounter, pending.colorIndex + 1)
+    }
+
+    func saveROICursorSample() {
+        guard activeAnalysisTool == .roiCursor else { return }
+        guard let cube, let rect = roiCursorRect else { return }
+        let layout = activeLayout
+        let sampleName = L("graph.roi_cursor.sample_name")
+
+        let currentColorIndex = roiCursorSample?.colorIndex ?? max(roiColorCounter, roiSamples.count)
+        let baseSample = roiCursorSample.flatMap { sample in
+            sample.rect == rect ? sample : nil
+        } ?? makeROISampleForSnapshot(
+            rect: rect,
+            cube: cube,
+            layout: layout,
+            wavelengths: wavelengths,
+            aggregationMode: roiAggregationMode,
+            colorIndex: currentColorIndex,
+            id: UUID(),
+            displayName: sampleName
+        )
+        guard let cursor = baseSample else { return }
+
+        let saved = SpectrumROISample(
+            id: UUID(),
+            rect: cursor.rect,
+            values: cursor.values,
+            wavelengths: cursor.wavelengths,
+            colorIndex: cursor.colorIndex,
+            displayName: nil
+        )
+        roiSamples.append(saved)
+        roiColorCounter = max(roiColorCounter, saved.colorIndex + 1)
+
+        guard let nextCursor = makeROISampleForSnapshot(
+            rect: cursor.rect,
+            cube: cube,
+            layout: layout,
+            wavelengths: wavelengths,
+            aggregationMode: roiAggregationMode,
+            colorIndex: roiColorCounter,
+            id: UUID(),
+            displayName: sampleName
+        ) else {
+            clearROICursorState()
+            return
+        }
+        roiCursorSample = nextCursor
+        roiCursorRect = nextCursor.rect
     }
     
     func removeROISample(with id: UUID) {
@@ -5578,14 +5919,15 @@ final class AppState: ObservableObject {
         id: UUID = UUID(),
         displayName: String? = nil
     ) -> SpectrumROISample? {
-        guard let normalizedRect = normalizedROIRect(rect) else { return nil }
-        guard let spectrumValues = buildROISpectrumValues(rect: normalizedRect) else { return nil }
-        return SpectrumROISample(
-            id: id,
-            rect: normalizedRect,
-            values: spectrumValues,
+        guard let cube else { return nil }
+        return makeROISampleForSnapshot(
+            rect: rect,
+            cube: cube,
+            layout: activeLayout,
             wavelengths: wavelengths,
+            aggregationMode: roiAggregationMode,
             colorIndex: colorIndex,
+            id: id,
             displayName: displayName
         )
     }
@@ -5611,64 +5953,123 @@ final class AppState: ObservableObject {
     }
     
     private func normalizedROIRect(_ rect: SpectrumROIRect) -> SpectrumROIRect? {
-        guard let cube = cube else { return nil }
+        guard let cube else { return nil }
+        return normalizedROIRect(rect, cube: cube, layout: activeLayout)
+    }
+
+    private func normalizedROIRect(
+        _ rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout
+    ) -> SpectrumROIRect? {
         let dims = cube.dims
         let dimsArray = [dims.0, dims.1, dims.2]
-        guard let axes = cube.axes(for: activeLayout) else { return nil }
+        guard let axes = cube.axes(for: layout) else { return nil }
         let width = dimsArray[axes.width]
         let height = dimsArray[axes.height]
         return rect.clamped(maxWidth: width, maxHeight: height)
     }
     
+    private func makeROISampleForSnapshot(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        wavelengths: [Double]?,
+        aggregationMode: SpectrumROIAggregationMode,
+        colorIndex: Int,
+        id: UUID,
+        displayName: String?
+    ) -> SpectrumROISample? {
+        guard let normalizedRect = normalizedROIRect(rect, cube: cube, layout: layout) else {
+            return nil
+        }
+        guard let spectrumValues = buildROISpectrumValues(
+            rect: normalizedRect,
+            cube: cube,
+            layout: layout,
+            aggregationMode: aggregationMode
+        ) else {
+            return nil
+        }
+        return SpectrumROISample(
+            id: id,
+            rect: normalizedRect,
+            values: spectrumValues,
+            wavelengths: wavelengths,
+            colorIndex: colorIndex,
+            displayName: displayName
+        )
+    }
+
     private func buildROISpectrumValues(rect: SpectrumROIRect) -> [Double]? {
+        guard let cube else { return nil }
+        return buildROISpectrumValues(
+            rect: rect,
+            cube: cube,
+            layout: activeLayout,
+            aggregationMode: roiAggregationMode
+        )
+    }
+
+    private func buildROISpectrumValues(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        aggregationMode: SpectrumROIAggregationMode
+    ) -> [Double]? {
         guard rect.width > 0, rect.height > 0 else { return nil }
-        guard let cube = cube else { return nil }
-        
+
         let dims = cube.dims
         let dimsArray = [dims.0, dims.1, dims.2]
-        guard let axes = cube.axes(for: activeLayout) else { return nil }
-        
+        guard let axes = cube.axes(for: layout) else { return nil }
+
         let width = dimsArray[axes.width]
         let height = dimsArray[axes.height]
         let channels = dimsArray[axes.channel]
-        
+
         guard rect.minX >= 0, rect.maxX < width, rect.minY >= 0, rect.maxY < height else { return nil }
         let pixelCount = rect.area
         guard pixelCount > 0 else { return nil }
-        
+
         var aggregated: [Double] = []
         aggregated.reserveCapacity(channels)
-        
+
         for ch in 0..<channels {
-            var buffer: [Double] = []
-            buffer.reserveCapacity(pixelCount)
-            for y in rect.minY..<(rect.minY + rect.height) {
-                for x in rect.minX..<(rect.minX + rect.width) {
-                    var indices = [0, 0, 0]
-                    indices[axes.channel] = ch
-                    indices[axes.height] = y
-                    indices[axes.width] = x
-                    let value = cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
-                    buffer.append(value)
-                }
-            }
-            
-            let aggregatedValue: Double
-            switch roiAggregationMode {
+            switch aggregationMode {
             case .mean:
-                aggregatedValue = buffer.reduce(0, +) / Double(buffer.count)
+                var sum = 0.0
+                for y in rect.minY..<(rect.minY + rect.height) {
+                    for x in rect.minX..<(rect.minX + rect.width) {
+                        var indices = [0, 0, 0]
+                        indices[axes.channel] = ch
+                        indices[axes.height] = y
+                        indices[axes.width] = x
+                        sum += cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2])
+                    }
+                }
+                aggregated.append(sum / Double(pixelCount))
             case .median:
+                var buffer: [Double] = []
+                buffer.reserveCapacity(pixelCount)
+                for y in rect.minY..<(rect.minY + rect.height) {
+                    for x in rect.minX..<(rect.minX + rect.width) {
+                        var indices = [0, 0, 0]
+                        indices[axes.channel] = ch
+                        indices[axes.height] = y
+                        indices[axes.width] = x
+                        buffer.append(cube.getValue(i0: indices[0], i1: indices[1], i2: indices[2]))
+                    }
+                }
                 let sorted = buffer.sorted()
                 let mid = sorted.count / 2
                 if sorted.count % 2 == 0 {
-                    aggregatedValue = (sorted[mid - 1] + sorted[mid]) / 2.0
+                    aggregated.append((sorted[mid - 1] + sorted[mid]) / 2.0)
                 } else {
-                    aggregatedValue = sorted[mid]
+                    aggregated.append(sorted[mid])
                 }
             }
-            aggregated.append(aggregatedValue)
         }
-        
+
         return aggregated
     }
 
@@ -5784,10 +6185,12 @@ final class AppState: ObservableObject {
         guard cube != nil else {
             roiSamples.removeAll()
             pendingROISample = nil
+            roiCursorSample = nil
+            roiCursorRect = nil
             roiColorCounter = 0
             return
         }
-        if roiSamples.isEmpty && pendingROISample == nil {
+        if roiSamples.isEmpty && pendingROISample == nil && roiCursorSample == nil {
             return
         }
         
@@ -5811,6 +6214,16 @@ final class AppState: ObservableObject {
                 id: pending.id,
                 displayName: pending.displayName
             )
+        }
+
+        if let cursor = roiCursorSample {
+            roiCursorSample = makeROISample(
+                rect: cursor.rect,
+                colorIndex: cursor.colorIndex,
+                id: cursor.id,
+                displayName: cursor.displayName
+            )
+            roiCursorRect = roiCursorSample?.rect
         }
     }
 
@@ -6067,6 +6480,29 @@ final class AppState: ObservableObject {
                 )
             } else {
                 pendingROISample = nil
+            }
+        }
+
+        if let cursorSample = roiCursorSample {
+            if let mapped = transformRect(
+                cursorSample.rect,
+                fromOps: fromOps,
+                fromBaseSize: oldBase,
+                toOps: toOps,
+                toBaseSize: newBase
+            ) {
+                roiCursorSample = SpectrumROISample(
+                    id: cursorSample.id,
+                    rect: mapped,
+                    values: cursorSample.values,
+                    wavelengths: cursorSample.wavelengths,
+                    colorIndex: cursorSample.colorIndex,
+                    displayName: cursorSample.displayName
+                )
+                roiCursorRect = mapped
+            } else {
+                roiCursorSample = nil
+                roiCursorRect = nil
             }
         }
 
@@ -6494,6 +6930,19 @@ final class AppState: ObservableObject {
                 colorIndex: pending.colorIndex
             )
         }
+
+        if let cursorSample = roiCursorSample {
+            let rotatedRect = rotateRect(cursorSample.rect, turns: turns, size: previousSize)
+            roiCursorSample = SpectrumROISample(
+                id: cursorSample.id,
+                rect: rotatedRect,
+                values: cursorSample.values,
+                wavelengths: cursorSample.wavelengths,
+                colorIndex: cursorSample.colorIndex,
+                displayName: cursorSample.displayName
+            )
+            roiCursorRect = rotatedRect
+        }
     }
     
     private func rotateRect(
@@ -6715,11 +7164,20 @@ final class AppState: ObservableObject {
     }
     
     private func resetSpectrumSelections() {
+        roiCursorComputationEpoch &+= 1
+        roiCursorPendingSpectrumRequest = nil
+        roiCursorPendingPreviewRequest = nil
         spectrumSamples.removeAll()
         pendingSpectrumSample = nil
         spectrumColorCounter = 0
         roiSamples.removeAll()
         pendingROISample = nil
+        roiCursorSample = nil
+        roiCursorRect = nil
+        roiCursorSourceImage = nil
+        roiCursorPreviewImage = nil
+        roiCursorSourceCGImage = nil
+        roiCursorSourceLogicalSize = .zero
         roiColorCounter = 0
         maskLayerSamples.removeAll()
         maskLayerColorCounter = 0
@@ -6755,6 +7213,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
     case none
     case spectrumGraph
     case spectrumGraphROI
+    case roiCursor
     case spectrumGraphLayer
     case ruler
     
@@ -6765,6 +7224,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .none: return ""
         case .spectrumGraph: return L("График спектра")
         case .spectrumGraphROI: return L("График спектра ROI")
+        case .roiCursor: return L("analysis.tool.roi_cursor")
         case .spectrumGraphLayer: return L("График спектра слоя")
         case .ruler: return L("Линейка")
         }
@@ -6775,6 +7235,7 @@ enum AnalysisTool: String, CaseIterable, Identifiable {
         case .none: return ""
         case .spectrumGraph: return "chart.xyaxis.line"
         case .spectrumGraphROI: return "square.dashed.inset.filled"
+        case .roiCursor: return "viewfinder.rectangular"
         case .spectrumGraphLayer: return "square.3.layers.3d"
         case .ruler: return "ruler"
         }
@@ -7023,3 +7484,21 @@ enum SpectrumROIAggregationMode: String, CaseIterable, Identifiable {
         }
     }
 }
+    private struct ROICursorSpectrumRequest {
+        let rect: SpectrumROIRect
+        let cube: HyperCube
+        let layout: CubeLayout
+        let wavelengths: [Double]?
+        let aggregationMode: SpectrumROIAggregationMode
+        let colorIndex: Int
+        let sampleID: UUID
+        let sampleName: String
+        let epoch: UInt64
+    }
+
+    private struct ROICursorPreviewRequest {
+        let rect: SpectrumROIRect
+        let sourceCGImage: CGImage
+        let logicalSize: CGSize
+        let epoch: UInt64
+    }

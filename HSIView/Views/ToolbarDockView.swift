@@ -25,6 +25,13 @@ struct ToolbarDockView: View {
                         state.toggleAnalysisTool(tool)
                     }
                 }
+
+                if state.activeAnalysisTool == .roiCursor {
+                    Divider()
+                        .frame(height: 18)
+                    ROICursorSizeControl()
+                        .environmentObject(state)
+                }
                 
                 if state.viewMode == .mask {
                     Divider()
@@ -45,6 +52,56 @@ struct ToolbarDockView: View {
             return "hand.point.up.left.fill"
         }
         return tool.iconName
+    }
+}
+
+private struct ROICursorSizeControl: View {
+    @EnvironmentObject var state: AppState
+    @State private var manualValue: Int = 25
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(L("toolbar.roi_cursor.size_label"))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            Slider(
+                value: Binding(
+                    get: { Double(state.roiCursorSize) },
+                    set: { state.roiCursorSize = Int($0.rounded()) }
+                ),
+                in: 1...401
+            )
+            .frame(width: 96)
+
+            TextField(
+                "",
+                value: Binding(
+                    get: { manualValue },
+                    set: { newValue in
+                        manualValue = newValue
+                        state.roiCursorSize = newValue
+                    }
+                ),
+                format: .number
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 52)
+            .multilineTextAlignment(.trailing)
+
+            Text("px")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+        .frame(width: 220, alignment: .leading)
+        .onAppear {
+            manualValue = state.roiCursorSize
+        }
+        .onChange(of: state.roiCursorSize) { newValue in
+            if manualValue != newValue {
+                manualValue = newValue
+            }
+        }
     }
 }
 

@@ -413,10 +413,13 @@ struct MaskEditorView: View {
                     originalSize: imageSize,
                     displaySize: fittedSize
                 )
-            } else if state.activeAnalysisTool == .spectrumGraphROI {
+            } else if state.activeAnalysisTool == .spectrumGraphROI || state.activeAnalysisTool == .roiCursor {
                 ContentView.SpectrumROIsOverlay(
-                    samples: state.activeROISamples,
-                    temporaryRect: roiPreviewRect,
+                    samples: state.activeAnalysisTool == .roiCursor ? state.roiSamples : state.activeROISamples,
+                    temporaryRect: state.activeAnalysisTool == .roiCursor ? state.roiCursorRect : roiPreviewRect,
+                    temporaryColor: state.activeAnalysisTool == .roiCursor
+                        ? (state.roiCursorSample?.displayColor ?? .accentColor)
+                        : .accentColor,
                     originalSize: imageSize,
                     displaySize: fittedSize
                 )
