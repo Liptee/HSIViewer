@@ -38,7 +38,7 @@ struct MaskEditorView: View {
             .gesture(magnificationGesture)
             .gesture(interactionGesture(geoSize: geo.size))
             .background(
-                ContentView.TrackpadScrollCatcher { delta in
+                TrackpadScrollCatcher { delta in
                     guard state.cube != nil else { return }
                     state.moveImage(by: delta)
                 }
@@ -153,7 +153,7 @@ struct MaskEditorView: View {
                 currentGeoSize = newSize
             }
             .background(
-                ContentView.RulerDeleteKeyCatcher(
+                RulerDeleteKeyCatcher(
                     isActive: Binding(
                         get: {
                             state.activeAnalysisTool == .ruler
@@ -408,13 +408,13 @@ struct MaskEditorView: View {
             }
 
             if state.activeAnalysisTool == .spectrumGraph {
-                ContentView.SpectrumPointsOverlay(
+                SpectrumPointsOverlay(
                     samples: state.activeSpectrumSamples,
                     originalSize: imageSize,
                     displaySize: fittedSize
                 )
             } else if state.activeAnalysisTool == .spectrumGraphROI || state.activeAnalysisTool == .roiCursor {
-                ContentView.SpectrumROIsOverlay(
+                SpectrumROIsOverlay(
                     samples: state.activeAnalysisTool == .roiCursor ? state.roiSamples : state.activeROISamples,
                     temporaryRect: state.activeAnalysisTool == .roiCursor ? state.roiCursorRect : roiPreviewRect,
                     temporaryColor: state.activeAnalysisTool == .roiCursor
@@ -424,7 +424,7 @@ struct MaskEditorView: View {
                     displaySize: fittedSize
                 )
             } else if state.activeAnalysisTool == .ruler {
-                ContentView.RulerOverlay(
+                RulerOverlay(
                     points: state.rulerPoints,
                     hoverPixel: state.rulerMode == .measure ? rulerHoverPixel : nil,
                     mode: state.rulerMode,
