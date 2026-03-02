@@ -33,21 +33,32 @@ struct ContentView: View {
     
     var body: some View {
         GeometryReader { proxy in
+            let isRightPanelVisible = state.cube != nil && state.isRightPanelVisible
+            let uncoveredRightWidth = isRightPanelVisible ? (state.rightPanelWidth + 12) : 0
+            let dimmedWidth = max(0, proxy.size.width - uncoveredRightWidth)
             GlassEffectContainerWrapper {
-            ZStack {
-                mainContent
-                    .disabled(state.isBusy)
-                
-                if state.isBusy {
-                    ZStack {
-                        Color.black.opacity(0.25)
-                            .ignoresSafeArea()
-                        BusyOverlayView(
-                            message: state.localized(state.busyMessage ?? "Выполнение…"),
-                            progress: state.busyProgress
-                        )
+                ZStack {
+                    mainContent
+                        .disabled(state.isBusy)
+
+                    if state.isCubeMetricsSelectionMode {
+                        Color.black.opacity(0.3)
+                            .frame(width: dimmedWidth, height: proxy.size.height)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
                     }
-                    .transition(.opacity)
+                    
+                    if state.isBusy {
+                        ZStack {
+                            Color.black.opacity(0.25)
+                                .ignoresSafeArea()
+                            BusyOverlayView(
+                                message: state.localized(state.busyMessage ?? "Выполнение…"),
+                                progress: state.busyProgress
+                            )
+                        }
+                        .transition(.opacity)
                     }
                     
                     if let exportInfo = state.libraryExportProgressState {
@@ -93,12 +104,14 @@ struct ContentView: View {
                         MaskLayersPanelView(maskState: state.maskEditorState)
                             .frame(width: state.leftPanelWidth)
                             .padding(.leading, 12)
+                            .allowsHitTesting(!state.isCubeMetricsSelectionMode)
                     } else {
                         PipelinePanel()
                             .environmentObject(state)
                             .frame(width: state.leftPanelWidth)
                             .padding(.leading, 12)
                             .disabled(state.isCurrentCubeProcessingInProgress)
+                            .allowsHitTesting(!state.isCubeMetricsSelectionMode)
                     }
                     
                     panelResizeHandle { translation in
@@ -177,7 +190,7 @@ struct ContentView: View {
                             .allowsHitTesting(false)
                         }
                     }
-                    .allowsHitTesting(!state.isCurrentCubeProcessingInProgress)
+                    .allowsHitTesting(!state.isCurrentCubeProcessingInProgress && !state.isCubeMetricsSelectionMode)
                     .background(
                         TrackpadScrollCatcher { delta in
                             guard state.cube != nil else { return }
@@ -399,10 +412,10 @@ struct ContentView: View {
                     if state.viewMode == .mask {
                         maskModeBottomControls(cube: cube)
                     } else {
-                bottomControls(cube: cube)
+                        bottomControls(cube: cube)
                     }
                 }
-                .disabled(state.isCurrentCubeProcessingInProgress)
+                .disabled(state.isCurrentCubeProcessingInProgress || state.isCubeMetricsSelectionMode)
             }
         }
         .frame(minWidth: 960, minHeight: 500)
