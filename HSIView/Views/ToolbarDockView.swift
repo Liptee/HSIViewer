@@ -20,10 +20,7 @@ struct ToolbarDockView: View {
                     ToolButton(
                         tool: tool,
                         iconName: iconName(for: tool),
-                        isActive: state.activeAnalysisTool == tool,
-                        isRulerEditMode: tool == .ruler
-                            && state.activeAnalysisTool == .ruler
-                            && state.rulerMode == .edit
+                        isActive: state.activeAnalysisTool == tool
                     ) {
                         state.toggleAnalysisTool(tool)
                     }
@@ -45,7 +42,7 @@ struct ToolbarDockView: View {
         if tool == .ruler,
            state.activeAnalysisTool == .ruler,
            state.rulerMode == .edit {
-            return "ruler.fill"
+            return "hand.point.up.left.fill"
         }
         return tool.iconName
     }
@@ -178,44 +175,43 @@ struct ToolButton: View {
     let tool: AnalysisTool
     let iconName: String
     let isActive: Bool
-    let isRulerEditMode: Bool
     let action: () -> Void
     
     @State private var isHovered: Bool = false
+    @State private var displayedIconName: String = ""
+    @State private var iconScale: CGFloat = 1.0
+    @State private var iconSwapTask: Task<Void, Never>?
     
     var body: some View {
         Button(action: action) {
             ZStack {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(backgroundColor)
-
-                if isRulerEditMode {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.ultraThinMaterial.opacity(0.8))
-                        .overlay(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.45),
-                                    Color.white.opacity(0.08)
-                                ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                }
                 
                 if isActive {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(Color.accentColor, lineWidth: 1.5)
                 }
                 
-                Image(systemName: iconName)
+                Image(systemName: displayedIconName.isEmpty ? iconName : displayedIconName)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(isActive ? .accentColor : (isHovered ? .primary : .secondary))
+                    .scaleEffect(iconScale)
             }
             .frame(width: 28, height: 28)
         }
         .buttonStyle(.plain)
+        .onAppear {
+            displayedIconName = iconName
+            iconScale = 1.0
+        }
+        .onChange(of: iconName) { newValue in
+            animateIconSwap(to: newValue)
+        }
+        .onDisappear {
+            iconSwapTask?.cancel()
+            iconSwapTask = nil
+        }
         .onHover { hovering in
             isHovered = hovering
         }
@@ -229,6 +225,28 @@ struct ToolButton: View {
             return Color(NSColor.controlBackgroundColor).opacity(0.8)
         } else {
             return Color.clear
+        }
+    }
+
+    private func animateIconSwap(to newIconName: String) {
+        let currentIconName = displayedIconName.isEmpty ? iconName : displayedIconName
+        guard currentIconName != newIconName else { return }
+
+        iconSwapTask?.cancel()
+        iconSwapTask = Task { @MainActor in
+            withAnimation(.easeIn(duration: 0.10)) {
+                iconScale = 0.05
+            }
+
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            guard !Task.isCancelled else { return }
+
+            displayedIconName = newIconName
+            iconScale = 0.05
+
+            withAnimation(.easeOut(duration: 0.14)) {
+                iconScale = 1.0
+            }
         }
     }
 }
