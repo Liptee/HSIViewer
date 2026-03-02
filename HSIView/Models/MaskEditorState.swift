@@ -19,7 +19,11 @@ final class MaskEditorState: ObservableObject {
     }
     
     var drawableLayerIDs: Set<UUID> {
-        Set(maskLayers.filter { $0.activeForDrawing && !$0.locked }.map { $0.id })
+        var ids = Set(maskLayers.filter { $0.activeForDrawing && !$0.locked }.map { $0.id })
+        if let activeLayer, !activeLayer.locked {
+            ids.insert(activeLayer.id)
+        }
+        return ids
     }
     
     func initialize(width: Int, height: Int, rgbImage: NSImage? = nil) {
@@ -646,7 +650,7 @@ struct MaskLayer: MaskLayerProtocol {
     var opacity: Double = 0.5
     var visible: Bool = true
     var locked: Bool = false
-    var activeForDrawing: Bool = true
+    var activeForDrawing: Bool = false
     var data: [UInt8]
     var renderVersion: UInt64 = 0
     
