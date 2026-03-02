@@ -800,8 +800,10 @@ struct HSIAssemblerView: View {
         errorMessage = nil
         infoMessage = nil
 
+        let shouldOpenAssembledAfterBulk = state.cube == nil
         var successCount = 0
         var failures: [String] = []
+        var firstSuccessfulAssembledURL: URL?
 
         func finish() {
             isBulkBuilding = false
@@ -811,6 +813,12 @@ struct HSIAssemblerView: View {
                 errorMessage = nil
             } else {
                 errorMessage = failures.joined(separator: " | ")
+            }
+
+            if shouldOpenAssembledAfterBulk,
+               state.cube == nil,
+               let firstSuccessfulAssembledURL {
+                state.open(url: firstSuccessfulAssembledURL)
             }
         }
 
@@ -826,8 +834,11 @@ struct HSIAssemblerView: View {
             if source.id == activeSourceID {
                 state.assembleCubeFromMaterials(activeMaterials, openAfterAssemble: false) { assembleResult in
                     switch assembleResult {
-                    case .success:
+                    case .success(let url):
                         successCount += 1
+                        if firstSuccessfulAssembledURL == nil {
+                            firstSuccessfulAssembledURL = url
+                        }
                     case .failure(let error):
                         failures.append("\(source.displayName): \(error.localizedDescription)")
                     }
@@ -871,8 +882,11 @@ struct HSIAssemblerView: View {
 
                         state.assembleCubeFromMaterials(arranged, openAfterAssemble: false) { assembleResult in
                             switch assembleResult {
-                            case .success:
+                            case .success(let url):
                                 successCount += 1
+                                if firstSuccessfulAssembledURL == nil {
+                                    firstSuccessfulAssembledURL = url
+                                }
                             case .failure(let error):
                                 failures.append("\(source.displayName): \(error.localizedDescription)")
                             }
@@ -909,8 +923,11 @@ struct HSIAssemblerView: View {
 
                         state.assembleCubeFromMaterials(finalMaterials, openAfterAssemble: false) { assembleResult in
                             switch assembleResult {
-                            case .success:
+                            case .success(let url):
                                 successCount += 1
+                                if firstSuccessfulAssembledURL == nil {
+                                    firstSuccessfulAssembledURL = url
+                                }
                             case .failure(let error):
                                 failures.append("\(source.displayName): \(error.localizedDescription)")
                             }
