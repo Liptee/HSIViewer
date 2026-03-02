@@ -14,6 +14,7 @@ struct MaskEditorView: View {
     @State private var roiDragStartPixel: PixelCoordinate?
     @State private var roiPreviewRect: SpectrumROIRect?
     @State private var rulerHoverPixel: PixelCoordinate?
+    @State private var maskToolHoverImagePoint: CGPoint?
     @FocusState private var isImageFocused: Bool
     
     var body: some View {
@@ -67,10 +68,17 @@ struct MaskEditorView: View {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
                 case .active(let location):
-                    guard let pixel = pixelCoordinate(for: location, geoSize: geo.size) else {
+                    guard let imagePoint = convertToImageCoordinates(point: location, geoSize: geo.size),
+                          let pixel = pixelCoordinate(for: location, geoSize: geo.size) else {
                         rulerHoverPixel = nil
+                        maskToolHoverImagePoint = nil
                         state.clearCursorGeoCoordinate()
                         return
+                    }
+                    if shouldShowMaskToolCursorPreview {
+                        maskToolHoverImagePoint = imagePoint
+                    } else {
+                        maskToolHoverImagePoint = nil
                     }
                     if state.activeAnalysisTool == .ruler,
                        state.rulerMode == .measure {
@@ -85,6 +93,7 @@ struct MaskEditorView: View {
                     }
                 case .ended:
                     rulerHoverPixel = nil
+                    maskToolHoverImagePoint = nil
                     state.clearCursorGeoCoordinate()
                 }
             }
@@ -121,16 +130,23 @@ struct MaskEditorView: View {
                 roiPreviewRect = nil
                 roiDragStartPixel = nil
                 rulerHoverPixel = nil
+                maskToolHoverImagePoint = nil
             }
             .onChange(of: state.rulerMode) { mode in
                 if mode != .measure {
                     rulerHoverPixel = nil
                 }
             }
+            .onChange(of: maskState.currentTool) { _ in
+                if !shouldShowMaskToolCursorPreview {
+                    maskToolHoverImagePoint = nil
+                }
+            }
             .onChange(of: state.cubeURL) { _ in
                 roiPreviewRect = nil
                 roiDragStartPixel = nil
                 rulerHoverPixel = nil
+                maskToolHoverImagePoint = nil
                 state.clearCursorGeoCoordinate()
             }
             .onChange(of: geo.size) { newSize in
@@ -182,6 +198,11 @@ struct MaskEditorView: View {
     private func interactionGesture(geoSize: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
+                if shouldShowMaskToolCursorPreview {
+                    maskToolHoverImagePoint = convertToImageCoordinates(point: value.location, geoSize: geoSize)
+                } else {
+                    maskToolHoverImagePoint = nil
+                }
                 if state.activeAnalysisTool == .spectrumGraphROI {
                     handleROIDrag(value: value, geoSize: geoSize)
                     return
@@ -195,6 +216,11 @@ struct MaskEditorView: View {
                 handleDrawing(at: value.location, geoSize: geoSize)
             }
             .onEnded { value in
+                if shouldShowMaskToolCursorPreview {
+                    maskToolHoverImagePoint = convertToImageCoordinates(point: value.location, geoSize: geoSize)
+                } else {
+                    maskToolHoverImagePoint = nil
+                }
                 if state.activeAnalysisTool == .spectrumGraphROI {
                     handleROIDragEnd(value: value, geoSize: geoSize)
                 } else if state.activeAnalysisTool == .none, !isDrawing {
@@ -339,6 +365,11 @@ struct MaskEditorView: View {
         let scale = min(widthScale, heightScale, 1.0)
         return CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
     }
+
+    private var shouldShowMaskToolCursorPreview: Bool {
+        guard state.activeAnalysisTool == .none else { return false }
+        return maskState.currentTool == .brush || maskState.currentTool == .eraser
+    }
     
     @ViewBuilder
     private func maskCanvas(cube: HyperCube, geoSize: CGSize) -> some View {
@@ -361,6 +392,20 @@ struct MaskEditorView: View {
                 displaySize: fittedSize
             )
             .allowsHitTesting(false)
+
+            if shouldShowMaskToolCursorPreview,
+               let hoverPoint = maskToolHoverImagePoint {
+                MaskToolCursorPreview(
+                    imagePoint: hoverPoint,
+                    imageSize: imageSize,
+                    displaySize: fittedSize,
+                    brushSize: maskState.brushSize,
+                    color: maskState.currentTool == .eraser
+                        ? NSColor.systemOrange
+                        : (maskState.activeLayer?.color ?? NSColor.controlAccentColor)
+                )
+                .allowsHitTesting(false)
+            }
 
             if state.activeAnalysisTool == .spectrumGraph {
                 ContentView.SpectrumPointsOverlay(
@@ -394,6 +439,40 @@ struct MaskEditorView: View {
         }
         .frame(width: fittedSize.width, height: fittedSize.height)
         .background(Color.black.opacity(0.02))
+    }
+}
+
+private struct MaskToolCursorPreview: View {
+    let imagePoint: CGPoint
+    let imageSize: CGSize
+    let displaySize: CGSize
+    let brushSize: Int
+    let color: NSColor
+
+    var body: some View {
+        let safeImageWidth = max(imageSize.width, 1)
+        let safeImageHeight = max(imageSize.height, 1)
+        let scaleX = displaySize.width / safeImageWidth
+        let scaleY = displaySize.height / safeImageHeight
+        let centerX = min(max(imagePoint.x * scaleX, 0), displaySize.width)
+        let centerY = min(max(imagePoint.y * scaleY, 0), displaySize.height)
+        let radiusInImage = CGFloat(max(1, brushSize / 2))
+        let radius = max(radiusInImage * min(scaleX, scaleY), 1)
+        let strokeColor = Color(nsColor: color)
+
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.92), lineWidth: 2)
+                .frame(width: radius * 2, height: radius * 2)
+            Circle()
+                .stroke(strokeColor.opacity(0.95), lineWidth: 1)
+                .frame(width: radius * 2, height: radius * 2)
+            Circle()
+                .fill(Color.white.opacity(0.95))
+                .frame(width: 3, height: 3)
+        }
+        .position(x: centerX, y: centerY)
+        .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
     }
 }
 
@@ -752,6 +831,11 @@ struct LayerRowView: View {
     
     private var maskLayer: MaskLayer? { layer as? MaskLayer }
     private var isReference: Bool { layer is ReferenceLayer }
+    private var isDrawingEnabledForLayer: Bool {
+        guard let mask = maskLayer else { return false }
+        guard !mask.locked else { return false }
+        return isActive || mask.activeForDrawing
+    }
     private var hoverAccent: Color {
         if let mask = maskLayer {
             return Color(mask.color)
@@ -798,12 +882,12 @@ struct LayerRowView: View {
                 if let mask = maskLayer {
                     HStack(spacing: 8) {
                         Button(action: onToggleDrawing) {
-                            Image(systemName: mask.activeForDrawing ? "pencil.circle.fill" : "pencil.circle")
+                            Image(systemName: isDrawingEnabledForLayer ? "pencil.circle.fill" : "pencil.circle")
                                 .font(.system(size: 11))
-                                .foregroundColor(mask.activeForDrawing ? .accentColor : .secondary)
+                                .foregroundColor(isDrawingEnabledForLayer ? .accentColor : .secondary)
                         }
                         .buttonStyle(.plain)
-                        .help(mask.activeForDrawing ? "Отключить рисование" : "Включить рисование")
+                        .help(mask.activeForDrawing ? "Отключить дополнительное рисование" : "Включить дополнительное рисование")
 
                         Button(action: onToggleLock) {
                             Image(systemName: mask.locked ? "lock.fill" : "lock.open")
