@@ -4268,6 +4268,12 @@ private struct CropOverlayView: View {
     let pixelHeight: Int
     
     @State private var dragSnapshot: SpatialCropParameters?
+    @State private var hoveredZone: HoverZone?
+    @State private var activeDragZone: HoverZone?
+    
+    private let edgeVisualThickness: CGFloat = 3
+    private let edgeHitThickness: CGFloat = 14
+    private let edgeSpanPadding: CGFloat = 24
     
     var body: some View {
         if pixelWidth <= 0 || pixelHeight <= 0 {
@@ -4288,29 +4294,44 @@ private struct CropOverlayView: View {
                     .fill(Color.black.opacity(0.35), style: FillStyle(eoFill: true))
                     
                     Rectangle()
-                        .strokeBorder(Color.white.opacity(0.9), lineWidth: 1.2)
+                        .strokeBorder(
+                            isHighlighted(.inside) ? Color.accentColor.opacity(0.95) : Color.white.opacity(0.9),
+                            lineWidth: isHighlighted(.inside) ? 1.8 : 1.2
+                        )
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                    
+                    if isHighlighted(.inside) {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.12))
+                            .frame(width: rect.width, height: rect.height)
+                            .position(x: rect.midX, y: rect.midY)
+                            .allowsHitTesting(false)
+                    }
+                    
+                    Rectangle()
+                        .fill(Color.clear)
                         .frame(width: rect.width, height: rect.height)
                         .position(x: rect.midX, y: rect.midY)
                         .contentShape(Rectangle())
+                        .onHover { hovering in
+                            updateHoverState(for: .inside, hovering: hovering)
+                        }
                         .gesture(moveGesture(xScale: xScale, yScale: yScale))
                     
-                    edgeHandle()
-                        .frame(width: 3, height: rect.height + 24)
+                    edgeHandle(orientation: .vertical, zone: .left, length: rect.height + edgeSpanPadding)
                         .position(x: rect.minX, y: rect.midY)
                         .gesture(edgeGesture(.left, xScale: xScale, yScale: yScale))
                     
-                    edgeHandle()
-                        .frame(width: 3, height: rect.height + 24)
+                    edgeHandle(orientation: .vertical, zone: .right, length: rect.height + edgeSpanPadding)
                         .position(x: rect.maxX, y: rect.midY)
                         .gesture(edgeGesture(.right, xScale: xScale, yScale: yScale))
                     
-                    horizontalHandle()
-                        .frame(width: rect.width + 24, height: 3)
+                    edgeHandle(orientation: .horizontal, zone: .top, length: rect.width + edgeSpanPadding)
                         .position(x: rect.midX, y: rect.minY)
                         .gesture(edgeGesture(.top, xScale: xScale, yScale: yScale))
                     
-                    horizontalHandle()
-                        .frame(width: rect.width + 24, height: 3)
+                    edgeHandle(orientation: .horizontal, zone: .bottom, length: rect.width + edgeSpanPadding)
                         .position(x: rect.midX, y: rect.maxY)
                         .gesture(edgeGesture(.bottom, xScale: xScale, yScale: yScale))
                 }
@@ -4332,21 +4353,35 @@ private struct CropOverlayView: View {
     }
     
     @ViewBuilder
-    private func edgeHandle() -> some View {
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(Color.white.opacity(0.9))
-    }
-    
-    @ViewBuilder
-    private func horizontalHandle() -> some View {
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(Color.white.opacity(0.9))
+    private func edgeHandle(orientation: HandleOrientation, zone: HoverZone, length: CGFloat) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.clear)
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(isHighlighted(zone) ? Color.accentColor.opacity(0.95) : Color.white.opacity(0.9))
+                .frame(
+                    width: orientation == .vertical ? edgeVisualThickness : max(length, 1),
+                    height: orientation == .horizontal ? edgeVisualThickness : max(length, 1)
+                )
+        }
+        .frame(
+            width: orientation == .vertical ? edgeHitThickness : max(length, 1),
+            height: orientation == .horizontal ? edgeHitThickness : max(length, 1)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            updateHoverState(for: zone, hovering: hovering)
+        }
     }
     
     private func edgeGesture(_ edge: CropEdge, xScale: CGFloat, yScale: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                if dragSnapshot == nil { dragSnapshot = parameters }
+                if dragSnapshot == nil {
+                    dragSnapshot = parameters
+                    activeDragZone = edge.zone
+                    setCursor(for: edge.zone, dragging: true)
+                }
                 guard let start = dragSnapshot else { return }
                 var updated = start
                 switch edge {
@@ -4363,13 +4398,19 @@ private struct CropOverlayView: View {
             }
             .onEnded { _ in
                 dragSnapshot = nil
+                activeDragZone = nil
+                restoreCursorAfterInteraction()
             }
     }
     
     private func moveGesture(xScale: CGFloat, yScale: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                if dragSnapshot == nil { dragSnapshot = parameters }
+                if dragSnapshot == nil {
+                    dragSnapshot = parameters
+                    activeDragZone = .inside
+                    setCursor(for: .inside, dragging: true)
+                }
                 guard let start = dragSnapshot else { return }
                 let rawDeltaX = deltaPixels(value.translation.width, scale: xScale)
                 let rawDeltaY = deltaPixels(value.translation.height, scale: yScale)
@@ -4391,6 +4432,8 @@ private struct CropOverlayView: View {
             }
             .onEnded { _ in
                 dragSnapshot = nil
+                activeDragZone = nil
+                restoreCursorAfterInteraction()
             }
     }
     
@@ -4399,8 +4442,71 @@ private struct CropOverlayView: View {
         return Int((translation / scale).rounded())
     }
     
+    private func isHighlighted(_ zone: HoverZone) -> Bool {
+        activeDragZone == zone || hoveredZone == zone
+    }
+    
+    private func updateHoverState(for zone: HoverZone, hovering: Bool) {
+        if hovering {
+            hoveredZone = zone
+            guard activeDragZone == nil else { return }
+            setCursor(for: zone, dragging: false)
+            return
+        }
+        
+        guard hoveredZone == zone else { return }
+        hoveredZone = nil
+        guard activeDragZone == nil else { return }
+        restoreCursorAfterInteraction()
+    }
+    
+    private func restoreCursorAfterInteraction() {
+        if let zone = hoveredZone {
+            setCursor(for: zone, dragging: false)
+        } else {
+            NSCursor.arrow.set()
+        }
+    }
+    
+    private func setCursor(for zone: HoverZone, dragging: Bool) {
+        switch zone {
+        case .inside:
+            if dragging {
+                NSCursor.closedHand.set()
+            } else {
+                NSCursor.openHand.set()
+            }
+        case .left, .right:
+            NSCursor.resizeLeftRight.set()
+        case .top, .bottom:
+            NSCursor.resizeUpDown.set()
+        }
+    }
+    
     private enum CropEdge {
         case left, right, top, bottom
+        
+        var zone: HoverZone {
+            switch self {
+            case .left: return .left
+            case .right: return .right
+            case .top: return .top
+            case .bottom: return .bottom
+            }
+        }
+    }
+    
+    private enum HoverZone: Equatable {
+        case inside
+        case left
+        case right
+        case top
+        case bottom
+    }
+    
+    private enum HandleOrientation {
+        case vertical
+        case horizontal
     }
 }
 
