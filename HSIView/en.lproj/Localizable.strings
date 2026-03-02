@@ -33,6 +33,7 @@
 
 "settings.group.general" = "General";
 "settings.group.wavelengths" = "Wavelengths";
+"settings.group.tools" = "Tools";
 "settings.group.python" = "Python Integrate";
 "settings.general.title" = "General Settings";
 "settings.general.language" = "Program language";
@@ -46,6 +47,11 @@
 "settings.wavelengths.save" = "Save Range";
 "settings.wavelengths.saved_range" = "Saved default range: %@ - %@ nm";
 "settings.wavelengths.invalid" = "Enter valid numeric values where End is greater than Start.";
+"settings.tools.title" = "Tools";
+"settings.tools.roi_cursor_update_rate" = "ROI-cursor update rate";
+"settings.tools.roi_cursor_update_rate.unlimited" = "Unlimited";
+"settings.tools.roi_cursor_update_rate.value" = "%d FPS";
+"settings.tools.roi_cursor_update_rate.hint" = "Set 1-60 FPS or disable the limit for maximum update frequency.";
 "settings.python.title" = "Python Integration";
 "settings.python.description" = "Set Python interpreter access for upcoming custom Python processing in the HSI pipeline.";
 "settings.python.path" = "Interpreter path";
@@ -316,6 +322,7 @@
 "График спектра" = "Spectrum graph";
 "График спектра ROI" = "ROI spectrum graph";
 "График спектра слоя" = "Layer spectrum graph";
+"analysis.tool.roi_cursor" = "ROI cursor";
 "Линейка" = "Ruler";
 "ruler.overlay.pixels" = "Pixels: %@ px";
 "ruler.overlay.distance" = "Distance: %@";
@@ -333,6 +340,10 @@
 "чтобы увидеть спектр пикселя" = "to view pixel spectrum";
 "Нарисуйте область на изображении" = "Draw a region on the image";
 "чтобы увидеть спектр ROI" = "to view ROI spectrum";
+"graph.panel.empty.hover_roi_cursor" = "Hover over the image";
+"graph.panel.empty.roi_cursor_spectrum" = "to view ROI-cursor spectrum";
+"graph.panel.status.roi_cursor_waiting" = "Move ROI cursor over image";
+"graph.panel.status.roi_cursor_active" = "ROI cursor active";
 "Развернуть панель" = "Expand panel";
 "Свернуть панель" = "Collapse panel";
 "Имя" = "Name";
@@ -352,10 +363,17 @@
 "Удалить точку" = "Delete point";
 "Метод" = "Method";
 "Сохранить область" = "Save region";
+"graph.pending.roi_cursor" = "ROI-cursor: %1$@: (%2$d, %3$d) – (%4$d, %5$d)";
+"graph.roi_cursor.sample_name" = "ROI cursor";
 "Редактировать" = "Edit";
 "Удалить область" = "Delete region";
 "Интенсивность" = "Intensity";
 "Серия" = "Series";
+"toolbar.roi_cursor.size_px" = "ROI size: %d px";
+"toolbar.roi_cursor.size_label" = "ROI size";
+"window.roi_cursor.title" = "ROI Cursor Preview";
+"roi.cursor.window.empty" = "Move the ROI cursor over the image";
+"roi.cursor.window.rect" = "%1$d×%2$d px at (%3$d, %4$d)";
 
 "Гиперкуб" = "Hypercube";
 "Маска" = "Mask";

@@ -5,6 +5,7 @@ struct SettingsView: View {
     private enum SettingsSection: String, CaseIterable, Identifiable {
         case general
         case wavelengths
+        case tools
         case python
 
         var id: String { rawValue }
@@ -15,6 +16,8 @@ struct SettingsView: View {
                 return "gearshape"
             case .wavelengths:
                 return "waveform.path.ecg"
+            case .tools:
+                return "wrench.and.screwdriver"
             case .python:
                 return "terminal"
             }
@@ -26,6 +29,8 @@ struct SettingsView: View {
                 return "settings.group.general"
             case .wavelengths:
                 return "settings.group.wavelengths"
+            case .tools:
+                return "settings.group.tools"
             case .python:
                 return "settings.group.python"
             }
@@ -39,6 +44,8 @@ struct SettingsView: View {
     @State private var draftLanguage: AppLanguage = .english
     @State private var wavelengthStartDraft: String = ""
     @State private var wavelengthEndDraft: String = ""
+    @State private var roiCursorFPSLimitDraft: Double = 30
+    @State private var roiCursorUnlimitedDraft: Bool = false
     @State private var pythonInterpreterPathDraft: String = ""
     @State private var validationMessage: String?
 
@@ -109,6 +116,8 @@ struct SettingsView: View {
                     generalSettingsView
                 case .wavelengths:
                     wavelengthsSettingsView
+                case .tools:
+                    toolsSettingsView
                 case .python:
                     pythonSettingsView
                 }
@@ -243,6 +252,41 @@ struct SettingsView: View {
         }
     }
 
+    private var toolsSettingsView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(state.localized("settings.tools.title"))
+                .font(.title3.weight(.semibold))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(state.localized("settings.tools.roi_cursor_update_rate"))
+                    .font(.headline)
+
+                Toggle(
+                    state.localized("settings.tools.roi_cursor_update_rate.unlimited"),
+                    isOn: $roiCursorUnlimitedDraft
+                )
+
+                HStack(spacing: 10) {
+                    Slider(value: $roiCursorFPSLimitDraft, in: 1...60, step: 1)
+                        .disabled(roiCursorUnlimitedDraft)
+                    Text(roiCursorUnlimitedDraft
+                         ? state.localized("settings.tools.roi_cursor_update_rate.unlimited")
+                         : state.localizedFormat(
+                            "settings.tools.roi_cursor_update_rate.value",
+                            Int(roiCursorFPSLimitDraft.rounded())
+                         ))
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+                    .frame(minWidth: 68, alignment: .trailing)
+                }
+
+                Text(state.localized("settings.tools.roi_cursor_update_rate.hint"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
     private func languageTitleKey(_ language: AppLanguage) -> String {
         switch language {
         case .english:
@@ -258,6 +302,9 @@ struct SettingsView: View {
         draftLanguage = state.preferredLanguage
         wavelengthStartDraft = state.defaultWavelengthStart
         wavelengthEndDraft = state.defaultWavelengthEnd
+        let currentFPSLimit = state.roiCursorUpdateFPSLimit
+        roiCursorUnlimitedDraft = currentFPSLimit == 0
+        roiCursorFPSLimitDraft = Double(currentFPSLimit > 0 ? currentFPSLimit : 30)
         pythonInterpreterPathDraft = state.pythonInterpreterPath
         validationMessage = nil
     }
@@ -283,6 +330,9 @@ struct SettingsView: View {
         state.preferredLanguage = draftLanguage
         state.defaultWavelengthStart = normalizedStart
         state.defaultWavelengthEnd = normalizedEnd
+        let normalizedFPS = max(1, min(Int(roiCursorFPSLimitDraft.rounded()), 60))
+        state.roiCursorUpdateFPSLimit = roiCursorUnlimitedDraft ? 0 : normalizedFPS
+        roiCursorFPSLimitDraft = Double(normalizedFPS)
         state.pythonInterpreterPath = pythonInterpreterPathDraft.trimmingCharacters(in: .whitespacesAndNewlines)
 
         wavelengthStartDraft = normalizedStart

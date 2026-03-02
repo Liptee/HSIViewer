@@ -23,6 +23,8 @@ struct GraphPanel: View {
             return .points
         case .spectrumGraphROI:
             return .roi
+        case .roiCursor:
+            return .roi
         case .spectrumGraphLayer:
             return .maskLayer
         default:
@@ -61,6 +63,11 @@ struct GraphPanel: View {
         case .points:
             return state.spectrumSamples.isEmpty ? L("graph.panel.status.no_points") : LF("graph.panel.status.saved_points", state.spectrumSamples.count)
         case .roi:
+            if state.activeAnalysisTool == .roiCursor {
+                return state.roiCursorSample == nil
+                    ? L("graph.panel.status.roi_cursor_waiting")
+                    : L("graph.panel.status.roi_cursor_active")
+            }
             return state.roiSamples.isEmpty ? L("graph.panel.status.no_roi") : LF("graph.panel.status.roi_count", state.roiSamples.count)
         case .maskLayer:
             return state.maskLayerSamples.isEmpty ? L("graph.panel.status.no_mask_layer") : LF("graph.panel.status.mask_layer_count", state.maskLayerSamples.count)
@@ -112,8 +119,12 @@ struct GraphPanel: View {
                 if state.displayedROISamples.isEmpty {
                     emptyState(
                         icon: "lasso.and.sparkles",
-                        title: L("graph.panel.empty.draw_roi"),
-                        subtitle: L("graph.panel.empty.roi_spectrum")
+                        title: state.activeAnalysisTool == .roiCursor
+                            ? L("graph.panel.empty.hover_roi_cursor")
+                            : L("graph.panel.empty.draw_roi"),
+                        subtitle: state.activeAnalysisTool == .roiCursor
+                            ? L("graph.panel.empty.roi_cursor_spectrum")
+                            : L("graph.panel.empty.roi_spectrum")
                     )
                 } else {
                     roiChartSection(state.displayedROISamples)
@@ -351,6 +362,8 @@ extension GraphPanel {
         for sample in samples {
             if state.pendingROISample?.id == sample.id {
                 state.pendingROISample = nil
+            } else if state.roiCursorSample?.id == sample.id {
+                state.clearROICursorState()
             } else {
                 state.removeROISample(with: sample.id)
             }
@@ -857,6 +870,7 @@ extension GraphPanel {
     
     @ViewBuilder
     private func roiChartSection(_ samples: [SpectrumROISample]) -> some View {
+        let isROICursorMode = state.activeAnalysisTool == .roiCursor
         let visibleSamples = samples.filter { !hiddenSampleIDs.contains($0.id) }
         let usesWavelengths = samples.contains { $0.wavelengths != nil }
         let axisLabel = usesWavelengths ? L("graph.axis.wavelength_nm") : L("graph.axis.channel")
@@ -884,60 +898,72 @@ extension GraphPanel {
             .labelsHidden()
             
             VStack(alignment: .leading, spacing: 6) {
-                if let pending = state.pendingROISample {
+                if let pending = (isROICursorMode ? state.roiCursorSample : state.pendingROISample) {
                     let rect = pending.rect
-                    Text(LF("graph.pending.roi", cubeName, rect.minX, rect.minY, rect.maxX, rect.maxY))
+                    Text(LF(
+                        isROICursorMode ? "graph.pending.roi_cursor" : "graph.pending.roi",
+                        cubeName,
+                        rect.minX,
+                        rect.minY,
+                        rect.maxX,
+                        rect.maxY
+                    ))
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
                 
-                Button(action: { state.savePendingROISample() }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "pin.square.fill")
-                        Text(L("graph.action.save_roi"))
+                if !isROICursorMode {
+                    Button(action: { state.savePendingROISample() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "pin.square.fill")
+                            Text(L("graph.action.save_roi"))
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(maxWidth: .infinity)
                     }
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(state.pendingROISample == nil)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(state.pendingROISample == nil)
                 
                 if let selectedID = selectedSampleID,
                    let sample = samples.first(where: { $0.id == selectedID }) {
-                    HStack(spacing: 8) {
-                        Button {
-                            editingSampleID = sample.id
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "pencil")
-                                Text(L("graph.action.rename"))
+                    let isCursorSample = state.roiCursorSample?.id == sample.id
+                    if !isROICursorMode || !isCursorSample {
+                        HStack(spacing: 8) {
+                            Button {
+                                editingSampleID = sample.id
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "pencil")
+                                    Text(L("graph.action.rename"))
+                                }
                             }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
 
-                        Button {
-                            editingROISample = sample
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "square.and.pencil")
-                                Text(L("graph.action.edit"))
+                            Button {
+                                editingROISample = sample
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "square.and.pencil")
+                                    Text(L("graph.action.edit"))
+                                }
                             }
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        
-                        Button(role: .destructive) {
-                            deleteROISamples([sample])
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "trash")
-                                Text(L("graph.action.delete_roi"))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button(role: .destructive) {
+                                deleteROISamples([sample])
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "trash")
+                                    Text(L("graph.action.delete_roi"))
+                                }
                             }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
                 }
             }

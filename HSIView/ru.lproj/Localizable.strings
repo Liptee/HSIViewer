@@ -33,6 +33,7 @@
 
 "settings.group.general" = "General";
 "settings.group.wavelengths" = "Wavelengths";
+"settings.group.tools" = "Инструменты";
 "settings.group.python" = "Python Integrate";
 "settings.general.title" = "Общие настройки";
 "settings.general.language" = "Язык программы";
@@ -46,6 +47,11 @@
 "settings.wavelengths.save" = "Сохранить диапазон";
 "settings.wavelengths.saved_range" = "Сохранённый диапазон по умолчанию: %@ - %@ нм";
 "settings.wavelengths.invalid" = "Введите корректные числовые значения: конец диапазона должен быть больше начала.";
+"settings.tools.title" = "Инструменты";
+"settings.tools.roi_cursor_update_rate" = "Частота обновления ROI-cursor";
+"settings.tools.roi_cursor_update_rate.unlimited" = "Без ограничений";
+"settings.tools.roi_cursor_update_rate.value" = "%d FPS";
+"settings.tools.roi_cursor_update_rate.hint" = "Задайте 1-60 FPS или отключите ограничение для максимально частого обновления.";
 "settings.python.title" = "Python Integrate";
 "settings.python.description" = "Укажите доступ к интерпретатору Python для будущих пользовательских Python-обработок в пайплайне ГСИ.";
 "settings.python.path" = "Путь к интерпретатору";
@@ -266,6 +272,7 @@
 "graph.panel.title.spectrum" = "График спектра";
 "graph.panel.title.roi" = "График спектра ROI";
 "graph.panel.title.mask_layer" = "График спектра слоя";
+"analysis.tool.roi_cursor" = "ROI-курсор";
 "График спектра слоя" = "График спектра слоя";
 "Линейка" = "Линейка";
 "ruler.overlay.pixels" = "Пиксели: %@ px";
@@ -277,6 +284,8 @@
 "graph.panel.status.saved_points" = "Сохранено: %d";
 "graph.panel.status.no_roi" = "Нет сохранённых областей";
 "graph.panel.status.roi_count" = "Областей: %d";
+"graph.panel.status.roi_cursor_waiting" = "Перемещайте ROI-курсор по изображению";
+"graph.panel.status.roi_cursor_active" = "ROI-курсор активен";
 "graph.panel.status.no_mask_layer" = "Нет сохранённых спектров слоёв";
 "graph.panel.status.mask_layer_count" = "Слоёв: %d";
 "graph.panel.status.no_tool" = "Инструмент не выбран";
@@ -284,6 +293,8 @@
 "graph.panel.empty.pixel_spectrum" = "чтобы увидеть спектр пикселя";
 "graph.panel.empty.draw_roi" = "Нарисуйте область на изображении";
 "graph.panel.empty.roi_spectrum" = "чтобы увидеть спектр ROI";
+"graph.panel.empty.hover_roi_cursor" = "Наведите ROI-курсор на изображение";
+"graph.panel.empty.roi_cursor_spectrum" = "чтобы увидеть спектр области";
 "graph.panel.empty.select_mask_layer" = "Выберите слой маски";
 "graph.panel.empty.mask_layer_spectrum" = "чтобы увидеть спектр класса";
 "graph.panel.inactive.choose_tool" = "Выберите инструмент";
@@ -302,14 +313,21 @@
 "graph.axis.series" = "Серия";
 "graph.pending.point" = "Выбрана точка: %1$@: (%2$d, %3$d) — не сохранена";
 "graph.pending.roi" = "Выбрана область: %1$@: (%2$d, %3$d) – (%4$d, %5$d) — не сохранена";
+"graph.pending.roi_cursor" = "ROI-курсор: %1$@: (%2$d, %3$d) – (%4$d, %5$d)";
 "graph.action.save_point" = "Сохранить точку";
 "graph.action.save_roi" = "Сохранить область";
+"graph.roi_cursor.sample_name" = "ROI-курсор";
 "graph.action.rename" = "Переименовать";
 "graph.action.edit" = "Редактировать";
 "graph.action.delete_point" = "Удалить точку";
 "graph.action.delete_roi" = "Удалить область";
 "graph.action.delete_mask_layer" = "Удалить спектр слоя";
 "graph.roi.method" = "Метод";
+"toolbar.roi_cursor.size_px" = "Размер области: %d px";
+"toolbar.roi_cursor.size_label" = "Размер области";
+"window.roi_cursor.title" = "Превью ROI-курсора";
+"roi.cursor.window.empty" = "Наведите ROI-курсор на изображение";
+"roi.cursor.window.rect" = "%1$d×%2$d px в (%3$d, %4$d)";
 
 "graph.window.dataset.points" = "Точки";
 "graph.window.dataset.roi" = "ROI";
