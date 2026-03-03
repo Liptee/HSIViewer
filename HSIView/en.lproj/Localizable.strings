@@ -706,10 +706,8 @@
 "Переместить вверх" = "Move up";
 "Переместить вниз" = "Move down";
 "Прозрачность:" = "Opacity:";
-"Отменить (⌘Z)" = "Undo (⌘Z)";
 "↑↓ для изменения порядка слоёв" = "Use ↑↓ to change layer order";
 "• Shift — показать только активный слой" = "• Shift - show only active layer";
-"• ⌘Z — отмена последнего действия" = "• ⌘Z - undo last action";
 "• File → Экспорт для сохранения маски" = "• File -> Export to save mask";
 "Нет данных" = "No data";
 "Пайплайн обработки" = "Processing pipeline";

@@ -8,9 +8,6 @@ final class MaskEditorState: ObservableObject {
     @Published var brushSize: Int = 10
     @Published var isShiftPressed: Bool = false
     
-    private var undoStacks: [UUID: [[UInt8]]] = [:]
-    private let maxUndoCount = 20
-    
     var maskLayers: [MaskLayer] { layers.compactMap { $0 as? MaskLayer } }
     var referenceLayers: [ReferenceLayer] { layers.compactMap { $0 as? ReferenceLayer } }
     var activeLayer: MaskLayer? {
@@ -28,7 +25,6 @@ final class MaskEditorState: ObservableObject {
     
     func initialize(width: Int, height: Int, rgbImage: NSImage? = nil) {
         layers.removeAll()
-        undoStacks.removeAll()
         
         let refLayer = ReferenceLayer(
             id: UUID(),
@@ -50,12 +46,10 @@ final class MaskEditorState: ObservableObject {
         )
         layers.append(maskLayer)
         activeLayerID = maskLayer.id
-        undoStacks[maskLayer.id] = []
     }
 
     func clear() {
         layers.removeAll()
-        undoStacks.removeAll()
         activeLayerID = nil
     }
 
@@ -63,7 +57,6 @@ final class MaskEditorState: ObservableObject {
         guard width > 0, height > 0, classMap.count == width * height else { return }
 
         layers.removeAll()
-        undoStacks.removeAll()
 
         let refLayer = ReferenceLayer(
             id: UUID(),
@@ -91,7 +84,6 @@ final class MaskEditorState: ObservableObject {
             )
             layer.data = classMap.map { $0 == classValue ? classValue : 0 }
             layers.append(layer)
-            undoStacks[layer.id] = []
             if firstMaskID == nil {
                 firstMaskID = layer.id
             }
@@ -145,7 +137,6 @@ final class MaskEditorState: ObservableObject {
         let expectedCount = snapshot.width * snapshot.height
 
         layers.removeAll()
-        undoStacks.removeAll()
 
         let refLayer = ReferenceLayer(
             id: UUID(),
@@ -187,7 +178,6 @@ final class MaskEditorState: ObservableObject {
             layer.activeForDrawing = descriptor.activeForDrawing
             layer.renderVersion = 1
             layers.append(layer)
-            undoStacks[layer.id] = []
 
             if let activeClass = snapshot.activeClassValue,
                layer.classValue == activeClass,
@@ -216,7 +206,6 @@ final class MaskEditorState: ObservableObject {
             color: MaskClassColor.palette[colorIndex]
         )
         layers.append(layer)
-        undoStacks[layer.id] = []
         activeLayerID = layer.id
     }
 
@@ -284,18 +273,13 @@ final class MaskEditorState: ObservableObject {
         if keepOriginalLayers {
             let insertIndex = (selected.map { $0.index }.max() ?? (layers.count - 1)) + 1
             layers.insert(mergedLayer, at: min(insertIndex, layers.count))
-            undoStacks[mergedLayer.id] = []
         } else {
             let sortedIndices = selected.map { $0.index }.sorted()
             let insertIndex = sortedIndices.first ?? layers.count
             for index in sortedIndices.reversed() {
-                if let mask = layers[index] as? MaskLayer {
-                    undoStacks.removeValue(forKey: mask.id)
-                }
                 layers.remove(at: index)
             }
             layers.insert(mergedLayer, at: min(insertIndex, layers.count))
-            undoStacks[mergedLayer.id] = []
         }
 
         activeLayerID = mergedLayer.id
@@ -305,7 +289,6 @@ final class MaskEditorState: ObservableObject {
     func removeMaskLayer(id: UUID) {
         guard maskLayers.count > 1 else { return }
         layers.removeAll { $0.id == id }
-        undoStacks.removeValue(forKey: id)
         if activeLayerID == id {
             activeLayerID = maskLayers.first?.id
         }
@@ -363,6 +346,10 @@ final class MaskEditorState: ObservableObject {
     }
     
     func applyBrush(at point: CGPoint, in imageSize: CGSize) {
+        applyBrushStroke(from: point, to: point, in: imageSize)
+    }
+
+    func applyBrushStroke(from start: CGPoint, to end: CGPoint, in imageSize: CGSize) {
         let drawableIDs = drawableLayerIDs
         guard !drawableIDs.isEmpty else { return }
         
@@ -370,13 +357,16 @@ final class MaskEditorState: ObservableObject {
             guard let index = layers.firstIndex(where: { $0.id == id }),
                   var mask = layers[index] as? MaskLayer else { continue }
             
-            pushUndo(for: id, data: mask.data)
-            mask.applyBrush(at: point, size: brushSize, in: imageSize)
+            mask.applyBrushStroke(from: start, to: end, size: brushSize, in: imageSize)
             layers[index] = mask
         }
     }
     
     func applyEraser(at point: CGPoint, in imageSize: CGSize) {
+        applyEraserStroke(from: point, to: point, in: imageSize)
+    }
+
+    func applyEraserStroke(from start: CGPoint, to end: CGPoint, in imageSize: CGSize) {
         let drawableIDs = drawableLayerIDs
         guard !drawableIDs.isEmpty else { return }
         
@@ -384,8 +374,7 @@ final class MaskEditorState: ObservableObject {
             guard let index = layers.firstIndex(where: { $0.id == id }),
                   var mask = layers[index] as? MaskLayer else { continue }
             
-            pushUndo(for: id, data: mask.data)
-            mask.applyEraser(at: point, size: brushSize, in: imageSize)
+            mask.applyEraserStroke(from: start, to: end, size: brushSize, in: imageSize)
             layers[index] = mask
         }
     }
@@ -396,34 +385,8 @@ final class MaskEditorState: ObservableObject {
               let index = layers.firstIndex(where: { $0.id == activeID }),
               var mask = layers[index] as? MaskLayer else { return }
         
-        pushUndo(for: activeID, data: mask.data)
         mask.applyFill(at: point, in: imageSize)
         layers[index] = mask
-    }
-    
-    func undo(for layerID: UUID) {
-        guard var stack = undoStacks[layerID], !stack.isEmpty else { return }
-        let previous = stack.removeLast()
-        undoStacks[layerID] = stack
-        
-        guard let index = layers.firstIndex(where: { $0.id == layerID }),
-              var mask = layers[index] as? MaskLayer else { return }
-        mask.data = previous
-        layers[index] = mask
-    }
-    
-    func canUndo(for layerID: UUID) -> Bool {
-        guard let stack = undoStacks[layerID] else { return false }
-        return !stack.isEmpty
-    }
-    
-    private func pushUndo(for layerID: UUID, data: [UInt8]) {
-        var stack = undoStacks[layerID] ?? []
-        stack.append(data)
-        if stack.count > maxUndoCount {
-            stack.removeFirst()
-        }
-        undoStacks[layerID] = stack
     }
     
     func syncWithImageSize(width: Int, height: Int, rotationTurns: Int = 0) {
@@ -475,9 +438,9 @@ final class MaskEditorState: ObservableObject {
                 mask.width = width
                 mask.height = height
                 mask.data = remapped
+                mask.markEntireLayerDirty()
                 mask.renderVersion &+= 1
                 layers[i] = mask
-                undoStacks[mask.id] = []
             } else if var ref = layers[i] as? ReferenceLayer {
                 ref.width = width
                 ref.height = height
@@ -522,7 +485,6 @@ final class MaskEditorState: ObservableObject {
 
         if maskLayers.isEmpty {
             layers.removeAll()
-            undoStacks.removeAll()
 
             let refLayer = ReferenceLayer(
                 id: UUID(),
@@ -545,7 +507,6 @@ final class MaskEditorState: ObservableObject {
                     color: item.color
                 )
                 layers.append(layer)
-                undoStacks[layer.id] = []
                 if index == 0 {
                     firstLayerID = layer.id
                 }
@@ -588,7 +549,6 @@ final class MaskEditorState: ObservableObject {
                 color: item.color
             )
             layers.append(newLayer)
-            undoStacks[newLayer.id] = []
             if firstUpdatedLayerID == nil {
                 firstUpdatedLayerID = newLayer.id
             }
@@ -640,6 +600,48 @@ enum ReferenceDisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
+struct MaskDirtyRegion: Equatable {
+    let minX: Int
+    let minY: Int
+    let maxX: Int
+    let maxY: Int
+
+    func clamped(width: Int, height: Int) -> MaskDirtyRegion? {
+        guard width > 0, height > 0 else { return nil }
+        let clampedMinX = max(0, min(minX, width - 1))
+        let clampedMinY = max(0, min(minY, height - 1))
+        let clampedMaxX = max(0, min(maxX, width - 1))
+        let clampedMaxY = max(0, min(maxY, height - 1))
+        guard clampedMinX <= clampedMaxX, clampedMinY <= clampedMaxY else { return nil }
+        return MaskDirtyRegion(
+            minX: clampedMinX,
+            minY: clampedMinY,
+            maxX: clampedMaxX,
+            maxY: clampedMaxY
+        )
+    }
+
+    static func bounding(indices: [Int], width: Int) -> MaskDirtyRegion? {
+        guard width > 0, !indices.isEmpty else { return nil }
+        var minX = Int.max
+        var minY = Int.max
+        var maxX = Int.min
+        var maxY = Int.min
+
+        for index in indices where index >= 0 {
+            let x = index % width
+            let y = index / width
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, x)
+            maxY = max(maxY, y)
+        }
+
+        guard minX <= maxX, minY <= maxY else { return nil }
+        return MaskDirtyRegion(minX: minX, minY: minY, maxX: maxX, maxY: maxY)
+    }
+}
+
 struct MaskLayer: MaskLayerProtocol {
     let id: UUID
     var name: String
@@ -653,6 +655,7 @@ struct MaskLayer: MaskLayerProtocol {
     var activeForDrawing: Bool = false
     var data: [UInt8]
     var renderVersion: UInt64 = 0
+    var dirtyRegion: MaskDirtyRegion?
     
     init(id: UUID, name: String, width: Int, height: Int, classValue: UInt8, color: NSColor, opacity: Double = 0.5) {
         self.id = id
@@ -666,59 +669,19 @@ struct MaskLayer: MaskLayerProtocol {
     }
     
     mutating func applyBrush(at point: CGPoint, size: Int, in imageSize: CGSize) {
-        let scaleX = CGFloat(width) / imageSize.width
-        let scaleY = CGFloat(height) / imageSize.height
-        let cx = Int(point.x * scaleX)
-        let cy = Int(point.y * scaleY)
-        let radius = max(1, size / 2)
-        
-        var changed = false
-        for dy in -radius...radius {
-            for dx in -radius...radius {
-                if dx * dx + dy * dy <= radius * radius {
-                    let px = cx + dx
-                    let py = cy + dy
-                    if px >= 0, px < width, py >= 0, py < height {
-                        let idx = py * width + px
-                        if data[idx] != classValue {
-                            data[idx] = classValue
-                            changed = true
-                        }
-                    }
-                }
-            }
-        }
-        if changed {
-            renderVersion &+= 1
-        }
+        applyBrushStroke(from: point, to: point, size: size, in: imageSize)
     }
     
     mutating func applyEraser(at point: CGPoint, size: Int, in imageSize: CGSize) {
-        let scaleX = CGFloat(width) / imageSize.width
-        let scaleY = CGFloat(height) / imageSize.height
-        let cx = Int(point.x * scaleX)
-        let cy = Int(point.y * scaleY)
-        let radius = max(1, size / 2)
-        
-        var changed = false
-        for dy in -radius...radius {
-            for dx in -radius...radius {
-                if dx * dx + dy * dy <= radius * radius {
-                    let px = cx + dx
-                    let py = cy + dy
-                    if px >= 0, px < width, py >= 0, py < height {
-                        let idx = py * width + px
-                        if data[idx] != 0 {
-                            data[idx] = 0
-                            changed = true
-                        }
-                    }
-                }
-            }
-        }
-        if changed {
-            renderVersion &+= 1
-        }
+        applyEraserStroke(from: point, to: point, size: size, in: imageSize)
+    }
+
+    mutating func applyBrushStroke(from start: CGPoint, to end: CGPoint, size: Int, in imageSize: CGSize) {
+        applyStrokeSegment(from: start, to: end, size: size, in: imageSize, replacement: classValue)
+    }
+
+    mutating func applyEraserStroke(from start: CGPoint, to end: CGPoint, size: Int, in imageSize: CGSize) {
+        applyStrokeSegment(from: start, to: end, size: size, in: imageSize, replacement: 0)
     }
     
     mutating func applyFill(at point: CGPoint, in imageSize: CGSize) {
@@ -737,6 +700,10 @@ struct MaskLayer: MaskLayerProtocol {
         var queue: [(Int, Int)] = [(startX, startY)]
         var queueHead = 0
         var changed = false
+        var minChangedX = Int.max
+        var minChangedY = Int.max
+        var maxChangedX = Int.min
+        var maxChangedY = Int.min
         
         while queueHead < queue.count {
             let (x, y) = queue[queueHead]
@@ -749,6 +716,10 @@ struct MaskLayer: MaskLayerProtocol {
             visited[idx] = true
             data[idx] = classValue
             changed = true
+            minChangedX = min(minChangedX, x)
+            minChangedY = min(minChangedY, y)
+            maxChangedX = max(maxChangedX, x)
+            maxChangedY = max(maxChangedY, y)
             
             if x > 0 { queue.append((x - 1, y)) }
             if x < width - 1 { queue.append((x + 1, y)) }
@@ -756,6 +727,12 @@ struct MaskLayer: MaskLayerProtocol {
             if y < height - 1 { queue.append((x, y + 1)) }
         }
         if changed {
+            markDirty(
+                minX: minChangedX,
+                minY: minChangedY,
+                maxX: maxChangedX,
+                maxY: maxChangedY
+            )
             renderVersion &+= 1
         }
     }
@@ -779,6 +756,7 @@ struct MaskLayer: MaskLayerProtocol {
         self.width = newWidth
         self.height = newHeight
         self.data = newData
+        markEntireLayerDirty()
         renderVersion &+= 1
     }
     
@@ -809,7 +787,125 @@ struct MaskLayer: MaskLayerProtocol {
         self.width = newWidth
         self.height = newHeight
         self.data = newData
+        markEntireLayerDirty()
         renderVersion &+= 1
+    }
+
+    private mutating func applyStrokeSegment(
+        from start: CGPoint,
+        to end: CGPoint,
+        size: Int,
+        in imageSize: CGSize,
+        replacement: UInt8
+    ) {
+        guard width > 0, height > 0, imageSize.width > 0, imageSize.height > 0 else { return }
+
+        let scaleX = CGFloat(width) / imageSize.width
+        let scaleY = CGFloat(height) / imageSize.height
+        let x1 = start.x * scaleX
+        let y1 = start.y * scaleY
+        let x2 = end.x * scaleX
+        let y2 = end.y * scaleY
+        let radius = CGFloat(max(1, size / 2))
+
+        let minX = max(0, Int(floor(min(x1, x2) - radius)))
+        let maxX = min(width - 1, Int(ceil(max(x1, x2) + radius)))
+        let minY = max(0, Int(floor(min(y1, y2) - radius)))
+        let maxY = min(height - 1, Int(ceil(max(y1, y2) + radius)))
+        guard minX <= maxX, minY <= maxY else { return }
+
+        let threshold = radius * radius
+        var changed = false
+        var minChangedX = Int.max
+        var minChangedY = Int.max
+        var maxChangedX = Int.min
+        var maxChangedY = Int.min
+
+        for py in minY...maxY {
+            let rowOffset = py * width
+            let sampleY = CGFloat(py) + 0.5
+            for px in minX...maxX {
+                let sampleX = CGFloat(px) + 0.5
+                let distanceSquared = Self.squaredDistanceFromPointToSegment(
+                    pointX: sampleX,
+                    pointY: sampleY,
+                    startX: x1,
+                    startY: y1,
+                    endX: x2,
+                    endY: y2
+                )
+                guard distanceSquared <= threshold else { continue }
+
+                let idx = rowOffset + px
+                if data[idx] != replacement {
+                    data[idx] = replacement
+                    changed = true
+                    minChangedX = min(minChangedX, px)
+                    minChangedY = min(minChangedY, py)
+                    maxChangedX = max(maxChangedX, px)
+                    maxChangedY = max(maxChangedY, py)
+                }
+            }
+        }
+
+        if changed {
+            markDirty(
+                minX: minChangedX,
+                minY: minChangedY,
+                maxX: maxChangedX,
+                maxY: maxChangedY
+            )
+            renderVersion &+= 1
+        }
+    }
+
+    mutating func setDirtyRegion(_ region: MaskDirtyRegion) {
+        dirtyRegion = region.clamped(width: width, height: height)
+    }
+
+    mutating func markDirty(for indices: [Int]) {
+        guard let bounds = MaskDirtyRegion.bounding(indices: indices, width: width) else { return }
+        markDirty(minX: bounds.minX, minY: bounds.minY, maxX: bounds.maxX, maxY: bounds.maxY)
+    }
+
+    mutating func markEntireLayerDirty() {
+        guard width > 0, height > 0 else {
+            dirtyRegion = nil
+            return
+        }
+        dirtyRegion = MaskDirtyRegion(minX: 0, minY: 0, maxX: width - 1, maxY: height - 1)
+    }
+
+    mutating func markDirty(minX: Int, minY: Int, maxX: Int, maxY: Int) {
+        guard let normalized = MaskDirtyRegion(minX: minX, minY: minY, maxX: maxX, maxY: maxY)
+            .clamped(width: width, height: height) else { return }
+        dirtyRegion = normalized
+    }
+
+    private static func squaredDistanceFromPointToSegment(
+        pointX: CGFloat,
+        pointY: CGFloat,
+        startX: CGFloat,
+        startY: CGFloat,
+        endX: CGFloat,
+        endY: CGFloat
+    ) -> CGFloat {
+        let dx = endX - startX
+        let dy = endY - startY
+
+        if dx == 0 && dy == 0 {
+            let localX = pointX - startX
+            let localY = pointY - startY
+            return localX * localX + localY * localY
+        }
+
+        let projection = ((pointX - startX) * dx + (pointY - startY) * dy) / (dx * dx + dy * dy)
+        let t = max(0, min(1, projection))
+        let closestX = startX + t * dx
+        let closestY = startY + t * dy
+        let deltaX = pointX - closestX
+        let deltaY = pointY - closestY
+        return deltaX * deltaX + deltaY * deltaY
     }
 }
 

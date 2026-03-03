@@ -15,6 +15,7 @@ struct MaskEditorView: View {
     @State private var roiPreviewRect: SpectrumROIRect?
     @State private var rulerHoverPixel: PixelCoordinate?
     @State private var maskToolHoverImagePoint: CGPoint?
+    @State private var shiftKeyMonitor: Any?
     @FocusState private var isImageFocused: Bool
     
     var body: some View {
@@ -126,6 +127,8 @@ struct MaskEditorView: View {
                 state.deleteSelectedRulerPoint()
             }
             .onChange(of: state.activeAnalysisTool) { _ in
+                isDrawing = false
+                lastDrawPoint = nil
                 NSCursor.pop()
                 roiPreviewRect = nil
                 roiDragStartPixel = nil
@@ -138,11 +141,15 @@ struct MaskEditorView: View {
                 }
             }
             .onChange(of: maskState.currentTool) { _ in
+                isDrawing = false
+                lastDrawPoint = nil
                 if !shouldShowMaskToolCursorPreview {
                     maskToolHoverImagePoint = nil
                 }
             }
             .onChange(of: state.cubeURL) { _ in
+                isDrawing = false
+                lastDrawPoint = nil
                 roiPreviewRect = nil
                 roiDragStartPixel = nil
                 rulerHoverPixel = nil
@@ -173,13 +180,18 @@ struct MaskEditorView: View {
     }
     
     private func setupShiftKeyMonitor() {
-        NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+        guard shiftKeyMonitor == nil else { return }
+        shiftKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
             maskState.isShiftPressed = event.modifierFlags.contains(.shift)
             return event
         }
     }
     
     private func removeShiftKeyMonitor() {
+        if let monitor = shiftKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            shiftKeyMonitor = nil
+        }
         maskState.isShiftPressed = false
     }
     
@@ -240,21 +252,11 @@ struct MaskEditorView: View {
         
         switch maskState.currentTool {
         case .brush:
-            if let last = lastDrawPoint {
-                interpolateDrawing(from: last, to: imagePoint, size: imageSize) { pt in
-                    maskState.applyBrush(at: pt, in: imageSize)
-                }
-            } else {
-                maskState.applyBrush(at: imagePoint, in: imageSize)
-            }
+            let start = lastDrawPoint ?? imagePoint
+            maskState.applyBrushStroke(from: start, to: imagePoint, in: imageSize)
         case .eraser:
-            if let last = lastDrawPoint {
-                interpolateDrawing(from: last, to: imagePoint, size: imageSize) { pt in
-                    maskState.applyEraser(at: pt, in: imageSize)
-                }
-            } else {
-                maskState.applyEraser(at: imagePoint, in: imageSize)
-            }
+            let start = lastDrawPoint ?? imagePoint
+            maskState.applyEraserStroke(from: start, to: imagePoint, in: imageSize)
         case .fill:
             if lastDrawPoint == nil {
                 maskState.applyFill(at: imagePoint, in: imageSize)
@@ -262,18 +264,6 @@ struct MaskEditorView: View {
         }
         
         lastDrawPoint = imagePoint
-    }
-    
-    private func interpolateDrawing(from: CGPoint, to: CGPoint, size: CGSize, action: (CGPoint) -> Void) {
-        let distance = hypot(to.x - from.x, to.y - from.y)
-        let steps = max(1, Int(distance / 2))
-        
-        for i in 0...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let x = from.x + (to.x - from.x) * t
-            let y = from.y + (to.y - from.y) * t
-            action(CGPoint(x: x, y: y))
-        }
     }
     
     private var currentImageSize: CGSize {
@@ -509,9 +499,8 @@ struct MaskOverlayView: View {
 }
 
 private final class MaskLayerImageCache: ObservableObject {
-    private struct CacheKey: Hashable {
+    private struct LayerDescriptor: Hashable {
         let layerID: UUID
-        let renderVersion: UInt64
         let width: Int
         let height: Int
         let red: UInt8
@@ -519,31 +508,50 @@ private final class MaskLayerImageCache: ObservableObject {
         let blue: UInt8
     }
 
-    private var images: [CacheKey: CGImage] = [:]
-    private var lruKeys: [CacheKey] = []
+    private final class CacheEntry {
+        var descriptor: LayerDescriptor
+        var renderedVersion: UInt64
+        var rgba: [UInt8]
+        var image: CGImage
+
+        init(descriptor: LayerDescriptor, renderedVersion: UInt64, rgba: [UInt8], image: CGImage) {
+            self.descriptor = descriptor
+            self.renderedVersion = renderedVersion
+            self.rgba = rgba
+            self.image = image
+        }
+    }
+
+    private var entriesByLayerID: [UUID: CacheEntry] = [:]
+    private var lruLayerIDs: [UUID] = []
     private let maxEntries: Int = 48
+    private let colorSpace = CGColorSpaceCreateDeviceRGB()
 
     func image(for layer: MaskLayer) -> CGImage? {
         guard layer.width > 0, layer.height > 0 else { return nil }
-        let key = cacheKey(for: layer)
+        let descriptor = descriptor(for: layer)
 
-        if let cached = images[key] {
-            touch(key)
-            return cached
+        if let entry = entriesByLayerID[layer.id], entry.descriptor == descriptor {
+            if entry.renderedVersion != layer.renderVersion, !update(entry: entry, with: layer) {
+                guard let rebuilt = buildEntry(for: layer, descriptor: descriptor) else { return nil }
+                entriesByLayerID[layer.id] = rebuilt
+            }
+            touch(layer.id)
+            trimCacheIfNeeded()
+            return entriesByLayerID[layer.id]?.image
         }
 
-        guard let built = buildImage(for: layer, key: key) else { return nil }
-        images[key] = built
-        lruKeys.append(key)
+        guard let built = buildEntry(for: layer, descriptor: descriptor) else { return nil }
+        entriesByLayerID[layer.id] = built
+        touch(layer.id)
         trimCacheIfNeeded()
-        return built
+        return built.image
     }
 
-    private func cacheKey(for layer: MaskLayer) -> CacheKey {
+    private func descriptor(for layer: MaskLayer) -> LayerDescriptor {
         let rgb = layer.color.usingColorSpace(.sRGB) ?? layer.color
-        return CacheKey(
+        return LayerDescriptor(
             layerID: layer.id,
-            renderVersion: layer.renderVersion,
             width: layer.width,
             height: layer.height,
             red: byte(from: rgb.redComponent),
@@ -552,10 +560,46 @@ private final class MaskLayerImageCache: ObservableObject {
         )
     }
 
-    private func buildImage(for layer: MaskLayer, key: CacheKey) -> CGImage? {
+    private func buildEntry(for layer: MaskLayer, descriptor: LayerDescriptor) -> CacheEntry? {
         let pixelCount = layer.width * layer.height
         guard pixelCount > 0, layer.data.count >= pixelCount else { return nil }
+        let rgba = renderFullLayer(layer, descriptor: descriptor)
+        guard let image = makeImage(from: rgba, width: layer.width, height: layer.height) else { return nil }
+        return CacheEntry(
+            descriptor: descriptor,
+            renderedVersion: layer.renderVersion,
+            rgba: rgba,
+            image: image
+        )
+    }
 
+    private func update(entry: CacheEntry, with layer: MaskLayer) -> Bool {
+        let pixelCount = layer.width * layer.height
+        guard pixelCount > 0, layer.data.count >= pixelCount else { return false }
+        guard entry.rgba.count == pixelCount * 4 else { return false }
+
+        let dirtyUpdateAvailable = layer.renderVersion == entry.renderedVersion + 1
+            && layer.dirtyRegion?.clamped(width: layer.width, height: layer.height) != nil
+
+        if dirtyUpdateAvailable,
+           let region = layer.dirtyRegion?.clamped(width: layer.width, height: layer.height) {
+            patchRegion(
+                entry: entry,
+                layer: layer,
+                region: region
+            )
+        } else {
+            entry.rgba = renderFullLayer(layer, descriptor: entry.descriptor)
+        }
+
+        guard let image = makeImage(from: entry.rgba, width: layer.width, height: layer.height) else { return false }
+        entry.image = image
+        entry.renderedVersion = layer.renderVersion
+        return true
+    }
+
+    private func renderFullLayer(_ layer: MaskLayer, descriptor: LayerDescriptor) -> [UInt8] {
+        let pixelCount = layer.width * layer.height
         var rgba = [UInt8](repeating: 0, count: pixelCount * 4)
         layer.data.withUnsafeBufferPointer { dataPtr in
             rgba.withUnsafeMutableBufferPointer { rgbaPtr in
@@ -566,24 +610,53 @@ private final class MaskLayerImageCache: ObservableObject {
 
                 for i in 0..<pixelCount where dataBase[i] != 0 {
                     let offset = i * 4
-                    rgbaBase[offset] = key.red
-                    rgbaBase[offset + 1] = key.green
-                    rgbaBase[offset + 2] = key.blue
+                    rgbaBase[offset] = descriptor.red
+                    rgbaBase[offset + 1] = descriptor.green
+                    rgbaBase[offset + 2] = descriptor.blue
                     rgbaBase[offset + 3] = 255
                 }
             }
         }
+        return rgba
+    }
 
+    private func patchRegion(entry: CacheEntry, layer: MaskLayer, region: MaskDirtyRegion) {
+        let width = layer.width
+        let red = entry.descriptor.red
+        let green = entry.descriptor.green
+        let blue = entry.descriptor.blue
+
+        for y in region.minY...region.maxY {
+            let rowOffset = y * width
+            for x in region.minX...region.maxX {
+                let idx = rowOffset + x
+                let pixelOffset = idx * 4
+                if layer.data[idx] != 0 {
+                    entry.rgba[pixelOffset] = red
+                    entry.rgba[pixelOffset + 1] = green
+                    entry.rgba[pixelOffset + 2] = blue
+                    entry.rgba[pixelOffset + 3] = 255
+                } else {
+                    entry.rgba[pixelOffset] = 0
+                    entry.rgba[pixelOffset + 1] = 0
+                    entry.rgba[pixelOffset + 2] = 0
+                    entry.rgba[pixelOffset + 3] = 0
+                }
+            }
+        }
+    }
+
+    private func makeImage(from rgba: [UInt8], width: Int, height: Int) -> CGImage? {
         let data = Data(rgba)
         guard let provider = CGDataProvider(data: data as CFData) else { return nil }
 
         return CGImage(
-            width: layer.width,
-            height: layer.height,
+            width: width,
+            height: height,
             bitsPerComponent: 8,
             bitsPerPixel: 32,
-            bytesPerRow: layer.width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
+            bytesPerRow: width * 4,
+            space: colorSpace,
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider,
             decode: nil,
@@ -592,16 +665,17 @@ private final class MaskLayerImageCache: ObservableObject {
         )
     }
 
-    private func touch(_ key: CacheKey) {
-        guard let index = lruKeys.firstIndex(of: key) else { return }
-        let moved = lruKeys.remove(at: index)
-        lruKeys.append(moved)
+    private func touch(_ layerID: UUID) {
+        if let index = lruLayerIDs.firstIndex(of: layerID) {
+            lruLayerIDs.remove(at: index)
+        }
+        lruLayerIDs.append(layerID)
     }
 
     private func trimCacheIfNeeded() {
-        while lruKeys.count > maxEntries {
-            let oldest = lruKeys.removeFirst()
-            images.removeValue(forKey: oldest)
+        while lruLayerIDs.count > maxEntries {
+            let oldest = lruLayerIDs.removeFirst()
+            entriesByLayerID.removeValue(forKey: oldest)
         }
     }
 
@@ -1157,22 +1231,6 @@ struct MaskToolsPanelView: View {
                 }
             }
             
-            Divider()
-            
-            if let activeID = maskState.activeLayerID {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppLocalizer.localized("Действия"))
-                        .font(.system(size: 12, weight: .semibold))
-                    
-                    Button(action: { maskState.undo(for: activeID) }) {
-                        Label("Отменить (⌘Z)", systemImage: "arrow.uturn.backward")
-                    }
-                    .buttonStyle(HoverLiftButtonStyle(accent: .accentColor))
-                    .disabled(!maskState.canUndo(for: activeID))
-                    .keyboardShortcut("z", modifiers: .command)
-                }
-            }
-            
             Spacer()
             
             VStack(alignment: .leading, spacing: 4) {
@@ -1180,9 +1238,6 @@ struct MaskToolsPanelView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
                 Text(AppLocalizer.localized("• Shift — показать только активный слой"))
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
-                Text(AppLocalizer.localized("• ⌘Z — отмена последнего действия"))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
                 Text(AppLocalizer.localized("• File → Экспорт для сохранения маски"))
@@ -1252,35 +1307,6 @@ private struct MaskPresetSizeButton: View {
                 x: 0,
                 y: 3
             )
-            .animation(.easeInOut(duration: 0.12), value: isHovered)
-            .onHover { hovering in
-                isHovered = hovering
-            }
-    }
-}
-
-private struct HoverLiftButtonStyle: ButtonStyle {
-    let accent: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        HoverLiftButtonBody(
-            label: configuration.label,
-            accent: accent,
-            isPressed: configuration.isPressed
-        )
-    }
-}
-
-private struct HoverLiftButtonBody<Label: View>: View {
-    let label: Label
-    let accent: Color
-    let isPressed: Bool
-    @State private var isHovered: Bool = false
-
-    var body: some View {
-        label
-            .scaleEffect(isPressed ? 0.98 : (isHovered ? 1.03 : 1.0))
-            .shadow(color: accent.opacity(isHovered ? 0.3 : 0.0), radius: isHovered ? 6 : 0, x: 0, y: 3)
             .animation(.easeInOut(duration: 0.12), value: isHovered)
             .onHover { hovering in
                 isHovered = hovering
