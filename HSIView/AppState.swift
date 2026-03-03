@@ -264,6 +264,7 @@ final class AppState: ObservableObject {
     private var roiCursorComputationEpoch: UInt64 = 0
     private var roiCursorSourceCGImage: CGImage?
     private var roiCursorSourceLogicalSize: CGSize = .zero
+    private var roiCursorPreviewSourceCache: ROICursorPreviewSourceCache?
     private var suppressSpectrumRefresh: Bool = false
     private var spectrumRotationTurns: Int = 0
     private var spectrumSpatialSize: (width: Int, height: Int)?
@@ -1605,6 +1606,7 @@ final class AppState: ObservableObject {
                 roiCursorPreviewImage = nil
             }
         }
+        invalidateROICursorPreviewSourceCache()
 
         guard activeAnalysisTool == .roiCursor,
               let rect = roiCursorRect else {
@@ -1677,6 +1679,7 @@ final class AppState: ObservableObject {
         roiCursorComputationEpoch &+= 1
         roiCursorPendingSpectrumRequest = nil
         roiCursorPendingPreviewRequest = nil
+        invalidateROICursorPreviewSourceCache()
         roiCursorSample = nil
         roiCursorRect = nil
         roiCursorPreviewImage = nil
@@ -1684,6 +1687,12 @@ final class AppState: ObservableObject {
             roiCursorSourceImage = nil
             roiCursorSourceCGImage = nil
             roiCursorSourceLogicalSize = .zero
+        }
+    }
+
+    private func invalidateROICursorPreviewSourceCache() {
+        roiCursorPreviewQueue.async { [weak self] in
+            self?.roiCursorPreviewSourceCache = nil
         }
     }
 
@@ -1725,15 +1734,25 @@ final class AppState: ObservableObject {
     }
 
     private func scheduleROICursorPreviewComputation(for rect: SpectrumROIRect) {
-        guard let sourceCGImage = roiCursorSourceCGImage else {
+        guard let cube else {
             roiCursorPreviewImage = nil
             return
         }
-        let logicalSize = roiCursorSourceLogicalSize
         let previewRequest = ROICursorPreviewRequest(
             rect: rect,
-            sourceCGImage: sourceCGImage,
-            logicalSize: logicalSize,
+            cube: cube,
+            layout: activeLayout,
+            viewMode: viewMode,
+            colorSynthesisConfig: colorSynthesisConfig,
+            displayChannelIndex: Int(currentChannel.rounded()),
+            ndIndices: ndChannelIndices(),
+            ndPalette: ndPalette,
+            ndThreshold: ndThreshold,
+            ndPreset: ndPreset,
+            wdviSlope: Double(wdviSlope.replacingOccurrences(of: ",", with: ".")) ?? 1.0,
+            wdviIntercept: Double(wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0,
+            sourceCGImage: roiCursorSourceCGImage,
+            logicalSize: roiCursorSourceLogicalSize,
             epoch: roiCursorComputationEpoch
         )
         enqueueROICursorPreviewComputation(previewRequest)
@@ -1753,11 +1772,7 @@ final class AppState: ObservableObject {
         roiCursorPreviewInFlight = true
         roiCursorPreviewQueue.async { [weak self] in
             guard let self else { return }
-            let preview = self.cropROIPreviewImage(
-                cgImage: request.sourceCGImage,
-                logicalSize: request.logicalSize,
-                rect: request.rect
-            )
+            let preview = self.renderDetailedROIPreviewImage(for: request)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.roiCursorPreviewInFlight = false
@@ -1804,6 +1819,783 @@ final class AppState: ObservableObject {
             cgImage: cropped,
             size: NSSize(width: cropWidth, height: cropHeight)
         )
+    }
+
+    private func renderDetailedROIPreviewImage(for request: ROICursorPreviewRequest) -> NSImage? {
+        guard let rect = normalizedROIRect(request.rect, cube: request.cube, layout: request.layout) else {
+            return nil
+        }
+        guard let source = roiCursorPreviewSource(for: request) else { return nil }
+        return cropROIPreviewImage(source: source, rect: rect)
+    }
+
+    private func roiCursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        let key = roiCursorPreviewSourceKey(for: request)
+        if let cached = roiCursorPreviewSourceCache, cached.key == key {
+            return cached.source
+        }
+        guard let source = buildROICursorPreviewSource(for: request) else { return nil }
+        roiCursorPreviewSourceCache = ROICursorPreviewSourceCache(key: key, source: source)
+        return source
+    }
+
+    private func roiCursorPreviewSourceKey(for request: ROICursorPreviewRequest) -> ROICursorPreviewSourceKey {
+        let fallbackSignature = ROICursorFallbackSignature(
+            width: request.sourceCGImage?.width ?? 0,
+            height: request.sourceCGImage?.height ?? 0,
+            logicalSize: request.logicalSize
+        )
+        switch request.viewMode {
+        case .gray:
+            return .gray(
+                cubeID: request.cube.id,
+                layout: request.layout,
+                channelIndex: request.displayChannelIndex
+            )
+        case .rgb:
+            switch request.colorSynthesisConfig.mode {
+            case .trueColorRGB:
+                return .rgbTrueColor(
+                    cubeID: request.cube.id,
+                    layout: request.layout,
+                    mapping: request.colorSynthesisConfig.mapping
+                )
+            case .rangeWideRGB:
+                return .rgbRangeWide(
+                    cubeID: request.cube.id,
+                    layout: request.layout,
+                    rangeMapping: request.colorSynthesisConfig.rangeMapping
+                )
+            case .pcaVisualization:
+                return .rgbPCA(
+                    cubeID: request.cube.id,
+                    layout: request.layout,
+                    config: request.colorSynthesisConfig.pcaConfig,
+                    fallback: fallbackSignature
+                )
+            }
+        case .nd:
+            let ndIndices = request.ndIndices.map {
+                ROICursorNDIndices(positive: $0.positive, negative: $0.negative)
+            }
+            return .nd(
+                cubeID: request.cube.id,
+                layout: request.layout,
+                indices: ndIndices,
+                palette: request.ndPalette,
+                threshold: request.ndThreshold,
+                preset: request.ndPreset,
+                wdviSlope: request.wdviSlope,
+                wdviIntercept: request.wdviIntercept
+            )
+        case .mask:
+            return .mask(fallback: fallbackSignature)
+        }
+    }
+
+    private func buildROICursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        switch request.viewMode {
+        case .gray:
+            return buildGrayROICursorPreviewSource(for: request)
+        case .rgb:
+            switch request.colorSynthesisConfig.mode {
+            case .trueColorRGB:
+                return buildTrueColorROICursorPreviewSource(for: request)
+            case .rangeWideRGB:
+                return buildRangeWideROICursorPreviewSource(for: request)
+            case .pcaVisualization:
+                return buildPCAROICursorPreviewSource(for: request)
+            }
+        case .nd:
+            return buildNDROICursorPreviewSource(for: request)
+        case .mask:
+            guard let sourceCGImage = request.sourceCGImage else { return nil }
+            return makeRGBSourceFromCGImage(sourceCGImage, logicalSize: request.logicalSize)
+        }
+    }
+
+    private func buildGrayROICursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        guard let axes = request.cube.axes(for: request.layout) else { return nil }
+        let dims = request.cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard width > 0, height > 0, channels > 0 else { return nil }
+        let fullRect = SpectrumROIRect(minX: 0, minY: 0, width: width, height: height)
+        let clampedChannel = max(0, min(request.displayChannelIndex, channels - 1))
+        let values = roiChannelSlice(
+            rect: fullRect,
+            cube: request.cube,
+            axes: axes,
+            channelIndex: clampedChannel
+        )
+        return ROICursorPreviewSource(
+            pixelWidth: width,
+            pixelHeight: height,
+            logicalSize: CGSize(width: width, height: height),
+            channels: .gray(normalizedUInt8(values))
+        )
+    }
+
+    private func buildTrueColorROICursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        guard let axes = request.cube.axes(for: request.layout) else { return nil }
+        let dims = request.cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard width > 0, height > 0, channels > 0 else { return nil }
+        let fullRect = SpectrumROIRect(minX: 0, minY: 0, width: width, height: height)
+        let mapping = request.colorSynthesisConfig.mapping.clamped(maxChannelCount: channels)
+        let redValues = normalizedUInt8(
+            roiChannelSlice(rect: fullRect, cube: request.cube, axes: axes, channelIndex: mapping.red)
+        )
+        let greenValues = normalizedUInt8(
+            roiChannelSlice(rect: fullRect, cube: request.cube, axes: axes, channelIndex: mapping.green)
+        )
+        let blueValues = normalizedUInt8(
+            roiChannelSlice(rect: fullRect, cube: request.cube, axes: axes, channelIndex: mapping.blue)
+        )
+        return ROICursorPreviewSource(
+            pixelWidth: width,
+            pixelHeight: height,
+            logicalSize: CGSize(width: width, height: height),
+            channels: .rgb(interleaveRGB(red: redValues, green: greenValues, blue: blueValues))
+        )
+    }
+
+    private func buildRangeWideROICursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        guard let axes = request.cube.axes(for: request.layout) else { return nil }
+        let dims = request.cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard width > 0, height > 0, channels > 0 else { return nil }
+        let fullRect = SpectrumROIRect(minX: 0, minY: 0, width: width, height: height)
+        let mapping = request.colorSynthesisConfig.rangeMapping.clamped(maxChannelCount: channels)
+        let redValues = normalizedUInt8(
+            roiChannelRangeAverage(rect: fullRect, cube: request.cube, axes: axes, range: mapping.red)
+        )
+        let greenValues = normalizedUInt8(
+            roiChannelRangeAverage(rect: fullRect, cube: request.cube, axes: axes, range: mapping.green)
+        )
+        let blueValues = normalizedUInt8(
+            roiChannelRangeAverage(rect: fullRect, cube: request.cube, axes: axes, range: mapping.blue)
+        )
+        return ROICursorPreviewSource(
+            pixelWidth: width,
+            pixelHeight: height,
+            logicalSize: CGSize(width: width, height: height),
+            channels: .rgb(interleaveRGB(red: redValues, green: greenValues, blue: blueValues))
+        )
+    }
+
+    private func buildPCAROICursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        let config = request.colorSynthesisConfig.pcaConfig
+        let hasReusableBasis =
+            config.sourceCubeID == request.cube.id
+            && config.basis != nil
+            && config.mean != nil
+            && config.std != nil
+        if hasReusableBasis {
+            var previewConfig = config
+            previewConfig.lockBasis = true
+            let result = PCARenderer.render(
+                cube: request.cube,
+                layout: request.layout,
+                config: previewConfig,
+                roi: nil,
+                progress: nil
+            )
+            if let image = result.image,
+               let source = makeRGBSourceFromImage(image) {
+                return source
+            }
+        }
+        guard let sourceCGImage = request.sourceCGImage else { return nil }
+        return makeRGBSourceFromCGImage(sourceCGImage, logicalSize: request.logicalSize)
+    }
+
+    private func buildNDROICursorPreviewSource(for request: ROICursorPreviewRequest) -> ROICursorPreviewSource? {
+        guard let indices = request.ndIndices else { return nil }
+        guard let axes = request.cube.axes(for: request.layout) else { return nil }
+        let dims = request.cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let width = dimsArray[axes.width]
+        let height = dimsArray[axes.height]
+        let channels = dimsArray[axes.channel]
+        guard width > 0, height > 0,
+              channels > max(indices.positive, indices.negative),
+              indices.positive >= 0, indices.negative >= 0 else {
+            return nil
+        }
+        let fullRect = SpectrumROIRect(minX: 0, minY: 0, width: width, height: height)
+        let positiveValues = roiChannelSlice(
+            rect: fullRect,
+            cube: request.cube,
+            axes: axes,
+            channelIndex: indices.positive
+        )
+        let negativeValues = roiChannelSlice(
+            rect: fullRect,
+            cube: request.cube,
+            axes: axes,
+            channelIndex: indices.negative
+        )
+        guard positiveValues.count == negativeValues.count else { return nil }
+
+        var ndValues = [Double](repeating: 0, count: positiveValues.count)
+        var minValue = Double.greatestFiniteMagnitude
+        var maxValue = -Double.greatestFiniteMagnitude
+        let epsilon = 1e-9
+        for i in 0..<positiveValues.count {
+            let positive = positiveValues[i]
+            let negative = negativeValues[i]
+            let value: Double
+            switch request.ndPreset {
+            case .ndvi, .ndsi, .adaptive:
+                let denominator = positive + negative
+                value = abs(denominator) < epsilon ? 0 : (positive - negative) / denominator
+            case .wdvi:
+                value = positive - (request.wdviSlope * negative + request.wdviIntercept)
+            }
+            ndValues[i] = value
+            if value < minValue { minValue = value }
+            if value > maxValue { maxValue = value }
+        }
+
+        let span = maxValue - minValue
+        var rgb = [UInt8](repeating: 0, count: ndValues.count * 3)
+        for i in 0..<ndValues.count {
+            let normalized: Double
+            switch request.ndPreset {
+            case .ndvi, .ndsi, .adaptive:
+                normalized = ndValues[i]
+            case .wdvi:
+                if span <= epsilon {
+                    normalized = 0
+                } else {
+                    let t = (ndValues[i] - minValue) / span
+                    normalized = t * 2 - 1
+                }
+            }
+            let color = ndPreviewColor(
+                value: normalized,
+                palette: request.ndPalette,
+                threshold: request.ndThreshold
+            )
+            let base = i * 3
+            rgb[base] = color.r
+            rgb[base + 1] = color.g
+            rgb[base + 2] = color.b
+        }
+
+        return ROICursorPreviewSource(
+            pixelWidth: width,
+            pixelHeight: height,
+            logicalSize: CGSize(width: width, height: height),
+            channels: .rgb(rgb)
+        )
+    }
+
+    private func makeRGBSourceFromImage(_ image: NSImage) -> ROICursorPreviewSource? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return makeRGBSourceFromCGImage(cgImage, logicalSize: image.size)
+    }
+
+    private func makeRGBSourceFromCGImage(_ cgImage: CGImage, logicalSize: CGSize) -> ROICursorPreviewSource? {
+        guard let providerData = cgImage.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(providerData) else {
+            return nil
+        }
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = cgImage.bytesPerRow
+        let bytesPerPixel = max(cgImage.bitsPerPixel / 8, 1)
+        guard width > 0, height > 0 else { return nil }
+
+        var rgb = [UInt8](repeating: 0, count: width * height * 3)
+        for y in 0..<height {
+            let rowBase = y * bytesPerRow
+            for x in 0..<width {
+                let src = rowBase + x * bytesPerPixel
+                let dst = (y * width + x) * 3
+                if bytesPerPixel >= 3 {
+                    rgb[dst] = bytes[src]
+                    rgb[dst + 1] = bytes[src + 1]
+                    rgb[dst + 2] = bytes[src + 2]
+                } else {
+                    let gray = bytes[src]
+                    rgb[dst] = gray
+                    rgb[dst + 1] = gray
+                    rgb[dst + 2] = gray
+                }
+            }
+        }
+        return ROICursorPreviewSource(
+            pixelWidth: width,
+            pixelHeight: height,
+            logicalSize: logicalSize,
+            channels: .rgb(rgb)
+        )
+    }
+
+    private func interleaveRGB(red: [UInt8], green: [UInt8], blue: [UInt8]) -> [UInt8] {
+        let count = red.count
+        guard green.count == count, blue.count == count else { return [] }
+        var rgb = [UInt8](repeating: 0, count: count * 3)
+        for i in 0..<count {
+            let base = i * 3
+            rgb[base] = red[i]
+            rgb[base + 1] = green[i]
+            rgb[base + 2] = blue[i]
+        }
+        return rgb
+    }
+
+    private func cropROIPreviewImage(source: ROICursorPreviewSource, rect: SpectrumROIRect) -> NSImage? {
+        let imageWidth = source.pixelWidth
+        let imageHeight = source.pixelHeight
+        guard imageWidth > 0, imageHeight > 0 else { return nil }
+
+        let logicalWidth = max(source.logicalSize.width, 1)
+        let logicalHeight = max(source.logicalSize.height, 1)
+        let scaleX = CGFloat(imageWidth) / logicalWidth
+        let scaleY = CGFloat(imageHeight) / logicalHeight
+
+        let cropWidth = max(1, min(imageWidth, Int((CGFloat(rect.width) * scaleX).rounded())))
+        let cropHeight = max(1, min(imageHeight, Int((CGFloat(rect.height) * scaleY).rounded())))
+        var cropX = Int(floor(CGFloat(rect.minX) * scaleX))
+        var cropY = Int(floor(CGFloat(rect.minY) * scaleY))
+        cropX = max(0, min(cropX, imageWidth - cropWidth))
+        cropY = max(0, min(cropY, imageHeight - cropHeight))
+
+        var rgba = [UInt8](repeating: 0, count: cropWidth * cropHeight * 4)
+        switch source.channels {
+        case .gray(let gray):
+            guard gray.count == imageWidth * imageHeight else { return nil }
+            for row in 0..<cropHeight {
+                let srcRowBase = (cropY + row) * imageWidth + cropX
+                let dstRowBase = row * cropWidth * 4
+                for col in 0..<cropWidth {
+                    let value = gray[srcRowBase + col]
+                    let dst = dstRowBase + col * 4
+                    rgba[dst] = value
+                    rgba[dst + 1] = value
+                    rgba[dst + 2] = value
+                    rgba[dst + 3] = 255
+                }
+            }
+        case .rgb(let rgb):
+            guard rgb.count == imageWidth * imageHeight * 3 else { return nil }
+            for row in 0..<cropHeight {
+                let srcRowBase = ((cropY + row) * imageWidth + cropX) * 3
+                let dstRowBase = row * cropWidth * 4
+                for col in 0..<cropWidth {
+                    let src = srcRowBase + col * 3
+                    let dst = dstRowBase + col * 4
+                    rgba[dst] = rgb[src]
+                    rgba[dst + 1] = rgb[src + 1]
+                    rgba[dst + 2] = rgb[src + 2]
+                    rgba[dst + 3] = 255
+                }
+            }
+        }
+
+        return makeROIPreviewImage(
+            rgba: rgba,
+            width: cropWidth,
+            height: cropHeight
+        )
+    }
+
+    private func renderROIPreviewGrayscale(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        channelIndex: Int
+    ) -> NSImage? {
+        guard let axes = cube.axes(for: layout) else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let channels = dimsArray[axes.channel]
+        guard channels > 0 else { return nil }
+        let clampedChannel = max(0, min(channelIndex, channels - 1))
+        let values = roiChannelSlice(
+            rect: rect,
+            cube: cube,
+            axes: axes,
+            channelIndex: clampedChannel
+        )
+        let grayscale = normalizedUInt8(values)
+        return makeROIPreviewImage(
+            red: grayscale,
+            green: grayscale,
+            blue: grayscale,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    private func renderROIPreviewTrueColor(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        mapping: RGBChannelMapping
+    ) -> NSImage? {
+        guard let axes = cube.axes(for: layout) else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let channels = dimsArray[axes.channel]
+        guard channels > 0 else { return nil }
+        let clamped = mapping.clamped(maxChannelCount: channels)
+        let redValues = roiChannelSlice(rect: rect, cube: cube, axes: axes, channelIndex: clamped.red)
+        let greenValues = roiChannelSlice(rect: rect, cube: cube, axes: axes, channelIndex: clamped.green)
+        let blueValues = roiChannelSlice(rect: rect, cube: cube, axes: axes, channelIndex: clamped.blue)
+        return makeROIPreviewImage(
+            red: normalizedUInt8(redValues),
+            green: normalizedUInt8(greenValues),
+            blue: normalizedUInt8(blueValues),
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    private func renderROIPreviewRangeColor(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        rangeMapping: RGBChannelRangeMapping
+    ) -> NSImage? {
+        guard let axes = cube.axes(for: layout) else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let channels = dimsArray[axes.channel]
+        guard channels > 0 else { return nil }
+        let clamped = rangeMapping.clamped(maxChannelCount: channels)
+        let redValues = roiChannelRangeAverage(rect: rect, cube: cube, axes: axes, range: clamped.red)
+        let greenValues = roiChannelRangeAverage(rect: rect, cube: cube, axes: axes, range: clamped.green)
+        let blueValues = roiChannelRangeAverage(rect: rect, cube: cube, axes: axes, range: clamped.blue)
+        return makeROIPreviewImage(
+            red: normalizedUInt8(redValues),
+            green: normalizedUInt8(greenValues),
+            blue: normalizedUInt8(blueValues),
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    private func renderROIPreviewPCA(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        config: PCAVisualizationConfig,
+        fallbackSourceCGImage: CGImage?,
+        fallbackLogicalSize: CGSize
+    ) -> NSImage? {
+        let basis = config.basis
+        let mean = config.mean
+        let std = config.std
+        let hasReusableBasis =
+            config.sourceCubeID == cube.id
+            && basis != nil
+            && mean != nil
+            && std != nil
+
+        if hasReusableBasis {
+            var previewConfig = config
+            previewConfig.lockBasis = true
+            let result = PCARenderer.render(
+                cube: cube,
+                layout: layout,
+                config: previewConfig,
+                roi: rect,
+                progress: nil
+            )
+            if let image = result.image {
+                return image
+            }
+        }
+
+        guard let fallbackSourceCGImage else { return nil }
+        return cropROIPreviewImage(
+            cgImage: fallbackSourceCGImage,
+            logicalSize: fallbackLogicalSize,
+            rect: rect
+        )
+    }
+
+    private func renderROIPreviewND(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        layout: CubeLayout,
+        positiveIndex: Int,
+        negativeIndex: Int,
+        palette: NDPalette,
+        threshold: Double,
+        preset: NDIndexPreset,
+        wdviSlope: Double,
+        wdviIntercept: Double
+    ) -> NSImage? {
+        guard let axes = cube.axes(for: layout) else { return nil }
+        let dims = cube.dims
+        let dimsArray = [dims.0, dims.1, dims.2]
+        let channels = dimsArray[axes.channel]
+        guard channels > max(positiveIndex, negativeIndex), positiveIndex >= 0, negativeIndex >= 0 else {
+            return nil
+        }
+
+        let positiveValues = roiChannelSlice(rect: rect, cube: cube, axes: axes, channelIndex: positiveIndex)
+        let negativeValues = roiChannelSlice(rect: rect, cube: cube, axes: axes, channelIndex: negativeIndex)
+        guard positiveValues.count == negativeValues.count else { return nil }
+
+        var ndValues = [Double](repeating: 0, count: positiveValues.count)
+        var minValue = Double.greatestFiniteMagnitude
+        var maxValue = -Double.greatestFiniteMagnitude
+        let epsilon = 1e-9
+
+        for i in 0..<positiveValues.count {
+            let positive = positiveValues[i]
+            let negative = negativeValues[i]
+            let value: Double
+            switch preset {
+            case .ndvi, .ndsi, .adaptive:
+                let denominator = positive + negative
+                value = abs(denominator) < epsilon ? 0 : (positive - negative) / denominator
+            case .wdvi:
+                value = positive - (wdviSlope * negative + wdviIntercept)
+            }
+            ndValues[i] = value
+            if value < minValue { minValue = value }
+            if value > maxValue { maxValue = value }
+        }
+
+        let span = maxValue - minValue
+        var rgba = [UInt8](repeating: 0, count: ndValues.count * 4)
+        for i in 0..<ndValues.count {
+            let normalized: Double
+            switch preset {
+            case .ndvi, .ndsi, .adaptive:
+                normalized = ndValues[i]
+            case .wdvi:
+                if span <= epsilon {
+                    normalized = 0
+                } else {
+                    let t = (ndValues[i] - minValue) / span
+                    normalized = t * 2 - 1
+                }
+            }
+            let color = ndPreviewColor(value: normalized, palette: palette, threshold: threshold)
+            let base = i * 4
+            rgba[base] = color.r
+            rgba[base + 1] = color.g
+            rgba[base + 2] = color.b
+            rgba[base + 3] = 255
+        }
+
+        return makeROIPreviewImage(
+            rgba: rgba,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+
+    private func cubeStorageStrides(_ cube: HyperCube) -> [Int] {
+        let dims = cube.dims
+        if cube.isFortranOrder {
+            return [1, dims.0, dims.0 * dims.1]
+        }
+        return [dims.1 * dims.2, dims.2, 1]
+    }
+
+    private func roiChannelSlice(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        channelIndex: Int
+    ) -> [Double] {
+        let strides = cubeStorageStrides(cube)
+        let channelStride = strides[axes.channel]
+        let heightStride = strides[axes.height]
+        let widthStride = strides[axes.width]
+        let base = channelIndex * channelStride
+
+        var values = [Double](repeating: 0, count: rect.area)
+        var writeIndex = 0
+        for y in rect.minY..<(rect.minY + rect.height) {
+            let rowBase = base + y * heightStride
+            for x in rect.minX..<(rect.minX + rect.width) {
+                values[writeIndex] = cube.getValue(at: rowBase + x * widthStride)
+                writeIndex += 1
+            }
+        }
+        return values
+    }
+
+    private func roiChannelRangeAverage(
+        rect: SpectrumROIRect,
+        cube: HyperCube,
+        axes: (channel: Int, height: Int, width: Int),
+        range: RGBChannelRange
+    ) -> [Double] {
+        let normalized = range.normalized
+        let start = normalized.start
+        let end = normalized.end
+        guard end >= start else { return [Double](repeating: 0, count: rect.area) }
+
+        var accumulated = [Double](repeating: 0, count: rect.area)
+        for channel in start...end {
+            let values = roiChannelSlice(
+                rect: rect,
+                cube: cube,
+                axes: axes,
+                channelIndex: channel
+            )
+            for i in 0..<accumulated.count {
+                accumulated[i] += values[i]
+            }
+        }
+
+        let divisor = Double(end - start + 1)
+        if divisor > 1 {
+            for i in 0..<accumulated.count {
+                accumulated[i] /= divisor
+            }
+        }
+        return accumulated
+    }
+
+    private func normalizedUInt8(_ values: [Double]) -> [UInt8] {
+        guard !values.isEmpty else { return [] }
+        var minValue = Double.greatestFiniteMagnitude
+        var maxValue = -Double.greatestFiniteMagnitude
+        for value in values {
+            if value < minValue { minValue = value }
+            if value > maxValue { maxValue = value }
+        }
+        let range = maxValue - minValue
+        guard range > 0 else {
+            return [UInt8](repeating: 0, count: values.count)
+        }
+        return values.map { value in
+            let normalized = (value - minValue) / range
+            let clamped = max(0.0, min(1.0, normalized))
+            return UInt8((clamped * 255.0).rounded())
+        }
+    }
+
+    private func makeROIPreviewImage(
+        red: [UInt8],
+        green: [UInt8],
+        blue: [UInt8],
+        width: Int,
+        height: Int
+    ) -> NSImage? {
+        let pixelCount = width * height
+        guard red.count == pixelCount,
+              green.count == pixelCount,
+              blue.count == pixelCount else {
+            return nil
+        }
+
+        var rgba = [UInt8](repeating: 0, count: pixelCount * 4)
+        for i in 0..<pixelCount {
+            let base = i * 4
+            rgba[base] = red[i]
+            rgba[base + 1] = green[i]
+            rgba[base + 2] = blue[i]
+            rgba[base + 3] = 255
+        }
+        return makeROIPreviewImage(rgba: rgba, width: width, height: height)
+    }
+
+    private func makeROIPreviewImage(
+        rgba: [UInt8],
+        width: Int,
+        height: Int
+    ) -> NSImage? {
+        let pixelCount = width * height
+        guard pixelCount > 0, rgba.count == pixelCount * 4 else { return nil }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerRow = width * 4
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue)
+
+        guard let cgImage = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ) else {
+            return nil
+        }
+
+        return NSImage(
+            cgImage: cgImage,
+            size: NSSize(width: width, height: height)
+        )
+    }
+
+    private func ndPreviewColor(value: Double, palette: NDPalette, threshold: Double) -> (r: UInt8, g: UInt8, b: UInt8) {
+        let clamped = max(-1.0, min(1.0, value))
+        switch palette {
+        case .grayscale:
+            let t = (clamped + 1.0) / 2.0
+            let gray = UInt8(clamping: Int((t * 255.0).rounded()))
+            return (gray, gray, gray)
+        case .binaryVegetation:
+            let isVegetation = clamped > threshold
+            return isVegetation ? (44, 160, 44) : (170, 85, 0)
+        case .classic:
+            return classicNDPreviewColor(clamped)
+        }
+    }
+
+    private func classicNDPreviewColor(_ value: Double) -> (r: UInt8, g: UInt8, b: UInt8) {
+        let t = max(0.0, min(1.0, (value + 1.0) / 2.0))
+        let stops: [(position: Double, r: Double, g: Double, b: Double)] = [
+            (0.0, 0.5, 0.1, 0.1),
+            (0.25, 0.75, 0.5, 0.2),
+            (0.5, 0.95, 0.95, 0.4),
+            (0.7, 0.4, 0.8, 0.4),
+            (1.0, 0.0, 0.5, 0.0)
+        ]
+
+        var lower = stops[0]
+        var upper = stops[stops.count - 1]
+        for index in 0..<(stops.count - 1) {
+            if t >= stops[index].position && t <= stops[index + 1].position {
+                lower = stops[index]
+                upper = stops[index + 1]
+                break
+            }
+        }
+
+        let span = upper.position - lower.position
+        let localT = span > 0 ? (t - lower.position) / span : 0
+        let red = interpolateNDComponent(from: lower.r, to: upper.r, t: localT)
+        let green = interpolateNDComponent(from: lower.g, to: upper.g, t: localT)
+        let blue = interpolateNDComponent(from: lower.b, to: upper.b, t: localT)
+        return (
+            UInt8(clamping: Int((max(0.0, min(1.0, red)) * 255.0).rounded())),
+            UInt8(clamping: Int((max(0.0, min(1.0, green)) * 255.0).rounded())),
+            UInt8(clamping: Int((max(0.0, min(1.0, blue)) * 255.0).rounded()))
+        )
+    }
+
+    private func interpolateNDComponent(from: Double, to: Double, t: Double) -> Double {
+        let clampedT = max(0.0, min(1.0, t))
+        return from + (to - from) * clampedT
     }
     
     func toggleAnalysisTool(_ tool: AnalysisTool) {
@@ -6980,7 +7772,64 @@ enum SpectrumROIAggregationMode: String, CaseIterable, Identifiable {
 
     private struct ROICursorPreviewRequest {
         let rect: SpectrumROIRect
-        let sourceCGImage: CGImage
+        let cube: HyperCube
+        let layout: CubeLayout
+        let viewMode: ViewMode
+        let colorSynthesisConfig: ColorSynthesisConfig
+        let displayChannelIndex: Int
+        let ndIndices: (positive: Int, negative: Int)?
+        let ndPalette: NDPalette
+        let ndThreshold: Double
+        let ndPreset: NDIndexPreset
+        let wdviSlope: Double
+        let wdviIntercept: Double
+        let sourceCGImage: CGImage?
         let logicalSize: CGSize
         let epoch: UInt64
+    }
+
+    private struct ROICursorPreviewSourceCache {
+        let key: ROICursorPreviewSourceKey
+        let source: ROICursorPreviewSource
+    }
+
+    private struct ROICursorPreviewSource {
+        let pixelWidth: Int
+        let pixelHeight: Int
+        let logicalSize: CGSize
+        let channels: ROICursorPreviewChannels
+    }
+
+    private enum ROICursorPreviewChannels {
+        case gray([UInt8])
+        case rgb([UInt8])
+    }
+
+    private struct ROICursorFallbackSignature: Equatable {
+        let width: Int
+        let height: Int
+        let logicalSize: CGSize
+    }
+
+    private struct ROICursorNDIndices: Equatable {
+        let positive: Int
+        let negative: Int
+    }
+
+    private enum ROICursorPreviewSourceKey: Equatable {
+        case gray(cubeID: UUID, layout: CubeLayout, channelIndex: Int)
+        case rgbTrueColor(cubeID: UUID, layout: CubeLayout, mapping: RGBChannelMapping)
+        case rgbRangeWide(cubeID: UUID, layout: CubeLayout, rangeMapping: RGBChannelRangeMapping)
+        case rgbPCA(cubeID: UUID, layout: CubeLayout, config: PCAVisualizationConfig, fallback: ROICursorFallbackSignature)
+        case nd(
+            cubeID: UUID,
+            layout: CubeLayout,
+            indices: ROICursorNDIndices?,
+            palette: NDPalette,
+            threshold: Double,
+            preset: NDIndexPreset,
+            wdviSlope: Double,
+            wdviIntercept: Double
+        )
+        case mask(fallback: ROICursorFallbackSignature)
     }
