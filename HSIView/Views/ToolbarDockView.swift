@@ -172,24 +172,6 @@ private struct MaskInlineTools: View {
                 MaskToolSettingsPopover(maskState: maskState)
             }
             
-            if let activeID = maskState.activeLayerID {
-                Button {
-                    maskState.undo(for: activeID)
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color(NSColor.controlBackgroundColor).opacity(0.65))
-                        )
-                }
-                .buttonStyle(.plain)
-                .disabled(!maskState.canUndo(for: activeID))
-                .keyboardShortcut("z", modifiers: .command)
-                .help(AppLocalizer.localized("Отменить (⌘Z)"))
-            }
         }
     }
 }

@@ -1077,6 +1077,7 @@ final class AppState: ObservableObject {
                 layer.width = width
                 layer.height = height
                 layer.data = classData
+                layer.markEntireLayerDirty()
                 layer.renderVersion &+= 1
                 self.maskEditorState.layers[layerIndex] = layer
 
