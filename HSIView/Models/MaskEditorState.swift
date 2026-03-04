@@ -285,6 +285,142 @@ final class MaskEditorState: ObservableObject {
         activeLayerID = mergedLayer.id
         return true
     }
+
+    @discardableResult
+    func reduceNoise(onLayerID layerID: UUID, maxNoiseSize: Int, dispersion: Int) -> Bool {
+        guard let index = layers.firstIndex(where: { $0.id == layerID }),
+              var layer = layers[index] as? MaskLayer else {
+            return false
+        }
+
+        let width = layer.width
+        let height = layer.height
+        let pixelCount = width * height
+        guard width > 0, height > 0, layer.data.count >= pixelCount else {
+            return false
+        }
+
+        let clampedNoiseSize = max(1, maxNoiseSize)
+        let clampedDispersion = max(0, dispersion)
+        let maxDistanceSquared = clampedDispersion * clampedDispersion
+
+        var visited = [Bool](repeating: false, count: pixelCount)
+        var components: [ConnectedComponent] = []
+        components.reserveCapacity(256)
+
+        let neighborOffsets: [(x: Int, y: Int)] = [
+            (-1, -1), (0, -1), (1, -1),
+            (-1, 0),           (1, 0),
+            (-1, 1),  (0, 1),  (1, 1)
+        ]
+
+        for startIndex in 0..<pixelCount {
+            if visited[startIndex] || layer.data[startIndex] == 0 { continue }
+
+            var queue: [Int] = [startIndex]
+            var queueHead = 0
+            visited[startIndex] = true
+
+            var pixels: [Int] = []
+            pixels.reserveCapacity(32)
+            var minX = Int.max
+            var minY = Int.max
+            var maxX = Int.min
+            var maxY = Int.min
+
+            while queueHead < queue.count {
+                let current = queue[queueHead]
+                queueHead += 1
+                pixels.append(current)
+
+                let x = current % width
+                let y = current / width
+                minX = min(minX, x)
+                minY = min(minY, y)
+                maxX = max(maxX, x)
+                maxY = max(maxY, y)
+
+                for offset in neighborOffsets {
+                    let nx = x + offset.x
+                    let ny = y + offset.y
+                    guard nx >= 0, nx < width, ny >= 0, ny < height else { continue }
+
+                    let neighborIndex = ny * width + nx
+                    if visited[neighborIndex] || layer.data[neighborIndex] == 0 { continue }
+                    visited[neighborIndex] = true
+                    queue.append(neighborIndex)
+                }
+            }
+
+            components.append(
+                ConnectedComponent(
+                    pixels: pixels,
+                    minX: minX,
+                    minY: minY,
+                    maxX: maxX,
+                    maxY: maxY
+                )
+            )
+        }
+
+        guard !components.isEmpty else { return false }
+
+        let candidateIndices = components.indices.filter { components[$0].pixels.count <= clampedNoiseSize }
+        guard !candidateIndices.isEmpty else { return false }
+
+        var preservedCandidates: Set<Int> = []
+        if maxDistanceSquared > 0, candidateIndices.count >= 2 {
+            for i in 0..<(candidateIndices.count - 1) {
+                let lhsIndex = candidateIndices[i]
+                let lhs = components[lhsIndex]
+                for j in (i + 1)..<candidateIndices.count {
+                    let rhsIndex = candidateIndices[j]
+                    let rhs = components[rhsIndex]
+
+                    let bboxDistanceSquared = Self.squaredDistanceBetweenBoundingBoxes(lhs, rhs)
+                    if bboxDistanceSquared > maxDistanceSquared { continue }
+                    if Self.componentsAreWithinDistance(lhs, rhs, width: width, maxDistanceSquared: maxDistanceSquared) {
+                        preservedCandidates.insert(lhsIndex)
+                        preservedCandidates.insert(rhsIndex)
+                    }
+                }
+            }
+        }
+
+        let indicesToRemove = candidateIndices.filter { !preservedCandidates.contains($0) }
+        guard !indicesToRemove.isEmpty else { return false }
+
+        var minChangedX = Int.max
+        var minChangedY = Int.max
+        var maxChangedX = Int.min
+        var maxChangedY = Int.min
+        var changed = false
+
+        for componentIndex in indicesToRemove {
+            let component = components[componentIndex]
+            for pixelIndex in component.pixels where layer.data[pixelIndex] != 0 {
+                layer.data[pixelIndex] = 0
+                changed = true
+            }
+
+            minChangedX = min(minChangedX, component.minX)
+            minChangedY = min(minChangedY, component.minY)
+            maxChangedX = max(maxChangedX, component.maxX)
+            maxChangedY = max(maxChangedY, component.maxY)
+        }
+
+        guard changed else { return false }
+
+        layer.markDirty(
+            minX: minChangedX,
+            minY: minChangedY,
+            maxX: maxChangedX,
+            maxY: maxChangedY
+        )
+        layer.renderVersion &+= 1
+        layers[index] = layer
+        return true
+    }
     
     func removeMaskLayer(id: UUID) {
         guard maskLayers.count > 1 else { return }
@@ -568,6 +704,75 @@ final class MaskEditorState: ObservableObject {
         }
 
         return byID.values.sorted { $0.id < $1.id }
+    }
+
+    private struct ConnectedComponent {
+        let pixels: [Int]
+        let minX: Int
+        let minY: Int
+        let maxX: Int
+        let maxY: Int
+    }
+
+    private static func squaredDistanceBetweenBoundingBoxes(
+        _ lhs: ConnectedComponent,
+        _ rhs: ConnectedComponent
+    ) -> Int {
+        let dx: Int
+        if lhs.maxX < rhs.minX {
+            dx = rhs.minX - lhs.maxX
+        } else if rhs.maxX < lhs.minX {
+            dx = lhs.minX - rhs.maxX
+        } else {
+            dx = 0
+        }
+
+        let dy: Int
+        if lhs.maxY < rhs.minY {
+            dy = rhs.minY - lhs.maxY
+        } else if rhs.maxY < lhs.minY {
+            dy = lhs.minY - rhs.maxY
+        } else {
+            dy = 0
+        }
+
+        return dx * dx + dy * dy
+    }
+
+    private static func componentsAreWithinDistance(
+        _ lhs: ConnectedComponent,
+        _ rhs: ConnectedComponent,
+        width: Int,
+        maxDistanceSquared: Int
+    ) -> Bool {
+        if lhs.pixels.isEmpty || rhs.pixels.isEmpty { return false }
+        if maxDistanceSquared < 0 { return false }
+
+        let lhsPixels: [Int]
+        let rhsPixels: [Int]
+        if lhs.pixels.count <= rhs.pixels.count {
+            lhsPixels = lhs.pixels
+            rhsPixels = rhs.pixels
+        } else {
+            lhsPixels = rhs.pixels
+            rhsPixels = lhs.pixels
+        }
+
+        for lhsPixel in lhsPixels {
+            let lhsX = lhsPixel % width
+            let lhsY = lhsPixel / width
+            for rhsPixel in rhsPixels {
+                let rhsX = rhsPixel % width
+                let rhsY = rhsPixel / width
+                let dx = lhsX - rhsX
+                let dy = lhsY - rhsY
+                if (dx * dx + dy * dy) <= maxDistanceSquared {
+                    return true
+                }
+            }
+        }
+
+        return false
     }
 }
 

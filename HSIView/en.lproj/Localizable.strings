@@ -1307,7 +1307,14 @@
 "pipeline.calibration.auto_white.factor.shape" = "Region shape";
 "pipeline.calibration.auto_white.factor.glare_penalty" = "Glare penalty";
 "mask.layers.context.merge_selected" = "Merge selected layers…";
+"mask.layers.context.reduce_noise" = "Reduce noise…";
 "mask.layers.context.show_spectrum" = "Show spectrum";
+"mask.layers.denoise.sheet.title" = "Noise Reduction";
+"mask.layers.denoise.sheet.layer" = "Layer: %@";
+"mask.layers.denoise.sheet.noise_size" = "Noise size";
+"mask.layers.denoise.sheet.dispersion" = "Dispersion";
+"mask.layers.denoise.sheet.pixels" = "px";
+"mask.layers.denoise.sheet.hint" = "Isolated fragments up to the selected size are removed. Nearby fragments (within dispersion) are preserved.";
 "mask.layers.merge.sheet.title" = "Merge Layers";
 "mask.layers.merge.sheet.selected_count" = "Selected layers: %d";
 "mask.layers.merge.sheet.name" = "New class name";
