@@ -697,6 +697,10 @@ struct MaskLayersPanelView: View {
     @State private var mergeLayerName: String = ""
     @State private var mergeLayerColor: NSColor = MaskClassColor.palette.first ?? .systemRed
     @State private var mergeKeepOriginalLayers: Bool = false
+    @State private var showNoiseReductionSheet: Bool = false
+    @State private var noiseReductionTargetLayerID: UUID?
+    @State private var noiseSizePixels: Int = 1
+    @State private var noiseDispersionPixels: Int = 2
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -770,6 +774,9 @@ struct MaskLayersPanelView: View {
                             },
                             onMergeSelected: {
                                 presentMergeSheet(triggeredBy: layer.id)
+                            },
+                            onReduceNoise: {
+                                presentNoiseReductionSheet(for: layer.id)
                             }
                         )
                     }
@@ -807,6 +814,19 @@ struct MaskLayersPanelView: View {
                     showMergeSheet = false
                 },
                 onMerge: performMerge
+            )
+        }
+        .sheet(isPresented: $showNoiseReductionSheet) {
+            NoiseReductionSettingsSheet(
+                noiseSizePixels: $noiseSizePixels,
+                dispersionPixels: $noiseDispersionPixels,
+                layerName: noiseReductionTargetLayerID.flatMap { id in
+                    maskState.maskLayers.first(where: { $0.id == id })?.name
+                } ?? "",
+                onCancel: {
+                    showNoiseReductionSheet = false
+                },
+                onApply: applyNoiseReduction
             )
         }
     }
@@ -881,6 +901,24 @@ struct MaskLayersPanelView: View {
         }
         showMergeSheet = false
     }
+
+    private func presentNoiseReductionSheet(for layerID: UUID) {
+        guard maskState.maskLayers.contains(where: { $0.id == layerID }) else { return }
+        noiseReductionTargetLayerID = layerID
+        maskState.setActiveLayer(id: layerID)
+        selectedMaskLayerIDs = [layerID]
+        showNoiseReductionSheet = true
+    }
+
+    private func applyNoiseReduction() {
+        guard let layerID = noiseReductionTargetLayerID else { return }
+        _ = maskState.reduceNoise(
+            onLayerID: layerID,
+            maxNoiseSize: noiseSizePixels,
+            dispersion: noiseDispersionPixels
+        )
+        showNoiseReductionSheet = false
+    }
 }
 
 struct LayerRowView: View {
@@ -903,6 +941,7 @@ struct LayerRowView: View {
     var onMoveDown: (() -> Void)?
     var onExtractLayerSpectrum: (() -> Void)?
     var onMergeSelected: (() -> Void)?
+    var onReduceNoise: (() -> Void)?
     
     @State private var isHovered: Bool = false
     
@@ -1060,6 +1099,11 @@ struct LayerRowView: View {
                     }
                     Divider()
                 }
+                if onReduceNoise != nil {
+                    Button(L("mask.layers.context.reduce_noise")) {
+                        onReduceNoise?()
+                    }
+                }
                 Button("Переименовать", action: onStartEditing)
                 if onMoveUp != nil {
                     Button("Переместить вверх", action: { onMoveUp?() })
@@ -1076,6 +1120,77 @@ struct LayerRowView: View {
     private func hasAdditiveSelectionModifier() -> Bool {
         let eventFlags = NSApp.currentEvent?.modifierFlags ?? []
         return eventFlags.contains(.command) || eventFlags.contains(.shift)
+    }
+}
+
+private struct NoiseReductionSettingsSheet: View {
+    @Binding var noiseSizePixels: Int
+    @Binding var dispersionPixels: Int
+
+    let layerName: String
+    let onCancel: () -> Void
+    let onApply: () -> Void
+
+    private var canApply: Bool {
+        noiseSizePixels > 0 && dispersionPixels >= 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(L("mask.layers.denoise.sheet.title"))
+                .font(.system(size: 14, weight: .semibold))
+
+            if !layerName.isEmpty {
+                Text(LF("mask.layers.denoise.sheet.layer", layerName))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("mask.layers.denoise.sheet.noise_size"))
+                    .font(.system(size: 11, weight: .medium))
+                HStack(spacing: 8) {
+                    TextField("", value: $noiseSizePixels, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                    Stepper("", value: $noiseSizePixels, in: 1...100_000)
+                        .labelsHidden()
+                    Text(L("mask.layers.denoise.sheet.pixels"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("mask.layers.denoise.sheet.dispersion"))
+                    .font(.system(size: 11, weight: .medium))
+                HStack(spacing: 8) {
+                    TextField("", value: $dispersionPixels, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                    Stepper("", value: $dispersionPixels, in: 0...100_000)
+                        .labelsHidden()
+                    Text(L("mask.layers.denoise.sheet.pixels"))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Text(L("mask.layers.denoise.sheet.hint"))
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+
+            HStack {
+                Spacer()
+                Button(L("common.cancel"), action: onCancel)
+                    .keyboardShortcut(.escape, modifiers: [])
+                Button(L("common.apply"), action: onApply)
+                    .keyboardShortcut(.return, modifiers: [])
+                    .disabled(!canApply)
+            }
+        }
+        .padding(16)
+        .frame(width: 360)
     }
 }
 

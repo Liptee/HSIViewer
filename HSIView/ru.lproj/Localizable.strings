@@ -755,7 +755,14 @@
 "pipeline.calibration.auto_white.factor.shape" = "Форма области";
 "pipeline.calibration.auto_white.factor.glare_penalty" = "Штраф засветки";
 "mask.layers.context.merge_selected" = "Объединить выбранные слои…";
+"mask.layers.context.reduce_noise" = "Снизить шум…";
 "mask.layers.context.show_spectrum" = "Вывести спектр";
+"mask.layers.denoise.sheet.title" = "Снижение шума";
+"mask.layers.denoise.sheet.layer" = "Слой: %@";
+"mask.layers.denoise.sheet.noise_size" = "Размер шума";
+"mask.layers.denoise.sheet.dispersion" = "Дисперсия";
+"mask.layers.denoise.sheet.pixels" = "пикс.";
+"mask.layers.denoise.sheet.hint" = "Будут удалены изолированные фрагменты размером до заданного порога. Близкие фрагменты (в пределах дисперсии) сохраняются.";
 "mask.layers.merge.sheet.title" = "Объединение слоёв";
 "mask.layers.merge.sheet.selected_count" = "Выбрано слоёв: %d";
 "mask.layers.merge.sheet.name" = "Имя нового класса";
