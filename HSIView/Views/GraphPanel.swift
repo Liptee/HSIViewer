@@ -9,6 +9,7 @@ struct GraphPanel: View {
     @State private var hiddenSampleIDs: Set<UUID> = []
     @FocusState private var hasFocus: Bool
     var panelWidth: CGFloat = 400
+    private let samplesListHeight: CGFloat = 170
     
     private enum GraphMode {
         case inactive
@@ -228,50 +229,60 @@ struct GraphPanel: View {
     private func samplesLegend(_ samples: [SpectrumSample], cubeName: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
-            
-            ForEach(samples) { sample in
-                SampleRow(
-                    sample: sample,
-                    isSelected: selectedSampleID == sample.id,
-                    isHidden: hiddenSampleIDs.contains(sample.id),
-                    title: sample.displayName ?? "\(cubeName): (\(sample.pixelX), \(sample.pixelY))",
-                    onSelect: {
-                        selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
-                        hasFocus = true
-                    },
-                    onToggleHidden: { toggleHidden(id: sample.id) },
-                    onRename: { newName in
-                        state.renameSpectrumSample(id: sample.id, to: newName)
-                    },
-                    editingSampleID: $editingSampleID
-                )
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(samples) { sample in
+                        SampleRow(
+                            sample: sample,
+                            isSelected: selectedSampleID == sample.id,
+                            isHidden: hiddenSampleIDs.contains(sample.id),
+                            title: sample.displayName ?? "\(cubeName): (\(sample.pixelX), \(sample.pixelY))",
+                            onSelect: {
+                                selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
+                                hasFocus = true
+                            },
+                            onToggleHidden: { toggleHidden(id: sample.id) },
+                            onRename: { newName in
+                                state.renameSpectrumSample(id: sample.id, to: newName)
+                            },
+                            editingSampleID: $editingSampleID
+                        )
+                    }
+                }
+                .padding(.top, 4)
             }
-            .padding(.top, 4)
+            .frame(height: samplesListHeight)
         }
     }
     
     private func roiSamplesLegend(_ samples: [SpectrumROISample], cubeName: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
-            
-            ForEach(samples) { sample in
-                ROISampleRow(
-                    sample: sample,
-                    isSelected: selectedSampleID == sample.id,
-                    isHidden: hiddenSampleIDs.contains(sample.id),
-                    title: sample.displayName ?? "\(cubeName): (\(sample.rect.minX), \(sample.rect.minY)) – (\(sample.rect.maxX), \(sample.rect.maxY))",
-                    onSelect: {
-                        selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
-                        hasFocus = true
-                    },
-                    onToggleHidden: { toggleHidden(id: sample.id) },
-                    onRename: { newName in
-                        state.renameROISample(id: sample.id, to: newName)
-                    },
-                    editingSampleID: $editingSampleID
-                )
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(samples) { sample in
+                        ROISampleRow(
+                            sample: sample,
+                            isSelected: selectedSampleID == sample.id,
+                            isHidden: hiddenSampleIDs.contains(sample.id),
+                            title: sample.displayName ?? "\(cubeName): (\(sample.rect.minX), \(sample.rect.minY)) – (\(sample.rect.maxX), \(sample.rect.maxY))",
+                            onSelect: {
+                                selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
+                                hasFocus = true
+                            },
+                            onToggleHidden: { toggleHidden(id: sample.id) },
+                            onRename: { newName in
+                                state.renameROISample(id: sample.id, to: newName)
+                            },
+                            editingSampleID: $editingSampleID
+                        )
+                    }
+                }
+                .padding(.top, 4)
             }
-            .padding(.top, 4)
+            .frame(height: samplesListHeight)
         }
     }
 
@@ -281,28 +292,33 @@ struct GraphPanel: View {
         return VStack(alignment: .leading, spacing: 6) {
             Divider()
 
-            ForEach(samples) { sample in
-                let resolvedTitle = sample.displayName
-                    ?? layerNamesByID[sample.layerID]
-                    ?? LF("mask.class_name_numbered", Int(sample.classValue))
-                let title = "\(cubeName): \(resolvedTitle)"
-                MaskLayerSampleRow(
-                    sample: sample,
-                    isSelected: selectedSampleID == sample.id,
-                    isHidden: hiddenSampleIDs.contains(sample.id),
-                    title: title,
-                    onSelect: {
-                        selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
-                        hasFocus = true
-                    },
-                    onToggleHidden: { toggleHidden(id: sample.id) },
-                    onRename: { newName in
-                        state.renameMaskLayerSample(id: sample.id, to: newName)
-                    },
-                    editingSampleID: $editingSampleID
-                )
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(samples) { sample in
+                        let resolvedTitle = sample.displayName
+                            ?? layerNamesByID[sample.layerID]
+                            ?? LF("mask.class_name_numbered", Int(sample.classValue))
+                        let title = "\(cubeName): \(resolvedTitle)"
+                        MaskLayerSampleRow(
+                            sample: sample,
+                            isSelected: selectedSampleID == sample.id,
+                            isHidden: hiddenSampleIDs.contains(sample.id),
+                            title: title,
+                            onSelect: {
+                                selectedSampleID = (selectedSampleID == sample.id) ? nil : sample.id
+                                hasFocus = true
+                            },
+                            onToggleHidden: { toggleHidden(id: sample.id) },
+                            onRename: { newName in
+                                state.renameMaskLayerSample(id: sample.id, to: newName)
+                            },
+                            editingSampleID: $editingSampleID
+                        )
+                    }
+                }
+                .padding(.top, 4)
             }
-            .padding(.top, 4)
+            .frame(height: samplesListHeight)
         }
     }
     
