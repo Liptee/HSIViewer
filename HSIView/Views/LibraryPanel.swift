@@ -32,7 +32,7 @@ struct LibraryPanel: View {
         .focusEffectDisabled(true)
         .focused($isFocused)
         .onDeleteCommand(perform: deleteSelectedEntries)
-        .onChange(of: state.libraryEntries) { entries in
+        .onChange(of: state.libraryEntries) { _, entries in
             let existingIDs = Set(entries.map(\.id))
             selectedEntryIDs = selectedEntryIDs.intersection(existingIDs)
         }

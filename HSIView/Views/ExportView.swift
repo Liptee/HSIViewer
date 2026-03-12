@@ -152,14 +152,14 @@ struct ExportView: View {
                 selectedFormat = .maskPNG
             }
         }
-        .onChange(of: selectedTab) { newTab in
+        .onChange(of: selectedTab) { _, newTab in
             if newTab == .cube && selectedFormat.isMaskExport {
                 selectedFormat = .npy
             } else if newTab == .mask && !selectedFormat.isMaskExport {
                 selectedFormat = .maskPNG
             }
         }
-        .onChange(of: selectedFormat) { newFormat in
+        .onChange(of: selectedFormat) { _, newFormat in
             if newFormat == .enviDat {
                 enviOptions.binaryFileType = .dat
             } else if newFormat == .enviRaw {

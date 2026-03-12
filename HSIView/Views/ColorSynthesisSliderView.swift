@@ -38,10 +38,10 @@ struct ColorSynthesisSliderView: View {
         .onAppear {
             generateChannelPreviews()
         }
-        .onChange(of: cube?.id) { _ in
+        .onChange(of: cube?.id) {
             generateChannelPreviews()
         }
-        .onChange(of: layout) { _ in
+        .onChange(of: layout) {
             generateChannelPreviews()
         }
     }

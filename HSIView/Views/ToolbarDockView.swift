@@ -97,7 +97,7 @@ private struct ROICursorSizeControl: View {
         .onAppear {
             manualValue = state.roiCursorSize
         }
-        .onChange(of: state.roiCursorSize) { newValue in
+        .onChange(of: state.roiCursorSize) { _, newValue in
             if manualValue != newValue {
                 manualValue = newValue
             }
@@ -244,7 +244,7 @@ struct ToolButton: View {
             displayedIconName = iconName
             iconScale = 1.0
         }
-        .onChange(of: iconName) { newValue in
+        .onChange(of: iconName) { _, newValue in
             animateIconSwap(to: newValue)
         }
         .onDisappear {

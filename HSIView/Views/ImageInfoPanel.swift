@@ -117,7 +117,7 @@ struct ImageInfoPanel: View {
                 cachedStats = cube.statistics()
             }
         }
-        .onChange(of: cube.id) { _ in
+        .onChange(of: cube.id) {
             cachedStats = cube.statistics()
         }
     }

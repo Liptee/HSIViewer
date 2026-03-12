@@ -67,12 +67,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 @main
 struct HSIViewApp: App {
-    @StateObject private var appState = AppState()
+    @StateObject private var appState: AppState
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow
 
     init() {
-        AppDelegate.sharedState = appState
+        let state = AppState()
+        _appState = StateObject(wrappedValue: state)
+        AppDelegate.sharedState = state
     }
 
     var body: some Scene {

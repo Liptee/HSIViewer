@@ -19,9 +19,7 @@
 			<array>
 				<string>com.hsiview.mat</string>
 			</array>
-			<key>NSDocumentClass</key>
-			<string></string>
-		</dict>
+			</dict>
 		<dict>
 			<key>CFBundleTypeIconFile</key>
 			<string>appIcon</string>
