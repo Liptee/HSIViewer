@@ -149,7 +149,7 @@ struct DataTypePanel: View {
                 selectedDataType = cube.originalDataType
             }
         }
-        .onChange(of: state.cube?.id) { _ in
+        .onChange(of: state.cube?.id) {
             if let cube = state.cube {
                 selectedDataType = cube.originalDataType
             }

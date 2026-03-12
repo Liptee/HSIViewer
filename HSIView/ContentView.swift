@@ -102,7 +102,7 @@ struct ContentView: View {
         .onDisappear {
             ROICursorPreviewWindowManager.shared.hide()
         }
-        .onChange(of: state.cube?.id) { cubeID in
+        .onChange(of: state.cube?.id) { _, cubeID in
             if cubeID == nil {
                 clearROICursorHoverState()
             }
@@ -328,7 +328,7 @@ struct ContentView: View {
                               state.rulerMode == .edit else { return }
                         state.deleteSelectedRulerPoint()
                     }
-                    .onChange(of: geo.size) { newSize in
+                    .onChange(of: geo.size) { _, newSize in
                         currentGeoSize = newSize
                     }
                     .onHover { isHovering in
@@ -388,7 +388,7 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .onChange(of: state.activeAnalysisTool) { _ in
+                    .onChange(of: state.activeAnalysisTool) {
                         NSCursor.pop()
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
@@ -398,17 +398,17 @@ struct ContentView: View {
                         rulerHoverPixel = nil
                         ROICursorPreviewWindowManager.shared.hide()
                     }
-                    .onChange(of: state.rulerMode) { mode in
+                    .onChange(of: state.rulerMode) { _, mode in
                         if mode != .measure {
                             rulerHoverPixel = nil
                         }
                     }
-                    .onChange(of: state.roiCursorSize) { _ in
+                    .onChange(of: state.roiCursorSize) {
                         guard state.activeAnalysisTool == .roiCursor,
                               let pixel = roiCursorHoverBuffer.pixel else { return }
                         updateROICursor(at: pixel)
                     }
-                    .onChange(of: state.cubeURL) { _ in
+                    .onChange(of: state.cubeURL) {
                         roiPreviewRect = nil
                         roiDragStartPixel = nil
                         clearROICursorHoverState()
@@ -486,7 +486,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 960, minHeight: 500)
-        .onChange(of: state.viewMode) { newMode in
+        .onChange(of: state.viewMode) { _, newMode in
             if newMode == .mask {
                 state.prepareMaskEditorForCurrentCube()
             }
@@ -499,7 +499,7 @@ struct ContentView: View {
             ExportView()
                 .environmentObject(state)
         }
-        .onChange(of: state.pendingExport) { newValue in
+        .onChange(of: state.pendingExport) { _, newValue in
             if let exportInfo = newValue {
                 performActualExport(
                     format: exportInfo.format,
@@ -926,26 +926,28 @@ struct ContentView: View {
     private func cubeView(cube: HyperCube, geoSize: CGSize) -> some View {
         let targetPixels = renderTargetPixels(for: cube, geoSize: geoSize)
         let view: AnyView
-            switch state.viewMode {
-            case .gray:
-                let chIdx = Int(state.currentChannel)
-                if let nsImage = ImageRenderer.renderGrayscale(
-                    cube: cube,
-                    layout: state.activeLayout,
-                    channelIndex: chIdx,
-                    targetPixels: targetPixels
-                ) {
-                cacheROICursorSourceImage(nsImage)
+        let roiCursorSourceImage: NSImage?
+
+        switch state.viewMode {
+        case .gray:
+            let chIdx = Int(state.currentChannel)
+            if let nsImage = ImageRenderer.renderGrayscale(
+                cube: cube,
+                layout: state.activeLayout,
+                channelIndex: chIdx,
+                targetPixels: targetPixels
+            ) {
+                roiCursorSourceImage = nsImage
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
-                } else {
-                cacheROICursorSourceImage(nil)
+            } else {
+                roiCursorSourceImage = nil
                 view = AnyView(
                     Text(state.localized("Не удалось построить изображение"))
                         .foregroundColor(.red)
                 )
-                }
-                
-            case .rgb:
+            }
+
+        case .rgb:
             let config = state.colorSynthesisConfig
             let image: NSImage?
             switch config.mode {
@@ -968,19 +970,19 @@ struct ContentView: View {
             case .pcaVisualization:
                 image = state.pcaRenderedImage
             }
-            
+
             if let nsImage = image {
-                cacheROICursorSourceImage(nsImage)
+                roiCursorSourceImage = nsImage
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
-                cacheROICursorSourceImage(nil)
+                roiCursorSourceImage = nil
                 view = AnyView(
                     Text(state.localized(config.mode == .pcaVisualization ? "Нажмите «Применить PCA»" : "Не удалось построить RGB изображение"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 )
             }
-            
+
         case .nd:
             if let indices = state.ndChannelIndices(),
                let nsImage = ImageRenderer.renderND(
@@ -995,23 +997,26 @@ struct ContentView: View {
                 wdviIntercept: Double(state.wdviIntercept.replacingOccurrences(of: ",", with: ".")) ?? 0.0,
                 targetPixels: targetPixels
                ) {
-                cacheROICursorSourceImage(nsImage)
+                roiCursorSourceImage = nsImage
                 view = AnyView(spectrumImageView(nsImage: nsImage, geoSize: geoSize))
             } else {
-                cacheROICursorSourceImage(nil)
+                roiCursorSourceImage = nil
                 view = AnyView(
                     Text(state.localized("Не удалось построить ND"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 )
             }
-            
+
         case .mask:
-            cacheROICursorSourceImage(nil)
+            roiCursorSourceImage = nil
             view = AnyView(EmptyView())
         }
-        
+
         return view
+            .task(id: roiCursorSourceImage.map(ObjectIdentifier.init)) {
+                cacheROICursorSourceImage(roiCursorSourceImage)
+            }
     }
     
     private func spectrumImageView(nsImage: NSImage, geoSize: CGSize) -> some View {
@@ -1078,10 +1083,10 @@ struct ContentView: View {
             currentGeoSize = geoSize
             cacheROICursorSourceImage(nsImage)
         }
-        .onChange(of: nsImage.size) { newSize in
+        .onChange(of: nsImage.size) { _, newSize in
             currentImageSize = newSize
         }
-        .onChange(of: state.activeAnalysisTool) { _ in
+        .onChange(of: state.activeAnalysisTool) {
             cacheROICursorSourceImage(nsImage)
         }
     }
@@ -2034,7 +2039,7 @@ struct ContentView: View {
                 state.updatePCAConfig { $0.selectedROI = first }
             }
         }
-        .onChange(of: config.computeScope) { scope in
+        .onChange(of: config.computeScope) { _, scope in
             if scope == .roi,
                config.selectedROI == nil,
                let first = state.displayedROISamples.first?.id {

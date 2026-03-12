@@ -46,28 +46,28 @@ struct RangeWideColorControls: View {
         .onAppear {
             syncWavelengthInputs(mapping: mapping, wavelengths: wavelengths)
         }
-        .onChange(of: state.colorSynthesisConfig.rangeMapping) { newValue in
+        .onChange(of: state.colorSynthesisConfig.rangeMapping) { _, newValue in
             syncWavelengthInputs(mapping: newValue, wavelengths: wavelengths)
         }
-        .onChange(of: state.wavelengths) { _ in
+        .onChange(of: state.wavelengths) {
             syncWavelengthInputs(mapping: mapping, wavelengths: wavelengths)
         }
-        .onChange(of: redStartWavelength) { _ in
+        .onChange(of: redStartWavelength) {
             updateMappingFromWavelengthsIfNeeded(wavelengths)
         }
-        .onChange(of: redEndWavelength) { _ in
+        .onChange(of: redEndWavelength) {
             updateMappingFromWavelengthsIfNeeded(wavelengths)
         }
-        .onChange(of: greenStartWavelength) { _ in
+        .onChange(of: greenStartWavelength) {
             updateMappingFromWavelengthsIfNeeded(wavelengths)
         }
-        .onChange(of: greenEndWavelength) { _ in
+        .onChange(of: greenEndWavelength) {
             updateMappingFromWavelengthsIfNeeded(wavelengths)
         }
-        .onChange(of: blueStartWavelength) { _ in
+        .onChange(of: blueStartWavelength) {
             updateMappingFromWavelengthsIfNeeded(wavelengths)
         }
-        .onChange(of: blueEndWavelength) { _ in
+        .onChange(of: blueEndWavelength) {
             updateMappingFromWavelengthsIfNeeded(wavelengths)
         }
     }

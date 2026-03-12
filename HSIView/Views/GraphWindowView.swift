@@ -602,10 +602,10 @@ struct GraphWindowView: View {
             applyPaletteForMissing()
             updateAxisBounds()
         }
-        .onChange(of: palette) { _ in
+        .onChange(of: palette) {
             applyPaletteForMissing()
         }
-        .onChange(of: series) { _ in
+        .onChange(of: series) {
             pruneGraphSettings()
             applyPaletteForMissing()
             pruneMetricSelection()
@@ -613,7 +613,7 @@ struct GraphWindowView: View {
                 updateAxisBounds()
             }
         }
-        .onChange(of: state.libraryEntries) { _ in
+        .onChange(of: state.libraryEntries) {
             pruneVisibleEntries()
         }
         .sheet(item: $metricRequest) { request in
@@ -816,7 +816,7 @@ struct GraphWindowView: View {
                     
                     settingsSection(L("graph.window.section.axis_x")) {
                         Toggle(L("graph.window.auto_scale"), isOn: autoScaleXBinding)
-                            .onChange(of: autoScaleX) { auto in
+                            .onChange(of: autoScaleX) { _, auto in
                                 if auto { updateAxisBounds() }
                             }
                         
@@ -837,7 +837,7 @@ struct GraphWindowView: View {
                     
                     settingsSection(L("graph.window.section.axis_y")) {
                         Toggle(L("graph.window.auto_scale"), isOn: autoScaleYBinding)
-                            .onChange(of: autoScaleY) { auto in
+                            .onChange(of: autoScaleY) { _, auto in
                                 if auto { updateAxisBounds() }
                             }
                         
@@ -1177,7 +1177,7 @@ struct GraphWindowView: View {
                 .frame(minWidth: 260, idealWidth: 280, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             }
-            .onChange(of: initialStyle) { _ in
+            .onChange(of: initialStyle) {
                 resetFromInitial()
             }
         }

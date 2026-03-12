@@ -124,7 +124,7 @@ struct OperationEditorView: View {
         .onAppear {
             loadLocalState()
         }
-        .onChange(of: operation?.id) { _ in
+        .onChange(of: operation?.id) {
             loadLocalState()
         }
     }
@@ -564,13 +564,13 @@ struct OperationEditorView: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
         }
-        .onChange(of: localResizeParams.targetWidth) { newWidth in
+        .onChange(of: localResizeParams.targetWidth) { _, newWidth in
             adjustLinkedHeight(with: newWidth)
         }
-        .onChange(of: localResizeParams.targetHeight) { newHeight in
+        .onChange(of: localResizeParams.targetHeight) { _, newHeight in
             adjustLinkedWidth(with: newHeight)
         }
-        .onChange(of: localResizeParams.lockAspectRatio) { isLocked in
+        .onChange(of: localResizeParams.lockAspectRatio) { _, isLocked in
             guard isLocked else { return }
             resizeAspectRatio = deriveAspectRatio(for: op, params: localResizeParams)
         }
@@ -1204,16 +1204,16 @@ struct OperationEditorView: View {
                 localSpectralAlignmentParams.referenceChannel = maxIndex / 2
             }
         }
-        .onChange(of: localSpectralAlignmentParams.enableMultiscale) { _ in
+        .onChange(of: localSpectralAlignmentParams.enableMultiscale) {
             saveLocalState()
         }
-        .onChange(of: localSpectralAlignmentParams.enableSubpixel) { _ in
+        .onChange(of: localSpectralAlignmentParams.enableSubpixel) {
             saveLocalState()
         }
-        .onChange(of: localSpectralAlignmentParams.iterations) { _ in
+        .onChange(of: localSpectralAlignmentParams.iterations) {
             saveLocalState()
         }
-        .onChange(of: state.isAlignmentInProgress) { inProgress in
+        .onChange(of: state.isAlignmentInProgress) { _, inProgress in
             if !inProgress {
                 if let opIndex = state.pipelineOperations.firstIndex(where: { $0.id == op.id }),
                    let updatedParams = state.pipelineOperations[opIndex].spectralAlignmentParams {
@@ -1468,7 +1468,7 @@ struct OperationEditorView: View {
                 spectralTrimInputMode = .channels
             }
         }
-        .onChange(of: localSpectralTrimParams.startChannel) { newValue in
+        .onChange(of: localSpectralTrimParams.startChannel) { _, newValue in
             if localSpectralTrimParams.endChannel < newValue {
                 localSpectralTrimParams.endChannel = newValue
             }
@@ -1476,7 +1476,7 @@ struct OperationEditorView: View {
                 syncTrimWavelengthInputs(wavelengths)
             }
         }
-        .onChange(of: localSpectralTrimParams.endChannel) { newValue in
+        .onChange(of: localSpectralTrimParams.endChannel) { _, newValue in
             if newValue < localSpectralTrimParams.startChannel {
                 localSpectralTrimParams.startChannel = newValue
             }
@@ -1484,15 +1484,15 @@ struct OperationEditorView: View {
                 syncTrimWavelengthInputs(wavelengths)
             }
         }
-        .onChange(of: spectralTrimInputMode) { newValue in
+        .onChange(of: spectralTrimInputMode) { _, newValue in
             guard newValue == .wavelengths else { return }
             syncTrimWavelengthInputs(wavelengths)
         }
-        .onChange(of: trimStartWavelength) { _ in
+        .onChange(of: trimStartWavelength) {
             guard spectralTrimInputMode == .wavelengths else { return }
             updateTrimChannelsFromWavelengths(wavelengths, maxIndex: maxIndex)
         }
-        .onChange(of: trimEndWavelength) { _ in
+        .onChange(of: trimEndWavelength) {
             guard spectralTrimInputMode == .wavelengths else { return }
             updateTrimChannelsFromWavelengths(wavelengths, maxIndex: maxIndex)
         }
@@ -1806,7 +1806,7 @@ struct OperationEditorView: View {
                     clampCropParametersIfNeeded(width: cropSize.width, height: cropSize.height)
                     syncAutoCropStateFromLocalParameters(size: cropSize)
                 }
-                .onChange(of: state.cube?.id) { _ in
+                .onChange(of: state.cube?.id) {
                     if let freshSize = spatialSize(for: op) {
                         clampCropParametersIfNeeded(width: freshSize.width, height: freshSize.height)
                         syncAutoCropStateFromLocalParameters(size: freshSize)
@@ -2092,31 +2092,31 @@ struct OperationEditorView: View {
                 }
             }
         }
-        .onChange(of: autoCropMinWidth) { _ in
+        .onChange(of: autoCropMinWidth) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropMaxWidth) { _ in
+        .onChange(of: autoCropMaxWidth) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropMinHeight) { _ in
+        .onChange(of: autoCropMinHeight) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropMaxHeight) { _ in
+        .onChange(of: autoCropMaxHeight) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropAspectRatioTolerancePercent) { _ in
+        .onChange(of: autoCropAspectRatioTolerancePercent) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropPositionStep) { _ in
+        .onChange(of: autoCropPositionStep) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropSizeStep) { _ in
+        .onChange(of: autoCropSizeStep) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropDownsampleFactor) { _ in
+        .onChange(of: autoCropDownsampleFactor) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
-        .onChange(of: autoCropKeepRefinementReserve) { _ in
+        .onChange(of: autoCropKeepRefinementReserve) {
             clampAutoCropLimitInputs(cropSize: cropSize)
         }
     }

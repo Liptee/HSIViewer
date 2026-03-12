@@ -154,28 +154,28 @@ struct GraphPanel: View {
         .focused($hasFocus)
         .onAppear { hasFocus = true }
         .onDeleteCommand(perform: deleteSelectedSamples)
-        .onChange(of: state.displayedSpectrumSamples) { samples in
+        .onChange(of: state.displayedSpectrumSamples) { _, samples in
             pruneHiddenIDs(validIDs: samples.map(\.id))
             guard selectedSampleID != nil, graphMode == .points else { return }
             if !samples.contains(where: { $0.id == selectedSampleID }) {
                 selectedSampleID = nil
             }
         }
-        .onChange(of: state.displayedROISamples) { samples in
+        .onChange(of: state.displayedROISamples) { _, samples in
             pruneHiddenIDs(validIDs: samples.map(\.id))
             guard selectedSampleID != nil, graphMode == .roi else { return }
             if !samples.contains(where: { $0.id == selectedSampleID }) {
                 selectedSampleID = nil
             }
         }
-        .onChange(of: state.displayedMaskLayerSamples) { samples in
+        .onChange(of: state.displayedMaskLayerSamples) { _, samples in
             pruneHiddenIDs(validIDs: samples.map(\.id))
             guard selectedSampleID != nil, graphMode == .maskLayer else { return }
             if !samples.contains(where: { $0.id == selectedSampleID }) {
                 selectedSampleID = nil
             }
         }
-        .onChange(of: state.activeAnalysisTool) { _ in
+        .onChange(of: state.activeAnalysisTool) {
             selectedSampleID = nil
         }
     }
@@ -473,7 +473,7 @@ private struct SampleRow: View {
         .onAppear {
             nameText = sample.displayName ?? ""
         }
-        .onChange(of: editingSampleID) { newValue in
+        .onChange(of: editingSampleID) { _, newValue in
             guard newValue == sample.id else { return }
             startEditing()
             editingSampleID = nil
@@ -555,7 +555,7 @@ private struct ROISampleRow: View {
         .onAppear {
             nameText = sample.displayName ?? ""
         }
-        .onChange(of: editingSampleID) { newValue in
+        .onChange(of: editingSampleID) { _, newValue in
             guard newValue == sample.id else { return }
             startEditing()
             editingSampleID = nil
@@ -637,7 +637,7 @@ private struct MaskLayerSampleRow: View {
         .onAppear {
             nameText = sample.displayName ?? ""
         }
-        .onChange(of: editingSampleID) { newValue in
+        .onChange(of: editingSampleID) { _, newValue in
             guard newValue == sample.id else { return }
             startEditing()
             editingSampleID = nil

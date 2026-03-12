@@ -126,7 +126,7 @@ struct MaskEditorView: View {
                       state.rulerMode == .edit else { return }
                 state.deleteSelectedRulerPoint()
             }
-            .onChange(of: state.activeAnalysisTool) { _ in
+            .onChange(of: state.activeAnalysisTool) {
                 isDrawing = false
                 lastDrawPoint = nil
                 NSCursor.pop()
@@ -135,19 +135,19 @@ struct MaskEditorView: View {
                 rulerHoverPixel = nil
                 maskToolHoverImagePoint = nil
             }
-            .onChange(of: state.rulerMode) { mode in
+            .onChange(of: state.rulerMode) { _, mode in
                 if mode != .measure {
                     rulerHoverPixel = nil
                 }
             }
-            .onChange(of: maskState.currentTool) { _ in
+            .onChange(of: maskState.currentTool) {
                 isDrawing = false
                 lastDrawPoint = nil
                 if !shouldShowMaskToolCursorPreview {
                     maskToolHoverImagePoint = nil
                 }
             }
-            .onChange(of: state.cubeURL) { _ in
+            .onChange(of: state.cubeURL) {
                 isDrawing = false
                 lastDrawPoint = nil
                 roiPreviewRect = nil
@@ -156,7 +156,7 @@ struct MaskEditorView: View {
                 maskToolHoverImagePoint = nil
                 state.clearCursorGeoCoordinate()
             }
-            .onChange(of: geo.size) { newSize in
+            .onChange(of: geo.size) { _, newSize in
                 currentGeoSize = newSize
             }
             .background(
